@@ -1,0 +1,14 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount the SQLite database file into the container
+      # Use './data:/app/data' if you prefer to keep the db in a subdirectory
+      - ./kostos.db:/app/kostos.db
+    command: sh -c "npm run db:migrate && npm start"
+    environment:
+      NODE_ENV: production

@@ -1,0 +1,43 @@
+{
+  "name": "kostos",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "drizzle-kit generate:sqlite",
+    "db:push": "drizzle-kit push:sqlite",
+    "db:studio": "drizzle-kit studio",
+    "db:init": "node scripts/init-db.js",
+    "db:migrate": "node scripts/run-migrations.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "better-sqlite3": "^11.9.1",
+    "chart.js": "^4.4.8",
+    "date-fns": "^4.1.0",
+    "drizzle-orm": "^0.41.0",
+    "next": "^15.2.4",
+    "next-pwa": "^5.6.0",
+    "react": "^19.1.0",
+    "react-chartjs-2": "^5.3.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@types/react": "^19.0.12",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.16",
+    "drizzle-kit": "^0.30.6",
+    "postcss": "^8.4.31",
+    "sharp": "^0.33.5",
+    "tailwindcss": "^3.3.3",
+    "typescript": "^5.8.2"
+  }
+}
