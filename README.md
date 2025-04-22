@@ -1,6 +1,6 @@
 <h1 align="center">K O S T O S</h1>
 
-<strong align="center">💰 Expense Splitting 💰</strong>
+<h4 align="center">💰 Expense Splitting 💰</h4>
 
 Kostos is a web application designed to help groups manage and split expenses collaboratively within projects.
 
