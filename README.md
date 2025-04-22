@@ -1,10 +1,12 @@
-# K O S T O S
+<h1 align="center">K O S T O S</h1>
 
-💰 Expense Splitting 💰
+<strong align="center">💰 Expense Splitting 💰</strong>
 
 Kostos is a web application designed to help groups manage and split expenses collaboratively within projects.
 
 Track who paid what, categorize expenses, manage payment methods, easily calculate who owes whom based on flexible splitting rules, and see project stats to understand how you are spending.
+
+<img src="misc/screenshot_1.png" align="center" />
 
 ---
 
