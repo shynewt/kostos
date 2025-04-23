@@ -11,11 +11,9 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    // Load joined projects from local storage
     setJoinedProjects(getJoinedProjects());
   }, []);
 
-  // Handle file selection for import
   const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -23,10 +21,8 @@ export default function Home() {
     setIsImporting(true);
 
     try {
-      // Read the file content
       const fileContents = await readFileAsJson(file);
 
-      // Send to the import API
       const response = await fetch("/api/projects/import", {
         method: "POST",
         headers: {
@@ -41,7 +37,6 @@ export default function Home() {
         throw new Error(result.error || "Failed to import project");
       }
 
-      // Redirect to the newly created project
       alert("Project imported successfully! You will be redirected to the new project.");
       router.push(`/projects/join?projectId=${result.data.projectId}`);
     } catch (error) {
@@ -49,14 +44,12 @@ export default function Home() {
       alert(error instanceof Error ? error.message : "Failed to import project");
     } finally {
       setIsImporting(false);
-      // Reset file input
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     }
   };
 
-  // Helper to read file as JSON
   const readFileAsJson = (file: File): Promise<any> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -88,7 +81,6 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Moved Your Projects section here */}
         {joinedProjects.length > 0 ? (
           <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm p-6 mb-8">
             <div className="flex items-center mb-4">
@@ -147,7 +139,6 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          // Placeholder shown when no projects are joined
           <div className="text-center py-12 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm mb-8">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -170,7 +161,6 @@ export default function Home() {
           </div>
         )}
 
-        {/* Create/Join/Import section */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-6">
             <div className="flex items-center mb-4 text-blue-600 dark:text-blue-400">
@@ -224,10 +214,7 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Import Project Card - moved inside the grid */}
           <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 md:col-span-2">
-            {" "}
-            {/* Span across both columns */}
             <div className="flex items-center mb-4 text-green-600 dark:text-green-500">
               <svg
                 xmlns="http://www.w3.org/2000/svg"

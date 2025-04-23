@@ -13,25 +13,14 @@ interface PaymentMethodManagerProps {
   initialPaymentMethods?: PaymentMethod[];
 }
 
-const DEFAULT_ICONS = [
-  "💳", // Card
-  "💵", // Cash
-  "🎁", // Gift Card
-  "🏦", // Bank Transfer
-  "📱", // Mobile Payment
-  "💸", // Money Transfer
-  "🎫", // Ticket
-  "💎", // Other
-];
+const DEFAULT_ICONS = ["💳", "💵", "🎁", "🏦", "📱", "💸", "🎫", "💎"];
 
 export default function PaymentMethodManager({
   projectId,
   onPaymentMethodsChange,
   initialPaymentMethods = [],
 }: PaymentMethodManagerProps) {
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
-    initialPaymentMethods
-  );
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(initialPaymentMethods);
   const [newMethodName, setNewMethodName] = useState("");
   const [newMethodIcon, setNewMethodIcon] = useState(DEFAULT_ICONS[0]);
   const [isLoading, setIsLoading] = useState(false);
@@ -45,12 +34,9 @@ export default function PaymentMethodManager({
     }
   }, [projectId, initialPaymentMethods]);
 
-  // Fetch payment methods from the API
   const fetchPaymentMethods = async () => {
     try {
-      const response = await fetch(
-        `/api/payment-methods?projectId=${projectId}`
-      );
+      const response = await fetch(`/api/payment-methods?projectId=${projectId}`);
       const result = await response.json();
 
       if (result.success) {
@@ -64,7 +50,6 @@ export default function PaymentMethodManager({
     }
   };
 
-  // Add a new payment method
   const addPaymentMethod = async () => {
     if (!newMethodName.trim()) {
       setError("Payment method name is required");
@@ -94,25 +79,18 @@ export default function PaymentMethodManager({
         setPaymentMethods(updatedMethods);
         onPaymentMethodsChange(updatedMethods);
         setNewMethodName("");
-        setNewMethodIcon(
-          DEFAULT_ICONS[Math.floor(Math.random() * DEFAULT_ICONS.length)]
-        );
+        setNewMethodIcon(DEFAULT_ICONS[Math.floor(Math.random() * DEFAULT_ICONS.length)]);
       } else {
         setError(result.error || "Failed to create payment method");
       }
     } catch (error) {
       console.error("Error creating payment method:", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to create payment method"
-      );
+      setError(error instanceof Error ? error.message : "Failed to create payment method");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Delete a payment method
   const deletePaymentMethod = async (methodId: string) => {
     if (!confirm("Are you sure you want to delete this payment method?")) {
       return;
@@ -129,9 +107,7 @@ export default function PaymentMethodManager({
       const result = await response.json();
 
       if (result.success) {
-        const updatedMethods = paymentMethods.filter(
-          (method) => method.id !== methodId
-        );
+        const updatedMethods = paymentMethods.filter((method) => method.id !== methodId);
         setPaymentMethods(updatedMethods);
         onPaymentMethodsChange(updatedMethods);
       } else {
@@ -139,11 +115,7 @@ export default function PaymentMethodManager({
       }
     } catch (error) {
       console.error("Error deleting payment method:", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to delete payment method"
-      );
+      setError(error instanceof Error ? error.message : "Failed to delete payment method");
     } finally {
       setIsLoading(false);
     }
@@ -152,15 +124,11 @@ export default function PaymentMethodManager({
   return (
     <div className="space-y-4">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>
       )}
 
       <div className="mb-4">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">
-          Current Payment Methods
-        </h3>
+        <h3 className="text-sm font-medium text-gray-500 mb-2">Current Payment Methods</h3>
         {paymentMethods.length > 0 ? (
           <div className="space-y-2">
             {paymentMethods.map((method) => (
@@ -202,9 +170,7 @@ export default function PaymentMethodManager({
       </div>
 
       <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">
-          Add New Payment Method
-        </h3>
+        <h3 className="text-sm font-medium text-gray-500 mb-2">Add New Payment Method</h3>
         <div className="flex gap-2">
           <input
             type="text"

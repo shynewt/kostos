@@ -59,27 +59,19 @@ export default function ExpenseList({
     return formatCurrency(amount, currency);
   };
 
-  // Calculate pagination
   const totalPages = Math.ceil(expenses.length / perPage);
   const indexOfLastExpense = currentPage * perPage;
   const indexOfFirstExpense = indexOfLastExpense - perPage;
-  const currentExpenses = expenses.slice(
-    indexOfFirstExpense,
-    indexOfLastExpense
-  );
+  const currentExpenses = expenses.slice(indexOfFirstExpense, indexOfLastExpense);
 
-  // Handle page changes
   const goToPage = (page: number) => {
     setCurrentPage(page);
   };
 
-  // Handle items per page changes
-  const handleItemsPerPageChange = (
-    e: React.ChangeEvent<HTMLSelectElement>
-  ) => {
+  const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newPerPage = parseInt(e.target.value, 10);
     setPerPage(newPerPage);
-    setCurrentPage(1); // Reset to first page when changing items per page
+    setCurrentPage(1);
   };
 
   return (
@@ -100,13 +92,11 @@ export default function ExpenseList({
         ))}
       </div>
 
-      {/* Pagination Controls */}
       {expenses.length > 0 && (
         <div className="mt-6 flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
           <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
             <span>
-              Showing {indexOfFirstExpense + 1}-
-              {Math.min(indexOfLastExpense, expenses.length)} of{" "}
+              Showing {indexOfFirstExpense + 1}-{Math.min(indexOfLastExpense, expenses.length)} of{" "}
               {expenses.length} expenses
             </span>
             <div className="ml-4 flex items-center">
@@ -160,12 +150,7 @@ export default function ExpenseList({
                 viewBox="0 0 24 24"
                 stroke="currentColor"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 19l-7-7 7-7"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
 
@@ -174,16 +159,12 @@ export default function ExpenseList({
                 let pageNum;
 
                 if (totalPages <= 5) {
-                  // If 5 or fewer pages, show all page numbers
                   pageNum = i + 1;
                 } else if (currentPage <= 3) {
-                  // If on pages 1-3, show pages 1-5
                   pageNum = i + 1;
                 } else if (currentPage >= totalPages - 2) {
-                  // If on last 3 pages, show last 5 pages
                   pageNum = totalPages - 4 + i;
                 } else {
-                  // Otherwise show current page and 2 pages on each side
                   pageNum = currentPage - 2 + i;
                 }
 
@@ -215,12 +196,7 @@ export default function ExpenseList({
                 viewBox="0 0 24 24"
                 stroke="currentColor"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 5l7 7-7 7"
-                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
             <button

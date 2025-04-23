@@ -86,26 +86,17 @@ export default function ExpenseItem({
   variant = "default",
   showActions = true,
 }: ExpenseItemProps) {
-  // Find the category if it exists
-  const category = expense.categoryId
-    ? categories.find((c) => c.id === expense.categoryId)
-    : null;
-
-  // Find the payment method if it exists
+  const category = expense.categoryId ? categories.find((c) => c.id === expense.categoryId) : null;
   const paymentMethod = expense.paymentMethodId
     ? paymentMethods.find((m) => m.id === expense.paymentMethodId)
     : null;
 
-  // Find the primary payer (the one who paid the most)
+  // Find the member who paid the most for this expense
   const primaryPayment =
-    expense.payments.length > 0
-      ? [...expense.payments].sort((a, b) => b.amount - a.amount)[0]
-      : null;
-  const primaryPayer = primaryPayment
-    ? members.find((m) => m.id === primaryPayment.memberId)
-    : null;
+    expense.payments.length > 0 ? [...expense.payments].sort((a, b) => b.amount - a.amount)[0] : null;
+  const primaryPayer = primaryPayment ? members.find((m) => m.id === primaryPayment.memberId) : null;
 
-  // Calculate current user's position in this expense (if currentMemberId is provided)
+  // Calculate the current user's payment and owed amount, if applicable
   const currentUserPayment = currentMemberId
     ? expense.payments.find((p) => p.memberId === currentMemberId)
     : null;
@@ -117,16 +108,14 @@ export default function ExpenseItem({
   const amountOwed = currentUserSplit ? currentUserSplit.owedAmount : 0;
   const netPosition = amountPaid - amountOwed;
 
-  // Format amount with currency
   const formatAmount = (amount: number): string => {
     return formatCurrency(amount, currency);
   };
 
-  // Create compact split summary for the "all" view
+  // Returns a summary of who paid and who owes for the default variant
   const createSplitSummary = () => {
     if (variant !== "default") return null;
 
-    // Get payer names
     const payerNames = expense.payments.map((p) => {
       const member = members.find((m) => m.id === p.memberId);
       return member
@@ -136,7 +125,6 @@ export default function ExpenseItem({
         : "Unknown";
     });
 
-    // Get receivers (who the expense was for)
     const receivers = expense.splits
       .filter((s) => s.owedAmount > 0)
       .map((s) => {
@@ -148,7 +136,6 @@ export default function ExpenseItem({
           : "Unknown";
       });
 
-    // If no specific receivers (like in equal splits), include all members
     const allMembers = expense.splits.map((s) => {
       const member = members.find((m) => m.id === s.memberId);
       return member
@@ -158,27 +145,22 @@ export default function ExpenseItem({
         : "Unknown";
     });
 
-    // Create the arrow notation
     return (
       <div className="flex items-center gap-1 flex-wrap">
         <span className="text-xs text-gray-600 dark:text-gray-400">
-          {payerNames.join(", ")} →{" "}
-          {receivers.length > 0 ? receivers.join(", ") : allMembers.join(", ")}
+          {payerNames.join(", ")} → {receivers.length > 0 ? receivers.join(", ") : allMembers.join(", ")}
         </span>
       </div>
     );
   };
 
-  // Handle click
   const handleClick = () => {
     if (onClick) {
       onClick(expense);
     }
   };
 
-  // === Render different variants ===
-
-  // Default variant (used in "All expenses" tab with category indicator and net position)
+  // Render the default variant (shows category, net position, etc.)
   if (variant === "default") {
     return (
       <div
@@ -186,7 +168,7 @@ export default function ExpenseItem({
         className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer overflow-hidden flex"
         onClick={handleClick}
       >
-        {/* Category indicator */}
+        {/* Colored bar for category */}
         <div
           className="w-1.5 h-auto"
           style={{
@@ -200,10 +182,7 @@ export default function ExpenseItem({
               <h3 className="font-medium text-gray-900 dark:text-white truncate w-full mb-1.5 md:w-auto">
                 <span>{expense.description}</span>
                 {expense.notes && expense.notes.trim() !== "" && (
-                  <span
-                    className="ml-1.5 text-gray-400 dark:text-gray-500 cursor-help"
-                    title={expense.notes}
-                  >
+                  <span className="ml-1.5 text-gray-400 dark:text-gray-500 cursor-help" title={expense.notes}>
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       className="h-3.5 w-3.5 inline"
@@ -241,7 +220,6 @@ export default function ExpenseItem({
               </div>
             </div>
 
-            {/* Amount Section */}
             <div className="text-right flex-shrink-0">
               <div
                 className={`text-lg font-semibold ${
@@ -256,7 +234,6 @@ export default function ExpenseItem({
               >
                 {formatAmount(expense.amount)}
               </div>
-              {/* User Net Position */}
               {currentMemberId && (
                 <div
                   className={`text-sm font-medium ${
@@ -277,7 +254,6 @@ export default function ExpenseItem({
             </div>
           </div>
 
-          {/* Date and Split Summary */}
           <div className="text-sm text-gray-500 dark:text-gray-400">
             <span>{formatDate(expense.date)}</span>
             {createSplitSummary()}
@@ -287,7 +263,7 @@ export default function ExpenseItem({
     );
   }
 
-  // List variant (used in ExpenseList component)
+  // Render the list variant (used in ExpenseList component)
   if (variant === "list") {
     return (
       <div
@@ -298,9 +274,7 @@ export default function ExpenseItem({
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0">
               <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                <span className="text-lg">
-                  {getInitials(primaryPayer?.name || "Unknown")}
-                </span>
+                <span className="text-lg">{getInitials(primaryPayer?.name || "Unknown")}</span>
               </div>
             </div>
             <div>
@@ -331,10 +305,7 @@ export default function ExpenseItem({
                 {expense.notes && expense.notes.trim() !== "" && (
                   <>
                     <span>•</span>
-                    <span
-                      className="text-gray-500 dark:text-gray-400 cursor-help"
-                      title={expense.notes}
-                    >
+                    <span className="text-gray-500 dark:text-gray-400 cursor-help" title={expense.notes}>
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         className="h-4 w-4 inline"
@@ -357,12 +328,9 @@ export default function ExpenseItem({
           </div>
           <div className="flex items-center space-x-4">
             <div className="text-right">
-              <div className="text-lg font-medium">
-                {formatAmount(expense.amount)}
-              </div>
+              <div className="text-lg font-medium">{formatAmount(expense.amount)}</div>
               <div className="text-sm text-gray-500 dark:text-gray-400">
-                {expense.splits.length}{" "}
-                {expense.splits.length === 1 ? "person" : "people"}
+                {expense.splits.length} {expense.splits.length === 1 ? "person" : "people"}
               </div>
             </div>
             {showActions && onEdit && onDelete && (
@@ -419,7 +387,7 @@ export default function ExpenseItem({
     );
   }
 
-  // Category variant (used in "By Category" tab)
+  // Render the category variant (used in "By Category" tab)
   if (variant === "category") {
     return (
       <div
@@ -432,10 +400,7 @@ export default function ExpenseItem({
             <h3 className="font-medium flex items-center">
               {expense.description}
               {expense.notes && expense.notes.trim() !== "" && (
-                <span
-                  className="ml-1.5 text-gray-400 dark:text-gray-500"
-                  title={expense.notes}
-                >
+                <span className="ml-1.5 text-gray-400 dark:text-gray-500" title={expense.notes}>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     className="h-3.5 w-3.5"
@@ -453,9 +418,7 @@ export default function ExpenseItem({
                 </span>
               )}
             </h3>
-            <span className="font-semibold">
-              {formatAmount(expense.amount)}
-            </span>
+            <span className="font-semibold">{formatAmount(expense.amount)}</span>
           </div>
           <div className="flex justify-between mt-1 text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center">
@@ -463,8 +426,7 @@ export default function ExpenseItem({
               <span className="mx-2">•</span>
               <span>
                 Paid by: {primaryPayer ? primaryPayer.name : "Unknown"}
-                {expense.payments.length > 1 &&
-                  ` +${expense.payments.length - 1}`}
+                {expense.payments.length > 1 && ` +${expense.payments.length - 1}`}
               </span>
             </div>
             <span className="capitalize">{expense.splitType} split</span>
@@ -474,7 +436,7 @@ export default function ExpenseItem({
     );
   }
 
-  // Compact variant (more minimal for other uses)
+  // Render the compact variant (minimal display)
   return (
     <div
       key={expense.id}
@@ -486,10 +448,7 @@ export default function ExpenseItem({
           <h3 className="font-medium text-sm flex items-center">
             {expense.description}
             {expense.notes && expense.notes.trim() !== "" && (
-              <span
-                className="ml-1 text-gray-400 dark:text-gray-500 cursor-help"
-                title={expense.notes}
-              >
+              <span className="ml-1 text-gray-400 dark:text-gray-500 cursor-help" title={expense.notes}>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   className="h-3 w-3 inline"
@@ -507,9 +466,7 @@ export default function ExpenseItem({
               </span>
             )}
           </h3>
-          <span className="font-medium text-sm">
-            {formatAmount(expense.amount)}
-          </span>
+          <span className="font-medium text-sm">{formatAmount(expense.amount)}</span>
         </div>
         <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
           <span>{formatDate(expense.date)}</span>
