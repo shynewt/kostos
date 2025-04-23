@@ -59,7 +59,14 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
 
       <footer className="bg-white dark:bg-gray-800 py-4 border-t border-gray-200 dark:border-gray-700 shadow-inner">
         <div className="container mx-auto px-4 text-center text-gray-600 dark:text-gray-400 text-sm">
-          &copy; {new Date().getFullYear()} Kostos - Group Bill Splitting App
+          A project by{" "}
+          <a href="https://shynewt.com" target="_blank" className="font-bold">
+            Shy Newt Technologies
+          </a>{" "}
+          <span className="mx-2 font-bold">|</span>
+          <a className="underline" href="https://github.com/shynewt/kostos?ref=kostos" target="_blank">
+            Source
+          </a>
         </div>
       </footer>
     </div>
