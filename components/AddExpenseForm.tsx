@@ -120,7 +120,7 @@ export default function AddExpenseForm({
   useEffect(() => {
     const parsedAmount = parseFloat(amount) || 0
     recalculateOwedAmounts(parsedAmount)
-  }, [amount, participants, splitType, splits])
+  }, [amount, participants, splitType])
 
   const toggleParticipant = (memberId: string) => {
     if (participants.includes(memberId)) {
