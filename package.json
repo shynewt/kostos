@@ -11,7 +11,8 @@
     "db:push": "drizzle-kit push:sqlite",
     "db:studio": "drizzle-kit studio",
     "db:init": "node scripts/init-db.js",
-    "db:migrate": "node scripts/run-migrations.js"
+    "db:migrate": "node scripts/run-migrations.js",
+    "format": "prettier --write ."
   },
   "keywords": [],
   "author": "",
@@ -36,6 +37,8 @@
     "autoprefixer": "^10.4.16",
     "drizzle-kit": "^0.30.6",
     "postcss": "^8.4.31",
+    "prettier": "^3.5.3",
+    "prettier-plugin-tailwindcss": "^0.6.11",
     "sharp": "^0.33.5",
     "tailwindcss": "^3.3.3",
     "typescript": "^5.8.2"
