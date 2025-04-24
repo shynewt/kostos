@@ -1204,7 +1204,8 @@ export default function AddExpenseForm({
               )}
               {splitType === 'even' && participants.length > 0 && (
                 <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  Each person pays {formatAmount(roundToCent(parseFloat(amount) / participants.length))}
+                  Each person pays{' '}
+                  {formatAmount(roundToCent((parseFloat(amount) || 0) / participants.length))}
                 </p>
               )}
             </div>
