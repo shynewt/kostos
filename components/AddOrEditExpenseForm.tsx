@@ -494,8 +494,30 @@ export default function AddOrEditExpenseForm({
 
     const totalPayment = payers.reduce((sum, payer) => sum + payer.amount, 0)
     if (Math.abs(totalPayment - parsedAmount) > 0.01) {
-      setError('Total payment amount must equal expense amount')
-      return false
+      // If there's only one payer, adjust the amount automatically
+      if (payers.length === 1) {
+        setPayers([{ ...payers[0], amount: parsedAmount }])
+      } else if (isEditing) {
+        // In edit mode, adjust payer amounts proportionally
+        const ratio = parsedAmount / totalPayment
+        const newPayers = [...payers]
+        let totalAdjusted = 0
+
+        // Adjust all but the last payer
+        for (let i = 0; i < newPayers.length - 1; i++) {
+          const adjustedAmount = roundToCent(newPayers[i].amount * ratio)
+          newPayers[i].amount = adjustedAmount
+          totalAdjusted += adjustedAmount
+        }
+
+        // Adjust the last payer to account for rounding errors
+        newPayers[newPayers.length - 1].amount = roundToCent(parsedAmount - totalAdjusted)
+
+        setPayers(newPayers)
+      } else {
+        setError('Total payment amount must equal expense amount')
+        return false
+      }
     }
 
     if (splitType === 'amount') {
