@@ -981,11 +981,11 @@ export default function AddExpenseForm({
               >
                 {participants.some((memberId) => {
                   const split = splits.find((s) => s.memberId === memberId)
-                  return split?.amount !== undefined && split.amount > 0 && Number.isFinite(split.amount)
+                  return split?.amount !== undefined && split.amount !== 0 && Number.isFinite(split.amount)
                 }) &&
                 !participants.every((memberId) => {
                   const split = splits.find((s) => s.memberId === memberId)
-                  return split?.amount !== undefined && split.amount > 0 && Number.isFinite(split.amount)
+                  return split?.amount !== undefined && split.amount !== 0 && Number.isFinite(split.amount)
                 })
                   ? 'Auto-fill empty'
                   : 'Auto-fill all'}
