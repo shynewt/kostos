@@ -748,6 +748,17 @@ export default function AddExpenseForm({
     setPayers(newPayers)
   }
 
+  const [disableAutoFillAmount, setDisableAutoFillAmount] = useState<boolean>(false)
+
+  useEffect(() => {
+    const totalAmountNum = parseFloat(amount) || 0
+    const currentAllocated = splits
+      .filter((s) => participants.includes(s.memberId))
+      .reduce((sum, s) => sum + (s.amount || 0), 0)
+    const remainingAmount = totalAmountNum - currentAllocated
+    setDisableAutoFillAmount(!(remainingAmount > 0))
+  }, [amount, participants, splits])
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
@@ -977,8 +988,9 @@ export default function AddExpenseForm({
               <button
                 type="button"
                 onClick={autoFillSplits}
-                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                className="text-sm text-blue-600 hover:text-blue-800 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 dark:hover:text-blue-300"
                 title="Auto-fill all inputs with even distribution"
+                disabled={disableAutoFillAmount}
               >
                 {participants.some((memberId) => {
                   const split = splits.find((s) => s.memberId === memberId)
