@@ -524,33 +524,84 @@ export default function AddExpenseForm({
     if (!amount || parseFloat(amount) <= 0 || participants.length === 0) return
 
     const totalAmountNum = parseFloat(amount)
-    // Consider all participants for distribution, regardless if they already have values
     const participantIds = participants
 
     if (participantIds.length === 0) return
 
-    // Distribute amount evenly among all participants
-    const amountPerPerson = roundToCent(totalAmountNum / participantIds.length)
-
     const newSplits = [...splits]
+    const participantSplits = newSplits.filter((s) => participantIds.includes(s.memberId))
 
-    participantIds.forEach((pid, idx) => {
-      const splitIndex = newSplits.findIndex((s) => s.memberId === pid)
-      if (splitIndex >= 0) {
-        // Last person gets any remaining cents to ensure total is exact
-        const isLast = idx === participantIds.length - 1
-        const adjustedAmount = isLast
-          ? roundToCent(totalAmountNum - amountPerPerson * (participantIds.length - 1))
-          : amountPerPerson
+    // Check if all participants already have amounts set
+    const allHaveAmounts = participantSplits.every(
+      (s) => s.amount !== undefined && s.amount > 0 && s.amountInput !== undefined && s.amountInput !== ''
+    )
 
-        newSplits[splitIndex] = {
-          ...newSplits[splitIndex],
-          amount: adjustedAmount,
-          amountInput: adjustedAmount.toString(),
-          owedAmount: adjustedAmount,
+    // Check if any participants have amounts set
+    const someHaveAmounts = participantSplits.some(
+      (s) => s.amount !== undefined && s.amount > 0 && s.amountInput !== undefined && s.amountInput !== ''
+    )
+
+    // If all fields are set, override everything
+    // If some fields are set, only update the empty ones
+    if (allHaveAmounts || !someHaveAmounts) {
+      // Distribute evenly among all participants
+      const amountPerPerson = roundToCent(totalAmountNum / participantIds.length)
+
+      participantIds.forEach((pid, idx) => {
+        const splitIndex = newSplits.findIndex((s) => s.memberId === pid)
+        if (splitIndex >= 0) {
+          // Last person gets any remaining cents to ensure total is exact
+          const isLast = idx === participantIds.length - 1
+          const adjustedAmount = isLast
+            ? roundToCent(totalAmountNum - amountPerPerson * (participantIds.length - 1))
+            : amountPerPerson
+
+          newSplits[splitIndex] = {
+            ...newSplits[splitIndex],
+            amount: adjustedAmount,
+            amountInput: adjustedAmount.toString(),
+            owedAmount: adjustedAmount,
+          }
         }
+      })
+    } else {
+      // Some fields have values, only update the empty ones
+      // First, calculate how much is already allocated
+      const totalAllocated = participantSplits.reduce((sum, s) => sum + (s.amount || 0), 0)
+
+      // Count participants without amounts
+      const emptyParticipants = participantSplits.filter(
+        (s) => s.amount === undefined || s.amount === 0 || s.amountInput === undefined || s.amountInput === ''
+      )
+
+      if (emptyParticipants.length > 0) {
+        // Calculate remaining amount to distribute among empty fields
+        const remainingAmount = totalAmountNum - totalAllocated
+        const amountPerEmptyPerson = roundToCent(remainingAmount / emptyParticipants.length)
+
+        // Update only the empty fields
+        let distributedAmount = 0
+        emptyParticipants.forEach((split, idx) => {
+          const splitIndex = newSplits.findIndex((s) => s.memberId === split.memberId)
+          if (splitIndex >= 0) {
+            // Last empty person gets any remaining cents to ensure total is exact
+            const isLast = idx === emptyParticipants.length - 1
+            const adjustedAmount = isLast
+              ? roundToCent(remainingAmount - distributedAmount)
+              : amountPerEmptyPerson
+
+            distributedAmount += amountPerEmptyPerson
+
+            newSplits[splitIndex] = {
+              ...newSplits[splitIndex],
+              amount: adjustedAmount,
+              amountInput: adjustedAmount.toString(),
+              owedAmount: adjustedAmount,
+            }
+          }
+        })
       }
-    })
+    }
 
     setSplits(newSplits)
   }
@@ -859,7 +910,16 @@ export default function AddExpenseForm({
                 className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                 title="Auto-fill all inputs with even distribution"
               >
-                Auto-fill Even
+                {participants.every((memberId) => {
+                  const split = splits.find((s) => s.memberId === memberId)
+                  return split?.amount !== undefined && split.amount > 0
+                }) ||
+                !participants.some((memberId) => {
+                  const split = splits.find((s) => s.memberId === memberId)
+                  return split?.amount !== undefined && split.amount > 0
+                })
+                  ? 'Auto-fill all'
+                  : 'Auto-fill empty'}
               </button>
             )}
             {splitType === 'shares' && (
