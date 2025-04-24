@@ -2,6 +2,8 @@
 
 <h4 align="center">💰 Expense Splitting 💰</h4>
 
+> NOTE: This project was 100% vive coded. It was built to meet our own needs for a feature-rich, user-friendly open source expense splitting app. It works reliably for us and we use it daily, but we do not plan to refactor it. It fulfills its intended purpose as-is.
+
 Kostos is a web application designed to help groups manage and split expenses collaboratively within projects.
 
 Track who paid what, categorize expenses, manage payment methods, easily calculate who owes whom based on flexible splitting rules, and see project stats to understand how you are spending.
