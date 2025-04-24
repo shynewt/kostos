@@ -5,6 +5,13 @@ const roundToCent = (value: number): number => {
   return Math.round(value * 100) / 100
 }
 
+const isValidNumberFormat = (value: string | undefined): boolean => {
+  // Handle undefined or empty values
+  if (value === undefined || value === '') return true
+  // Valid formats: simple integer, or number with proper decimal part
+  return /^-?\d+$/.test(value) || /^-?\d+\.\d+$/.test(value)
+}
+
 interface Member {
   id: string
   name: string
@@ -24,7 +31,9 @@ interface Payment {
 interface Split {
   memberId: string
   amount?: number
+  amountInput?: string
   shares?: number
+  sharesInput?: string
   percent?: number
   owedAmount: number
 }
@@ -144,19 +153,24 @@ export default function AddExpenseForm({
         memberId: member.id,
         owedAmount: 0,
         amount: undefined,
+        amountInput: undefined,
         shares: undefined,
+        sharesInput: undefined,
       }
 
       let structureUpdate: Partial<Split> = {}
       switch (splitType) {
         case 'amount':
           if (baseSplit.amount === undefined || baseSplit.amount === null) {
-            structureUpdate.amount = participantCount > 0 ? roundToCent(parsedAmount / participantCount) : 0
+            const calculatedAmount = participantCount > 0 ? roundToCent(parsedAmount / participantCount) : 0
+            structureUpdate.amount = calculatedAmount
+            structureUpdate.amountInput = calculatedAmount.toString()
           }
           break
         case 'shares':
           if (baseSplit.shares === undefined || baseSplit.shares === null) {
             structureUpdate.shares = 1
+            structureUpdate.sharesInput = '1'
           }
           break
         case 'even':
@@ -196,64 +210,140 @@ export default function AddExpenseForm({
     setPayers(newPayers)
   }
 
-  const updateSplit = (index: number, field: 'amount' | 'shares', value: string) => {
+  const updateSplit = (
+    index: number,
+    field: 'amount' | 'shares' | 'amountInput' | 'sharesInput',
+    value: string
+  ) => {
     const newSplits = [...splits]
-    newSplits[index] = {
-      ...newSplits[index],
-      [field]: parseFloat(value) || 0,
-    }
 
-    setSplits(newSplits)
+    // Handle input fields and update corresponding numeric value
+    if (field === 'amountInput' || field === 'sharesInput') {
+      const numericField = field === 'amountInput' ? 'amount' : 'shares'
 
-    if (field === 'shares') {
-      const totalShares = newSplits
-        .filter((s) => participants.includes(s.memberId))
-        .reduce((sum, s) => sum + (s.shares || 0), 0)
-
-      if (totalShares > 0) {
-        const totalAmountNum = parseFloat(amount) || 0
-
-        const updatedSplits = newSplits.map((split) => {
-          if (!participants.includes(split.memberId)) {
-            return split
-          }
-
-          return {
-            ...split,
-            owedAmount: roundToCent(totalAmountNum * ((split.shares || 0) / totalShares)),
-          }
-        })
-
-        const participantSplits = updatedSplits.filter((s) => participants.includes(s.memberId))
-        const totalCalculated = participantSplits.reduce((sum, s) => sum + s.owedAmount, 0)
-        const difference = roundToCent(totalAmountNum - totalCalculated)
-
-        if (Math.abs(difference) > 0.001 && participantSplits.length > 0) {
-          const lastParticipantId = participantSplits[participantSplits.length - 1].memberId
-          const lastIndex = updatedSplits.findIndex((s) => s.memberId === lastParticipantId)
-
-          if (lastIndex >= 0) {
-            updatedSplits[lastIndex].owedAmount = roundToCent(
-              updatedSplits[lastIndex].owedAmount + difference
-            )
-          }
-        }
-
-        setSplits(updatedSplits)
+      // Update the string input value
+      newSplits[index] = {
+        ...newSplits[index],
+        [field]: value,
       }
-    } else if (field === 'amount') {
-      const memberIndex = newSplits.findIndex((s, i) => i === index)
-      if (memberIndex >= 0) {
-        const updatedSplits = [...newSplits]
-        updatedSplits[memberIndex].owedAmount = updatedSplits[memberIndex].amount || 0
-        setSplits(updatedSplits)
+
+      // Only update the numeric value if it's valid and not empty
+      const numericValue = Number(value)
+      if (value !== '' && !isNaN(numericValue)) {
+        newSplits[index][numericField] = numericValue
+      }
+      // If invalid or empty, the previous numeric value is retained
+
+      // Add calculation code back
+      if (numericField === 'shares') {
+        // Shares calculation logic
+        const totalShares = newSplits
+          .filter((s) => participants.includes(s.memberId))
+          .reduce((sum, s) => sum + (s.shares || 0), 0)
+
+        if (totalShares > 0) {
+          const totalAmountNum = parseFloat(amount) || 0
+
+          const updatedSplits = newSplits.map((split) => {
+            if (!participants.includes(split.memberId)) {
+              return split
+            }
+
+            return {
+              ...split,
+              owedAmount: roundToCent(totalAmountNum * ((split.shares || 0) / totalShares)),
+            }
+          })
+
+          const participantSplits = updatedSplits.filter((s) => participants.includes(s.memberId))
+          const totalCalculated = participantSplits.reduce((sum, s) => sum + s.owedAmount, 0)
+          const difference = roundToCent(totalAmountNum - totalCalculated)
+
+          if (Math.abs(difference) > 0.001 && participantSplits.length > 0) {
+            const lastParticipantId = participantSplits[participantSplits.length - 1].memberId
+            const lastIndex = updatedSplits.findIndex((s) => s.memberId === lastParticipantId)
+
+            if (lastIndex >= 0) {
+              updatedSplits[lastIndex] = {
+                ...updatedSplits[lastIndex],
+                owedAmount: roundToCent(updatedSplits[lastIndex].owedAmount + difference),
+              }
+            }
+          }
+
+          setSplits(updatedSplits)
+        }
+      } else if (numericField === 'amount') {
+        // Amount calculation logic
+        const amountValue = newSplits[index].amount || 0
+        newSplits[index] = {
+          ...newSplits[index],
+          owedAmount: amountValue,
+        }
+        setSplits(newSplits)
+      }
+    } else {
+      // Direct numeric field updates (original function behavior)
+      newSplits[index] = {
+        ...newSplits[index],
+        [field]: value === '' ? 0 : parseFloat(value) || 0,
+      }
+
+      if (field === 'shares') {
+        // Shares calculation logic (same as above)
+        const totalShares = newSplits
+          .filter((s) => participants.includes(s.memberId))
+          .reduce((sum, s) => sum + (s.shares || 0), 0)
+
+        if (totalShares > 0) {
+          const totalAmountNum = parseFloat(amount) || 0
+
+          const updatedSplits = newSplits.map((split) => {
+            if (!participants.includes(split.memberId)) {
+              return split
+            }
+
+            return {
+              ...split,
+              owedAmount: roundToCent(totalAmountNum * ((split.shares || 0) / totalShares)),
+            }
+          })
+
+          const participantSplits = updatedSplits.filter((s) => participants.includes(s.memberId))
+          const totalCalculated = participantSplits.reduce((sum, s) => sum + s.owedAmount, 0)
+          const difference = roundToCent(totalAmountNum - totalCalculated)
+
+          if (Math.abs(difference) > 0.001 && participantSplits.length > 0) {
+            const lastParticipantId = participantSplits[participantSplits.length - 1].memberId
+            const lastIndex = updatedSplits.findIndex((s) => s.memberId === lastParticipantId)
+
+            if (lastIndex >= 0) {
+              updatedSplits[lastIndex] = {
+                ...updatedSplits[lastIndex],
+                owedAmount: roundToCent(updatedSplits[lastIndex].owedAmount + difference),
+              }
+            }
+          }
+
+          setSplits(updatedSplits)
+        }
+      } else if (field === 'amount') {
+        // Amount calculation logic (same as above)
+        const memberIndex = newSplits.findIndex((s, i) => i === index)
+        if (memberIndex >= 0) {
+          newSplits[memberIndex] = {
+            ...newSplits[memberIndex],
+            owedAmount: newSplits[memberIndex].amount || 0,
+          }
+          setSplits(newSplits)
+        }
       }
     }
   }
 
   const recalculateOwedAmounts = (totalAmount: number) => {
     if (participants.length === 0 || totalAmount <= 0) {
-      setSplits((prevSplits) => prevSplits.map((split) => ({ ...split, owedAmount: 0 })))
+      // Don't reset to 0, just retain existing values
       return
     }
 
@@ -291,8 +381,8 @@ export default function AddExpenseForm({
       return false
     }
 
-    const parsedAmount = parseFloat(amount)
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    const parsedAmount = Number(amount)
+    if (amount === '' || isNaN(parsedAmount) || parsedAmount <= 0) {
       setError('Valid amount is required')
       return false
     }
@@ -378,18 +468,20 @@ export default function AddExpenseForm({
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
 
   const handleAmountChange = (newValue: string) => {
-    let value = newValue
-    if (value === '.') value = '0.'
-    if (/^\d*\.?\d*$/.test(value)) {
-      const parsedValue = parseFloat(value) || 0
-      setAmount(value)
+    // Always update the string input value
+    setAmount(newValue)
 
+    // Only process valid numbers and non-empty values
+    if (newValue !== '' && !isNaN(Number(newValue))) {
+      const parsedValue = Number(newValue)
+
+      // Update payer amount
       if (payers.length === 1) {
         setPayers([{ ...payers[0], amount: parsedValue }])
       }
 
+      // Calculate splits
       const evenSplits = calculateEvenSplits(parsedValue)
-
       const sharesSplits = calculateSharesSplits(parsedValue)
 
       const updatedSplits = splits.map((split) => {
@@ -403,11 +495,26 @@ export default function AddExpenseForm({
         } else if (splitType === 'shares') {
           updatedSplit = sharesSplits.find((s) => s.memberId === split.memberId) || split
         } else {
-          updatedSplit = { ...split }
+          // For amount splits, sync the amountInput with the changing total
+          if (split.amount !== undefined) {
+            const amountInput = split.amount.toString()
+            updatedSplit = {
+              ...split,
+              amountInput,
+            }
+          } else {
+            updatedSplit = { ...split }
+          }
+        }
+
+        // When splitType is changed, initialize inputs
+        if ((splitType === 'even' || splitType === 'shares') && updatedSplit.shares !== undefined) {
+          updatedSplit.sharesInput = updatedSplit.shares.toString()
         }
 
         return {
           ...split,
+          ...updatedSplit,
           owedAmount: updatedSplit.owedAmount,
         }
       })
@@ -695,30 +802,98 @@ export default function AddExpenseForm({
                     <span className="w-1/4">{getMemberName(split.memberId)}</span>
 
                     {splitType === 'amount' && (
-                      <input
-                        type="number"
-                        className="input flex-grow"
-                        value={
-                          typeof split.amount === 'number' ? split.amount.toFixed(2) : (split.amount ?? '')
-                        }
-                        onChange={(e) => updateSplit(originalIndex, 'amount', e.target.value)}
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                      />
+                      <div className="relative flex-grow">
+                        <input
+                          type="number"
+                          className={`input w-full ${
+                            (split.amountInput && !isValidNumberFormat(split.amountInput)) ||
+                            (isValidNumberFormat(split.amountInput) &&
+                              Number(split.amountInput) !== split.amount)
+                              ? 'border-red-500 bg-red-50 dark:border-red-400 dark:bg-red-900/20'
+                              : ''
+                          }`}
+                          value={split.amountInput || ''}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            updateSplit(originalIndex, 'amountInput', e.target.value)
+                          }
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                          title={
+                            !isValidNumberFormat(split.amountInput)
+                              ? 'Invalid number format - using previous valid value'
+                              : Number(split.amountInput) !== split.amount
+                                ? 'Number mismatch - using different value for calculations'
+                                : ''
+                          }
+                        />
+                        {((split.amountInput && !isValidNumberFormat(split.amountInput)) ||
+                          (isValidNumberFormat(split.amountInput) &&
+                            Number(split.amountInput) !== split.amount)) && (
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
+                            <span
+                              className="cursor-help text-xs"
+                              title={
+                                !isValidNumberFormat(split.amountInput)
+                                  ? 'Invalid number format - using previous valid value'
+                                  : Number(split.amountInput) !== split.amount
+                                    ? 'Number mismatch - using different value for calculations'
+                                    : ''
+                              }
+                            >
+                              !
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     )}
 
                     {splitType === 'shares' && (
                       <div className="flex flex-grow items-center">
-                        <input
-                          type="number"
-                          className="input flex-grow"
-                          value={split.shares ?? ''}
-                          onChange={(e) => updateSplit(originalIndex, 'shares', e.target.value)}
-                          placeholder="1"
-                          step="1"
-                          min="0"
-                        />
+                        <div className="relative flex-grow">
+                          <input
+                            type="number"
+                            className={`input flex-grow ${
+                              (split.sharesInput && !isValidNumberFormat(split.sharesInput)) ||
+                              (isValidNumberFormat(split.sharesInput) &&
+                                Number(split.sharesInput) !== split.shares)
+                                ? 'border-red-500 bg-red-50 dark:border-red-400 dark:bg-red-900/20'
+                                : ''
+                            }`}
+                            value={split.sharesInput || ''}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                              updateSplit(originalIndex, 'sharesInput', e.target.value)
+                            }
+                            placeholder="1"
+                            step="1"
+                            min="0"
+                            title={
+                              !isValidNumberFormat(split.sharesInput)
+                                ? 'Invalid number format - using previous valid value'
+                                : Number(split.sharesInput) !== split.shares
+                                  ? 'Number mismatch - using different value for calculations'
+                                  : ''
+                            }
+                          />
+                          {((split.sharesInput && !isValidNumberFormat(split.sharesInput)) ||
+                            (isValidNumberFormat(split.sharesInput) &&
+                              Number(split.sharesInput) !== split.shares)) && (
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
+                              <span
+                                className="cursor-help text-xs"
+                                title={
+                                  !isValidNumberFormat(split.sharesInput)
+                                    ? 'Invalid number format - using previous valid value'
+                                    : Number(split.sharesInput) !== split.shares
+                                      ? 'Number mismatch - using different value for calculations'
+                                      : ''
+                                }
+                              >
+                                !
+                              </span>
+                            </div>
+                          )}
+                        </div>
                         {(() => {
                           const totalShares = splits
                             .filter((s) => participants.includes(s.memberId))
