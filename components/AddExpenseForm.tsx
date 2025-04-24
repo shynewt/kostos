@@ -139,8 +139,6 @@ export default function AddExpenseForm({
 
   const initializeSplitsStructure = () => {
     const participantMembers = members.filter((member) => participants.includes(member.id))
-    const participantCount = participantMembers.length
-    const parsedAmount = parseFloat(amount) || 0
 
     const updatedSplits = members.map((member) => {
       const existingSplit = splits.find((s) => s.memberId === member.id)
@@ -158,27 +156,8 @@ export default function AddExpenseForm({
         sharesInput: undefined,
       }
 
-      let structureUpdate: Partial<Split> = {}
-      switch (splitType) {
-        case 'amount':
-          if (baseSplit.amount === undefined || baseSplit.amount === null) {
-            const calculatedAmount = participantCount > 0 ? roundToCent(parsedAmount / participantCount) : 0
-            structureUpdate.amount = calculatedAmount
-            structureUpdate.amountInput = calculatedAmount.toString()
-          }
-          break
-        case 'shares':
-          if (baseSplit.shares === undefined || baseSplit.shares === null) {
-            structureUpdate.shares = 1
-            structureUpdate.sharesInput = '1'
-          }
-          break
-        case 'even':
-        default:
-          break
-      }
-      const finalSplit: Split = { ...baseSplit, ...structureUpdate }
-      return finalSplit
+      // Don't initialize with calculated values, leave fields empty
+      return baseSplit
     })
 
     setSplits(updatedSplits)
@@ -242,7 +221,7 @@ export default function AddExpenseForm({
           .reduce((sum, s) => sum + (s.shares || 0), 0)
 
         if (totalShares > 0) {
-          const totalAmountNum = parseFloat(amount) || 0
+          const totalAmountNum = newSplits[index].amount || 0
 
           const updatedSplits = newSplits.map((split) => {
             if (!participants.includes(split.memberId)) {
@@ -296,7 +275,7 @@ export default function AddExpenseForm({
           .reduce((sum, s) => sum + (s.shares || 0), 0)
 
         if (totalShares > 0) {
-          const totalAmountNum = parseFloat(amount) || 0
+          const totalAmountNum = newSplits[index].amount || 0
 
           const updatedSplits = newSplits.map((split) => {
             if (!participants.includes(split.memberId)) {
@@ -480,46 +459,7 @@ export default function AddExpenseForm({
         setPayers([{ ...payers[0], amount: parsedValue }])
       }
 
-      // Calculate splits
-      const evenSplits = calculateEvenSplits(parsedValue)
-      const sharesSplits = calculateSharesSplits(parsedValue)
-
-      const updatedSplits = splits.map((split) => {
-        if (!participants.includes(split.memberId)) {
-          return split
-        }
-
-        let updatedSplit
-        if (splitType === 'even') {
-          updatedSplit = evenSplits.find((s) => s.memberId === split.memberId) || split
-        } else if (splitType === 'shares') {
-          updatedSplit = sharesSplits.find((s) => s.memberId === split.memberId) || split
-        } else {
-          // For amount splits, sync the amountInput with the changing total
-          if (split.amount !== undefined) {
-            const amountInput = split.amount.toString()
-            updatedSplit = {
-              ...split,
-              amountInput,
-            }
-          } else {
-            updatedSplit = { ...split }
-          }
-        }
-
-        // When splitType is changed, initialize inputs
-        if ((splitType === 'even' || splitType === 'shares') && updatedSplit.shares !== undefined) {
-          updatedSplit.sharesInput = updatedSplit.shares.toString()
-        }
-
-        return {
-          ...split,
-          ...updatedSplit,
-          owedAmount: updatedSplit.owedAmount,
-        }
-      })
-
-      setSplits(updatedSplits)
+      // Don't automatically calculate splits, keep existing values or empty
     }
   }
 
@@ -580,6 +520,118 @@ export default function AddExpenseForm({
     }
 
     return newSplits
+  }
+
+  const autoFillSplits = () => {
+    if (!amount || parseFloat(amount) <= 0 || participants.length === 0) return
+
+    const totalAmountNum = parseFloat(amount)
+    // Consider all participants for distribution, regardless if they already have values
+    const participantIds = participants
+
+    if (participantIds.length === 0) return
+
+    // Distribute amount evenly among all participants
+    const amountPerPerson = roundToCent(totalAmountNum / participantIds.length)
+
+    const newSplits = [...splits]
+
+    participantIds.forEach((pid, idx) => {
+      const splitIndex = newSplits.findIndex((s) => s.memberId === pid)
+      if (splitIndex >= 0) {
+        // Last person gets any remaining cents to ensure total is exact
+        const isLast = idx === participantIds.length - 1
+        const adjustedAmount = isLast
+          ? roundToCent(totalAmountNum - amountPerPerson * (participantIds.length - 1))
+          : amountPerPerson
+
+        newSplits[splitIndex] = {
+          ...newSplits[splitIndex],
+          amount: adjustedAmount,
+          amountInput: adjustedAmount.toString(),
+          owedAmount: adjustedAmount,
+        }
+      }
+    })
+
+    setSplits(newSplits)
+  }
+
+  const autoFillShares = () => {
+    if (!amount || parseFloat(amount) <= 0 || participants.length === 0) return
+
+    // Always assign 1 share to all participants, regardless if they already have values
+    const newSplits = [...splits]
+
+    participants.forEach((pid) => {
+      const splitIndex = newSplits.findIndex((s) => s.memberId === pid)
+      if (splitIndex >= 0) {
+        newSplits[splitIndex] = {
+          ...newSplits[splitIndex],
+          shares: 1,
+          sharesInput: '1',
+        }
+      }
+    })
+
+    // Recalculate owed amounts based on shares
+    const totalShares = newSplits
+      .filter((s) => participants.includes(s.memberId))
+      .reduce((sum, s) => sum + (s.shares || 0), 0)
+
+    if (totalShares > 0) {
+      const totalAmountNum = parseFloat(amount)
+
+      const updatedSplits = newSplits.map((split) => {
+        if (!participants.includes(split.memberId)) {
+          return split
+        }
+
+        return {
+          ...split,
+          owedAmount: roundToCent(totalAmountNum * ((split.shares || 0) / totalShares)),
+        }
+      })
+
+      // Fix any rounding errors
+      const participantSplits = updatedSplits.filter((s) => participants.includes(s.memberId))
+      const totalCalculated = participantSplits.reduce((sum, s) => sum + s.owedAmount, 0)
+      const difference = roundToCent(totalAmountNum - totalCalculated)
+
+      if (Math.abs(difference) > 0.001 && participantSplits.length > 0) {
+        const lastParticipantId = participantSplits[participantSplits.length - 1].memberId
+        const lastIndex = updatedSplits.findIndex((s) => s.memberId === lastParticipantId)
+
+        if (lastIndex >= 0) {
+          updatedSplits[lastIndex] = {
+            ...updatedSplits[lastIndex],
+            owedAmount: roundToCent(updatedSplits[lastIndex].owedAmount + difference),
+          }
+        }
+      }
+
+      setSplits(updatedSplits)
+    }
+  }
+
+  const fillRemainingPayerAmount = (index: number) => {
+    if (!amount || parseFloat(amount) <= 0) return
+
+    const totalAmountNum = parseFloat(amount)
+    const currentPayments = payers.reduce((sum, p, i) => (i !== index ? sum + (p.amount || 0) : sum), 0)
+    const remainingAmount = roundToCent(totalAmountNum - currentPayments)
+
+    // Always replace the amount regardless of current value
+    // Ensure value is not negative
+    const newAmount = Math.max(0, remainingAmount)
+
+    const newPayers = [...payers]
+    newPayers[index] = {
+      ...newPayers[index],
+      amount: newAmount,
+    }
+
+    setPayers(newPayers)
   }
 
   return (
@@ -722,15 +774,25 @@ export default function AddExpenseForm({
                 </select>
 
                 {(payers.length > 1 || index > 0) && (
-                  <input
-                    type="number"
-                    className="input w-24"
-                    value={payer.amount || ''}
-                    onChange={(e) => updatePayer(index, 'amount', e.target.value)}
-                    placeholder="0.00"
-                    step="0.01"
-                    min="0"
-                  />
+                  <div className="relative w-28">
+                    <input
+                      type="number"
+                      className="input w-full pr-9"
+                      value={payer.amount || ''}
+                      onChange={(e) => updatePayer(index, 'amount', e.target.value)}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                    />
+                    <button
+                      type="button"
+                      className="absolute bottom-0 right-0 top-0 flex items-center justify-center px-3 text-blue-600 hover:bg-black/5 dark:text-blue-400 dark:hover:bg-white/5"
+                      onClick={() => fillRemainingPayerAmount(index)}
+                      title="Fill with remaining amount"
+                    >
+                      ↓
+                    </button>
+                  </div>
                 )}
 
                 <button
@@ -788,7 +850,29 @@ export default function AddExpenseForm({
         </div>
 
         <div className="rounded border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-          <h4 className="mb-2 text-sm font-medium">Split Details</h4>
+          <div className="mb-2 flex items-center justify-between">
+            <h4 className="text-sm font-medium">Split Details</h4>
+            {splitType === 'amount' && (
+              <button
+                type="button"
+                onClick={autoFillSplits}
+                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                title="Auto-fill all inputs with even distribution"
+              >
+                Auto-fill Even
+              </button>
+            )}
+            {splitType === 'shares' && (
+              <button
+                type="button"
+                onClick={autoFillShares}
+                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                title="Set all to 1 share"
+              >
+                Auto-fill 1 Share Each
+              </button>
+            )}
+          </div>
 
           <div className="space-y-3">
             {splits
@@ -805,7 +889,7 @@ export default function AddExpenseForm({
                       <div className="relative flex-grow">
                         <input
                           type="number"
-                          className={`input w-full ${
+                          className={`input w-full pr-9 ${
                             (split.amountInput && !isValidNumberFormat(split.amountInput)) ||
                             (isValidNumberFormat(split.amountInput) &&
                               Number(split.amountInput) !== split.amount)
@@ -827,10 +911,43 @@ export default function AddExpenseForm({
                                 : ''
                           }
                         />
+                        <button
+                          type="button"
+                          className="absolute bottom-0 right-0 top-0 flex items-center justify-center px-3 text-blue-600 hover:bg-black/5 dark:text-blue-400 dark:hover:bg-white/5"
+                          onClick={() => {
+                            if (!amount || parseFloat(amount) <= 0) return
+
+                            const totalAmountNum = parseFloat(amount)
+                            const otherSplits = splits
+                              .filter(
+                                (s) => participants.includes(s.memberId) && s.memberId !== split.memberId
+                              )
+                              .reduce((sum, s) => sum + (s.amount || 0), 0)
+
+                            const remainingAmount = roundToCent(totalAmountNum - otherSplits)
+
+                            // Always replace the value regardless of current value
+                            // Ensure value is not negative
+                            const newAmount = Math.max(0, remainingAmount)
+
+                            const newSplits = [...splits]
+                            newSplits[originalIndex] = {
+                              ...newSplits[originalIndex],
+                              amount: newAmount,
+                              amountInput: newAmount.toString(),
+                              owedAmount: newAmount,
+                            }
+
+                            setSplits(newSplits)
+                          }}
+                          title="Fill with remaining amount"
+                        >
+                          ↓
+                        </button>
                         {((split.amountInput && !isValidNumberFormat(split.amountInput)) ||
                           (isValidNumberFormat(split.amountInput) &&
                             Number(split.amountInput) !== split.amount)) && (
-                          <div className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
+                          <div className="absolute right-10 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
                             <span
                               className="cursor-help text-xs"
                               title={
@@ -853,7 +970,7 @@ export default function AddExpenseForm({
                         <div className="relative flex-grow">
                           <input
                             type="number"
-                            className={`input flex-grow ${
+                            className={`input flex-grow pr-9 ${
                               (split.sharesInput && !isValidNumberFormat(split.sharesInput)) ||
                               (isValidNumberFormat(split.sharesInput) &&
                                 Number(split.sharesInput) !== split.shares)
@@ -875,10 +992,41 @@ export default function AddExpenseForm({
                                   : ''
                             }
                           />
+                          <button
+                            type="button"
+                            className="absolute bottom-0 right-0 top-0 flex items-center justify-center px-3 text-blue-600 hover:bg-black/5 dark:text-blue-400 dark:hover:bg-white/5"
+                            onClick={() => {
+                              // Always set to 1 share regardless of current value
+                              const newSplits = [...splits]
+                              newSplits[originalIndex] = {
+                                ...newSplits[originalIndex],
+                                shares: 1,
+                                sharesInput: '1',
+                              }
+
+                              // Recalculate owed amounts based on shares
+                              const totalShares = newSplits
+                                .filter((s) => participants.includes(s.memberId))
+                                .reduce((sum, s) => sum + (s.shares || 0), 0)
+
+                              if (totalShares > 0 && amount) {
+                                const totalAmountNum = parseFloat(amount)
+                                newSplits[originalIndex].owedAmount = roundToCent(
+                                  totalAmountNum * ((newSplits[originalIndex].shares || 0) / totalShares)
+                                )
+
+                                setSplits(newSplits)
+                                recalculateOwedAmounts(totalAmountNum)
+                              }
+                            }}
+                            title="Set to 1 share"
+                          >
+                            ↓
+                          </button>
                           {((split.sharesInput && !isValidNumberFormat(split.sharesInput)) ||
                             (isValidNumberFormat(split.sharesInput) &&
                               Number(split.sharesInput) !== split.shares)) && (
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
+                            <div className="absolute right-10 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
                               <span
                                 className="cursor-help text-xs"
                                 title={
