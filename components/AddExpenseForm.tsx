@@ -265,9 +265,9 @@ export default function AddExpenseForm({
           .filter((s) => participants.includes(s.memberId))
           .reduce((sum, s) => sum + (s.shares || 0), 0)
 
-        if (totalShares > 0) {
-          const totalAmountNum = newSplits[index].amount || 0
+        const totalAmountNum = parseFloat(amount) || 0
 
+        if (totalShares > 0) {
           const updatedSplits = newSplits.map((split) => {
             if (!participants.includes(split.memberId)) {
               return split
@@ -296,6 +296,42 @@ export default function AddExpenseForm({
           }
 
           setSplits(updatedSplits)
+        } else {
+          // When all shares are 0, distribute evenly like in "even" split type
+          const participantCount = participants.length
+          if (participantCount > 0 && totalAmountNum > 0) {
+            const evenAmount = roundToCent(totalAmountNum / participantCount)
+
+            const evenSplits = newSplits.map((split) => {
+              if (!participants.includes(split.memberId)) {
+                return split
+              }
+              return {
+                ...split,
+                owedAmount: evenAmount,
+              }
+            })
+
+            // Fix rounding errors
+            const totalEvenAmount = evenAmount * participantCount
+            const difference = roundToCent(totalAmountNum - totalEvenAmount)
+
+            if (Math.abs(difference) > 0.001 && participants.length > 0) {
+              const lastParticipantId = participants[participants.length - 1]
+              const lastIndex = evenSplits.findIndex((s) => s.memberId === lastParticipantId)
+
+              if (lastIndex >= 0) {
+                evenSplits[lastIndex] = {
+                  ...evenSplits[lastIndex],
+                  owedAmount: roundToCent(evenSplits[lastIndex].owedAmount + difference),
+                }
+              }
+            }
+
+            setSplits(evenSplits)
+          } else {
+            setSplits(newSplits)
+          }
         }
       } else if (numericField === 'amount') {
         // Amount calculation logic
@@ -319,9 +355,9 @@ export default function AddExpenseForm({
           .filter((s) => participants.includes(s.memberId))
           .reduce((sum, s) => sum + (s.shares || 0), 0)
 
-        if (totalShares > 0) {
-          const totalAmountNum = newSplits[index].amount || 0
+        const totalAmountNum = parseFloat(amount) || 0
 
+        if (totalShares > 0) {
           const updatedSplits = newSplits.map((split) => {
             if (!participants.includes(split.memberId)) {
               return split
@@ -350,6 +386,42 @@ export default function AddExpenseForm({
           }
 
           setSplits(updatedSplits)
+        } else {
+          // When all shares are 0, distribute evenly like in "even" split type
+          const participantCount = participants.length
+          if (participantCount > 0 && totalAmountNum > 0) {
+            const evenAmount = roundToCent(totalAmountNum / participantCount)
+
+            const evenSplits = newSplits.map((split) => {
+              if (!participants.includes(split.memberId)) {
+                return split
+              }
+              return {
+                ...split,
+                owedAmount: evenAmount,
+              }
+            })
+
+            // Fix rounding errors
+            const totalEvenAmount = evenAmount * participantCount
+            const difference = roundToCent(totalAmountNum - totalEvenAmount)
+
+            if (Math.abs(difference) > 0.001 && participants.length > 0) {
+              const lastParticipantId = participants[participants.length - 1]
+              const lastIndex = evenSplits.findIndex((s) => s.memberId === lastParticipantId)
+
+              if (lastIndex >= 0) {
+                evenSplits[lastIndex] = {
+                  ...evenSplits[lastIndex],
+                  owedAmount: roundToCent(evenSplits[lastIndex].owedAmount + difference),
+                }
+              }
+            }
+
+            setSplits(evenSplits)
+          } else {
+            setSplits(newSplits)
+          }
         }
       } else if (field === 'amount') {
         // Amount calculation logic (same as above)
@@ -655,63 +727,6 @@ export default function AddExpenseForm({
     setSplits(newSplits)
   }
 
-  const autoFillShares = () => {
-    if (!amount || parseFloat(amount) <= 0 || participants.length === 0) return
-
-    // Always assign 1 share to all participants, regardless if they already have values
-    const newSplits = [...splits]
-
-    participants.forEach((pid) => {
-      const splitIndex = newSplits.findIndex((s) => s.memberId === pid)
-      if (splitIndex >= 0) {
-        newSplits[splitIndex] = {
-          ...newSplits[splitIndex],
-          shares: 1,
-          sharesInput: '1',
-        }
-      }
-    })
-
-    // Recalculate owed amounts based on shares
-    const totalShares = newSplits
-      .filter((s) => participants.includes(s.memberId))
-      .reduce((sum, s) => sum + (s.shares || 0), 0)
-
-    if (totalShares > 0) {
-      const totalAmountNum = parseFloat(amount)
-
-      const updatedSplits = newSplits.map((split) => {
-        if (!participants.includes(split.memberId)) {
-          return split
-        }
-
-        return {
-          ...split,
-          owedAmount: roundToCent(totalAmountNum * ((split.shares || 0) / totalShares)),
-        }
-      })
-
-      // Fix any rounding errors
-      const participantSplits = updatedSplits.filter((s) => participants.includes(s.memberId))
-      const totalCalculated = participantSplits.reduce((sum, s) => sum + s.owedAmount, 0)
-      const difference = roundToCent(totalAmountNum - totalCalculated)
-
-      if (Math.abs(difference) > 0.001 && participantSplits.length > 0) {
-        const lastParticipantId = participantSplits[participantSplits.length - 1].memberId
-        const lastIndex = updatedSplits.findIndex((s) => s.memberId === lastParticipantId)
-
-        if (lastIndex >= 0) {
-          updatedSplits[lastIndex] = {
-            ...updatedSplits[lastIndex],
-            owedAmount: roundToCent(updatedSplits[lastIndex].owedAmount + difference),
-          }
-        }
-      }
-
-      setSplits(updatedSplits)
-    }
-  }
-
   const fillRemainingPayerAmount = (index: number) => {
     if (!amount || parseFloat(amount) <= 0) return
 
@@ -976,16 +991,6 @@ export default function AddExpenseForm({
                   : 'Auto-fill all'}
               </button>
             )}
-            {splitType === 'shares' && (
-              <button
-                type="button"
-                onClick={autoFillShares}
-                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                title="Set all to 1 share"
-              >
-                Auto-fill 1 Share Each
-              </button>
-            )}
           </div>
 
           <div className="space-y-3">
@@ -1092,37 +1097,6 @@ export default function AddExpenseForm({
                                 : ''
                             }
                           />
-                          <button
-                            type="button"
-                            className="absolute bottom-0 right-0 top-0 flex items-center justify-center px-3 text-blue-600 hover:bg-black/5 dark:text-blue-400 dark:hover:bg-white/5"
-                            onClick={() => {
-                              // Always set to 1 share regardless of current value
-                              const newSplits = [...splits]
-                              newSplits[originalIndex] = {
-                                ...newSplits[originalIndex],
-                                shares: 1,
-                                sharesInput: '1',
-                              }
-
-                              // Recalculate owed amounts based on shares
-                              const totalShares = newSplits
-                                .filter((s) => participants.includes(s.memberId))
-                                .reduce((sum, s) => sum + (s.shares || 0), 0)
-
-                              if (totalShares > 0 && amount) {
-                                const totalAmountNum = parseFloat(amount)
-                                newSplits[originalIndex].owedAmount = roundToCent(
-                                  totalAmountNum * ((newSplits[originalIndex].shares || 0) / totalShares)
-                                )
-
-                                setSplits(newSplits)
-                                recalculateOwedAmounts(totalAmountNum)
-                              }
-                            }}
-                            title="Set to 1 share"
-                          >
-                            ↓
-                          </button>
                           {!isValidNumberFormat(split.sharesInput) && (
                             <div className="absolute right-10 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
                               <span
@@ -1139,18 +1113,15 @@ export default function AddExpenseForm({
                             .filter((s) => participants.includes(s.memberId))
                             .reduce((sum, s) => sum + (s.shares || 0), 0)
 
-                          if (totalShares > 0 && split.shares) {
-                            const percentage = (split.shares / totalShares) * 100
-                            const displayPercentage = Math.round(percentage)
-                            const needsApprox = Math.abs(percentage - displayPercentage) > 0.01
-                            return (
-                              <span className="ml-2 whitespace-nowrap text-gray-500 dark:text-gray-400">
-                                {needsApprox ? '~' : ''}
-                                {displayPercentage}%
-                              </span>
-                            )
-                          }
-                          return null
+                          const percentage = totalShares === 0 ? 0 : ((split.shares ?? 0) / totalShares) * 100
+                          const displayPercentage = Math.round(percentage)
+                          const needsApprox = Math.abs(percentage - displayPercentage) > 0.01
+                          return (
+                            <span className="ml-2 whitespace-nowrap text-gray-500 dark:text-gray-400">
+                              {needsApprox ? '~' : ''}
+                              {displayPercentage.toLocaleString()}%
+                            </span>
+                          )
                         })()}
                       </div>
                     )}
