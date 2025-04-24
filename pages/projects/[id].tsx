@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/router'
 import Layout from '../../components/Layout'
-import AddExpenseForm from '../../components/AddExpenseForm'
+import AddOrEditExpenseForm from '../../components/AddOrEditExpenseForm'
 import CategoryManager from '../../components/CategoryManager'
 import PaymentMethodManager from '../../components/PaymentMethodManager'
 import { removeJoinedProject, addJoinedProject, getJoinedProjects } from '../../utils/localStorage'
 import { formatCurrency } from '../../utils/currency'
-import EditExpenseForm from '../../components/EditExpenseForm'
 import ExpenseItem from '../../components/ui/ExpenseItem'
 
 // Default project emojis for quick selection
@@ -1502,7 +1501,7 @@ export default function ProjectDetail() {
                   </button>
                 </div>
 
-                <AddExpenseForm
+                <AddOrEditExpenseForm
                   projectId={projectId as string}
                   members={project.members}
                   categories={project.categories || []}
@@ -1572,7 +1571,7 @@ export default function ProjectDetail() {
                   </button>
                 </div>
 
-                <EditExpenseForm
+                <AddOrEditExpenseForm
                   projectId={projectId as string}
                   members={project.members}
                   categories={project.categories || []}

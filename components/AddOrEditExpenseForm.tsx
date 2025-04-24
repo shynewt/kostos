@@ -37,7 +37,7 @@ interface PaymentMethod {
   icon: string
 }
 
-interface AddExpenseFormProps {
+interface AddOrEditExpenseFormProps {
   projectId: string
   members: Member[]
   categories: Category[]
@@ -60,7 +60,7 @@ interface AddExpenseFormProps {
   isEditing?: boolean
 }
 
-export default function AddExpenseForm({
+export default function AddOrEditExpenseForm({
   projectId,
   members,
   categories,
@@ -71,7 +71,7 @@ export default function AddExpenseForm({
   currency,
   expense,
   isEditing = false,
-}: AddExpenseFormProps) {
+}: AddOrEditExpenseFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mathEvaluate, setMathEvaluate] = useState<((expr: string) => number) | null>(null)
@@ -182,8 +182,6 @@ export default function AddExpenseForm({
   }
 
   const initializeSplitsStructure = () => {
-    const participantMembers = members.filter((member) => participants.includes(member.id))
-
     const updatedSplits = members.map((member) => {
       const existingSplit = splits.find((s) => s.memberId === member.id)
 
@@ -191,7 +189,18 @@ export default function AddExpenseForm({
         return { ...(existingSplit || { memberId: member.id }), owedAmount: 0 }
       }
 
-      const baseSplit: Split = existingSplit || {
+      // For edit mode: preserve existing split data with all properties
+      if (isEditing && existingSplit) {
+        return {
+          ...existingSplit,
+          // Ensure these fields exist for editing
+          amountInput: existingSplit.amount?.toString() || '',
+          sharesInput: existingSplit.shares?.toString() || '',
+        } satisfies Split
+      }
+
+      // Default split for new expenses or non-existing splits in edit mode
+      const baseSplit: Split = {
         memberId: member.id,
         owedAmount: 0,
         amount: 0,
