@@ -5,8 +5,6 @@ const roundToCent = (value: number): number => {
   return Math.round(value * 100) / 100
 }
 
-const isValidNumberFormat = <T extends unknown>(value: T) => Number.isFinite(Number(value))
-
 interface Member {
   id: string
   name: string
@@ -76,6 +74,57 @@ export default function AddExpenseForm({
 }: AddExpenseFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mathEvaluate, setMathEvaluate] = useState<((expr: string) => number) | null>(null)
+
+  // Dynamically import mathjs on client-side only
+  useEffect(() => {
+    let isMounted = true
+    const loadMathjs = async () => {
+      try {
+        const mathjs = await import('mathjs')
+        if (isMounted) {
+          setMathEvaluate(() => mathjs.evaluate)
+        }
+      } catch (err) {
+        console.error('Failed to load mathjs:', err)
+      }
+    }
+
+    loadMathjs()
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  // Client-side evaluateExpression function that uses mathjs when available
+  const evaluateExpressionClient = (expression: string): number | null => {
+    if (!expression.trim()) return null
+
+    try {
+      // Replace commas with dots for decimal notation
+      const normalizedExpression = expression.replace(/,/g, '.')
+
+      // If mathjs is loaded, use it for complex expressions
+      if (mathEvaluate) {
+        const result = mathEvaluate(normalizedExpression)
+        if (typeof result === 'number') return result
+      }
+
+      // Fallback to simple parsing
+      const parsedNumber = Number(normalizedExpression)
+      if (Number.isFinite(parsedNumber)) return parsedNumber
+      return null
+    } catch (error) {
+      return null
+    }
+  }
+
+  // Move isValidNumberFormat inside component to use evaluateExpressionClient
+  const isValidNumberFormat = <T extends unknown>(value: T, acceptOperators = false) => {
+    if (Number.isFinite(Number(value))) return true
+    if (acceptOperators && typeof value === 'string' && evaluateExpressionClient(value) !== null) return true
+    return false
+  }
 
   const [description, setDescription] = useState(expense?.description || '')
   const [amount, setAmount] = useState(expense ? expense.amount.toString() : '')
@@ -189,7 +238,8 @@ export default function AddExpenseForm({
     field: 'amount' | 'shares' | 'amountInput' | 'sharesInput',
     rawValue: string
   ) => {
-    const value = rawValue.replace(/[^0-9.,]/g, '')
+    const value =
+      field === 'amountInput' ? rawValue.replace(/[^0-9.,+\-*/() ]/g, '') : rawValue.replace(/[^0-9.,]/g, '')
 
     const newSplits = [...splits]
 
@@ -203,11 +253,10 @@ export default function AddExpenseForm({
         [field]: value,
       }
 
-      const numericValue = Number(value)
-      if (Number.isFinite(numericValue)) {
-        newSplits[index][numericField] = numericValue
+      const evaluatedValue = field === 'amountInput' ? evaluateExpressionClient(value || '0') : Number(value)
+      if (evaluatedValue !== null && Number.isFinite(evaluatedValue)) {
+        newSplits[index][numericField] = roundToCent(evaluatedValue)
       }
-      // Invalid numbers keep the previous value
 
       // Add calculation code back
       if (numericField === 'shares') {
@@ -904,22 +953,27 @@ export default function AddExpenseForm({
           <div className="mb-2 flex items-center justify-between">
             <h4 className="text-sm font-medium">Split Details</h4>
             {splitType === 'amount' && (
+              <span className="ml-2 min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+                (Math expressions allowed)
+              </span>
+            )}
+            {splitType === 'amount' && (
               <button
                 type="button"
                 onClick={autoFillSplits}
                 className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                 title="Auto-fill all inputs with even distribution"
               >
-                {participants.every((memberId) => {
+                {participants.some((memberId) => {
                   const split = splits.find((s) => s.memberId === memberId)
-                  return split?.amount !== undefined && split.amount > 0
-                }) ||
-                !participants.some((memberId) => {
+                  return split?.amount !== undefined && split.amount > 0 && Number.isFinite(split.amount)
+                }) &&
+                !participants.every((memberId) => {
                   const split = splits.find((s) => s.memberId === memberId)
-                  return split?.amount !== undefined && split.amount > 0
+                  return split?.amount !== undefined && split.amount > 0 && Number.isFinite(split.amount)
                 })
-                  ? 'Auto-fill all'
-                  : 'Auto-fill empty'}
+                  ? 'Auto-fill empty'
+                  : 'Auto-fill all'}
               </button>
             )}
             {splitType === 'shares' && (
@@ -951,9 +1005,7 @@ export default function AddExpenseForm({
                           type="text"
                           inputMode="decimal"
                           className={`input w-full pr-9 ${
-                            (split.amountInput && !isValidNumberFormat(split.amountInput)) ||
-                            (isValidNumberFormat(split.amountInput) &&
-                              Number(split.amountInput) !== split.amount)
+                            !isValidNumberFormat(split.amountInput, true)
                               ? 'border-red-500 bg-red-50 dark:border-red-400 dark:bg-red-900/20'
                               : ''
                           }`}
@@ -965,11 +1017,9 @@ export default function AddExpenseForm({
                           step="0.01"
                           min="0"
                           title={
-                            !isValidNumberFormat(split.amountInput)
+                            !isValidNumberFormat(split.amountInput, true)
                               ? 'Invalid number format - using previous valid value'
-                              : Number(split.amountInput) !== split.amount
-                                ? 'Number mismatch - using different value for calculations'
-                                : ''
+                              : ''
                           }
                         />
                         <button
@@ -1005,19 +1055,11 @@ export default function AddExpenseForm({
                         >
                           ↓
                         </button>
-                        {((split.amountInput && !isValidNumberFormat(split.amountInput)) ||
-                          (isValidNumberFormat(split.amountInput) &&
-                            Number(split.amountInput) !== split.amount)) && (
+                        {!isValidNumberFormat(split.amountInput, true) && (
                           <div className="absolute right-10 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
                             <span
                               className="cursor-help text-xs"
-                              title={
-                                !isValidNumberFormat(split.amountInput)
-                                  ? 'Invalid number format - using previous valid value'
-                                  : Number(split.amountInput) !== split.amount
-                                    ? 'Number mismatch - using different value for calculations'
-                                    : ''
-                              }
+                              title="Invalid number format - using previous valid value"
                             >
                               !
                             </span>
@@ -1033,9 +1075,7 @@ export default function AddExpenseForm({
                             type="text"
                             inputMode="decimal"
                             className={`input flex-grow pr-9 ${
-                              (split.sharesInput && !isValidNumberFormat(split.sharesInput)) ||
-                              (isValidNumberFormat(split.sharesInput) &&
-                                Number(split.sharesInput) !== split.shares)
+                              !isValidNumberFormat(split.sharesInput)
                                 ? 'border-red-500 bg-red-50 dark:border-red-400 dark:bg-red-900/20'
                                 : ''
                             }`}
@@ -1049,9 +1089,7 @@ export default function AddExpenseForm({
                             title={
                               !isValidNumberFormat(split.sharesInput)
                                 ? 'Invalid number format - using previous valid value'
-                                : Number(split.sharesInput) !== split.shares
-                                  ? 'Number mismatch - using different value for calculations'
-                                  : ''
+                                : ''
                             }
                           />
                           <button
@@ -1085,19 +1123,11 @@ export default function AddExpenseForm({
                           >
                             ↓
                           </button>
-                          {((split.sharesInput && !isValidNumberFormat(split.sharesInput)) ||
-                            (isValidNumberFormat(split.sharesInput) &&
-                              Number(split.sharesInput) !== split.shares)) && (
+                          {!isValidNumberFormat(split.sharesInput) && (
                             <div className="absolute right-10 top-1/2 -translate-y-1/2 text-red-500 dark:text-red-400">
                               <span
                                 className="cursor-help text-xs"
-                                title={
-                                  !isValidNumberFormat(split.sharesInput)
-                                    ? 'Invalid number format - using previous valid value'
-                                    : Number(split.sharesInput) !== split.shares
-                                      ? 'Number mismatch - using different value for calculations'
-                                      : ''
-                                }
+                                title="Invalid number format - using previous valid value"
                               >
                                 !
                               </span>
