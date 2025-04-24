@@ -5,12 +5,7 @@ const roundToCent = (value: number): number => {
   return Math.round(value * 100) / 100
 }
 
-const isValidNumberFormat = (value: string | undefined): boolean => {
-  // Handle undefined or empty values
-  if (value === undefined || value === '') return true
-  // Valid formats: simple integer, or number with proper decimal part
-  return /^-?\d+$/.test(value) || /^-?\d+\.\d+$/.test(value)
-}
+const isValidNumberFormat = <T extends unknown>(value: T) => Number.isFinite(Number(value))
 
 interface Member {
   id: string
@@ -150,13 +145,12 @@ export default function AddExpenseForm({
       const baseSplit: Split = existingSplit || {
         memberId: member.id,
         owedAmount: 0,
-        amount: undefined,
-        amountInput: undefined,
-        shares: undefined,
-        sharesInput: undefined,
+        amount: 0,
+        amountInput: '',
+        shares: 0,
+        sharesInput: '',
       }
 
-      // Don't initialize with calculated values, leave fields empty
       return baseSplit
     })
 
@@ -180,7 +174,8 @@ export default function AddExpenseForm({
     }
   }
 
-  const updatePayer = (index: number, field: 'memberId' | 'amount', value: string | number) => {
+  const updatePayer = (index: number, field: 'memberId' | 'amount', rawValue: string | number) => {
+    const value = typeof rawValue === 'string' ? rawValue.replace(/[^0-9.,]/g, '') : rawValue
     const newPayers = [...payers]
     newPayers[index] = {
       ...newPayers[index],
@@ -192,8 +187,10 @@ export default function AddExpenseForm({
   const updateSplit = (
     index: number,
     field: 'amount' | 'shares' | 'amountInput' | 'sharesInput',
-    value: string
+    rawValue: string
   ) => {
+    const value = rawValue.replace(/[^0-9.,]/g, '')
+
     const newSplits = [...splits]
 
     // Handle input fields and update corresponding numeric value
@@ -206,12 +203,11 @@ export default function AddExpenseForm({
         [field]: value,
       }
 
-      // Only update the numeric value if it's valid and not empty
       const numericValue = Number(value)
-      if (value !== '' && !isNaN(numericValue)) {
+      if (Number.isFinite(numericValue)) {
         newSplits[index][numericField] = numericValue
       }
-      // If invalid or empty, the previous numeric value is retained
+      // Invalid numbers keep the previous value
 
       // Add calculation code back
       if (numericField === 'shares') {
@@ -446,7 +442,9 @@ export default function AddExpenseForm({
 
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
 
-  const handleAmountChange = (newValue: string) => {
+  const handleAmountChange = (rawNewValue: string) => {
+    const newValue = rawNewValue.replace(/[^0-9.,]/g, '')
+
     // Always update the string input value
     setAmount(newValue)
 
@@ -661,7 +659,8 @@ export default function AddExpenseForm({
             Amount {currency && `(${currency})`}
           </label>
           <input
-            type="number"
+            type="text"
+            inputMode="decimal"
             id="amount"
             className="input w-full"
             value={amount}
@@ -776,7 +775,8 @@ export default function AddExpenseForm({
                 {(payers.length > 1 || index > 0) && (
                   <div className="relative w-28">
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       className="input w-full pr-9"
                       value={payer.amount || ''}
                       onChange={(e) => updatePayer(index, 'amount', e.target.value)}
@@ -888,7 +888,8 @@ export default function AddExpenseForm({
                     {splitType === 'amount' && (
                       <div className="relative flex-grow">
                         <input
-                          type="number"
+                          type="text"
+                          inputMode="decimal"
                           className={`input w-full pr-9 ${
                             (split.amountInput && !isValidNumberFormat(split.amountInput)) ||
                             (isValidNumberFormat(split.amountInput) &&
@@ -969,7 +970,8 @@ export default function AddExpenseForm({
                       <div className="flex flex-grow items-center">
                         <div className="relative flex-grow">
                           <input
-                            type="number"
+                            type="text"
+                            inputMode="decimal"
                             className={`input flex-grow pr-9 ${
                               (split.sharesInput && !isValidNumberFormat(split.sharesInput)) ||
                               (isValidNumberFormat(split.sharesInput) &&
