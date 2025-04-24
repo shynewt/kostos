@@ -697,7 +697,8 @@ export default function AddExpenseForm({
 
       if (emptyParticipants.length > 0) {
         // Calculate remaining amount to distribute among empty fields
-        const remainingAmount = totalAmountNum - totalAllocated
+        const remainingAmount = Math.max(0, totalAmountNum - totalAllocated)
+
         const amountPerEmptyPerson = roundToCent(remainingAmount / emptyParticipants.length)
 
         // Update only the empty fields
