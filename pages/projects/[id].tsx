@@ -580,7 +580,7 @@ export default function ProjectDetail() {
           {/* Grid with balance and summary info */}
           <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             {/* Your Balance */}
-            <div className="overflow-hidden rounded-lg border md:col-span-1">
+            <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 md:col-span-1">
               {memberBalances && (
                 <>
                   <div
@@ -712,7 +712,7 @@ export default function ProjectDetail() {
 
             {/* Project Stats */}
             {project.expenses && project.expenses.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border md:col-span-2">
+              <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 md:col-span-2">
                 <div className="flex items-center justify-between bg-gray-50 p-3 dark:bg-gray-700/50">
                   <div className="flex items-center">
                     <svg
@@ -851,7 +851,7 @@ export default function ProjectDetail() {
                 </div>
               </div>
             ) : (
-              <div className="overflow-hidden rounded-lg border md:col-span-2">
+              <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 md:col-span-2">
                 <div className="bg-gray-50 p-3 dark:bg-gray-700/50">
                   <div className="flex items-center">
                     <svg
@@ -881,7 +881,7 @@ export default function ProjectDetail() {
           </div>
 
           {/* Members Section */}
-          <div className="overflow-hidden rounded-lg border">
+          <div className="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between bg-gray-50 p-3 dark:bg-gray-700/50">
               <div className="flex items-center">
                 <svg
@@ -1240,7 +1240,7 @@ export default function ProjectDetail() {
                     return (
                       <div
                         key={category.id}
-                        className="overflow-hidden rounded-lg border border-gray-100 shadow-sm dark:border-gray-700"
+                        className="overflow-hidden rounded-lg border border-gray-100 border-gray-200 shadow-sm dark:border-gray-700"
                       >
                         <div
                           className="flex items-center justify-between px-4 py-3 font-medium text-white"
@@ -1304,7 +1304,7 @@ export default function ProjectDetail() {
 
                 {/* Uncategorized expenses */}
                 {project.expenses.filter((e: any) => !e.categoryId).length > 0 && (
-                  <div className="overflow-hidden rounded-lg border border-gray-100 shadow-sm dark:border-gray-700">
+                  <div className="overflow-hidden rounded-lg border border-gray-100 border-gray-200 shadow-sm dark:border-gray-700">
                     <div className="flex items-center justify-between bg-gray-500 px-4 py-3 font-medium text-white">
                       <div className="flex items-center">
                         <span>Uncategorized</span>
@@ -1745,7 +1745,7 @@ export default function ProjectDetail() {
                             </svg>
                             Paid by
                           </h3>
-                          <div className="overflow-hidden rounded-lg border border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800">
+                          <div className="overflow-hidden rounded-lg border border-gray-100 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                             <div className="divide-y divide-gray-100 dark:divide-gray-700">
                               {selectedExpense.payments.map((payment: any) => {
                                 const payer = project.members.find((m: any) => m.id === payment.memberId)
@@ -1799,7 +1799,7 @@ export default function ProjectDetail() {
                             </svg>
                             Split details
                           </h3>
-                          <div className="overflow-hidden rounded-lg border border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800">
+                          <div className="overflow-hidden rounded-lg border border-gray-100 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                             <div className="divide-y divide-gray-100 dark:divide-gray-700">
                               {selectedExpense.splits.map((split: any) => {
                                 const member = project.members.find((m: any) => m.id === split.memberId)
@@ -1864,7 +1864,7 @@ export default function ProjectDetail() {
                               ? 'Share allocation'
                               : 'Percentage allocation'}
                           </h3>
-                          <div className="overflow-hidden rounded-lg border border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800">
+                          <div className="overflow-hidden rounded-lg border border-gray-100 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                             <div className="divide-y divide-gray-100 dark:divide-gray-700">
                               {selectedExpense.splits.map((split: any) => {
                                 const member = project.members.find((m: any) => m.id === split.memberId)
@@ -1941,7 +1941,7 @@ export default function ProjectDetail() {
                             </svg>
                             Notes
                           </h3>
-                          <div className="overflow-hidden rounded-lg border border-gray-100 bg-white dark:border-gray-700 dark:bg-gray-800">
+                          <div className="overflow-hidden rounded-lg border border-gray-100 border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                             <div className="whitespace-pre-wrap bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-700/30 dark:text-gray-300">
                               {selectedExpense.notes}
                             </div>
