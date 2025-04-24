@@ -1,92 +1,92 @@
-import Link from "next/link";
-import { useRouter } from "next/router";
-import { useEffect, useRef, useState } from "react";
-import Layout from "../components/Layout";
-import { getJoinedProjects, JoinedProject } from "../utils/localStorage";
+import Link from 'next/link'
+import { useRouter } from 'next/router'
+import { useEffect, useRef, useState } from 'react'
+import Layout from '../components/Layout'
+import { getJoinedProjects, JoinedProject } from '../utils/localStorage'
 
 export default function Home() {
-  const [joinedProjects, setJoinedProjects] = useState<JoinedProject[]>([]);
-  const [isImporting, setIsImporting] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const router = useRouter();
+  const [joinedProjects, setJoinedProjects] = useState<JoinedProject[]>([])
+  const [isImporting, setIsImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const router = useRouter()
 
   useEffect(() => {
-    setJoinedProjects(getJoinedProjects());
-  }, []);
+    setJoinedProjects(getJoinedProjects())
+  }, [])
 
   const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const file = event.target.files?.[0]
+    if (!file) return
 
-    setIsImporting(true);
+    setIsImporting(true)
 
     try {
-      const fileContents = await readFileAsJson(file);
+      const fileContents = await readFileAsJson(file)
 
-      const response = await fetch("/api/projects/import", {
-        method: "POST",
+      const response = await fetch('/api/projects/import', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(fileContents),
-      });
+      })
 
-      const result = await response.json();
+      const result = await response.json()
 
       if (!result.success) {
-        throw new Error(result.error || "Failed to import project");
+        throw new Error(result.error || 'Failed to import project')
       }
 
-      alert("Project imported successfully! You will be redirected to the new project.");
-      router.push(`/projects/join?projectId=${result.data.projectId}`);
+      alert('Project imported successfully! You will be redirected to the new project.')
+      router.push(`/projects/join?projectId=${result.data.projectId}`)
     } catch (error) {
-      console.error("Error importing project:", error);
-      alert(error instanceof Error ? error.message : "Failed to import project");
+      console.error('Error importing project:', error)
+      alert(error instanceof Error ? error.message : 'Failed to import project')
     } finally {
-      setIsImporting(false);
+      setIsImporting(false)
       if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+        fileInputRef.current.value = ''
       }
     }
-  };
+  }
 
   const readFileAsJson = (file: File): Promise<any> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
+      const reader = new FileReader()
 
       reader.onload = (event) => {
         try {
-          const json = JSON.parse(event.target?.result as string);
-          resolve(json);
+          const json = JSON.parse(event.target?.result as string)
+          resolve(json)
         } catch (error) {
-          reject(new Error("Invalid JSON file"));
+          reject(new Error('Invalid JSON file'))
         }
-      };
+      }
 
       reader.onerror = () => {
-        reject(new Error("Error reading file"));
-      };
+        reject(new Error('Error reading file'))
+      }
 
-      reader.readAsText(file);
-    });
-  };
+      reader.readAsText(file)
+    })
+  }
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">Welcome to Kostos</h1>
+      <div className="mx-auto max-w-4xl">
+        <div className="mb-8 text-center">
+          <h1 className="mb-2 text-3xl font-bold">Welcome to Kostos</h1>
           <p className="text-gray-600 dark:text-gray-400">
             A simple app for splitting bills and expenses among groups
           </p>
         </div>
 
         {joinedProjects.length > 0 ? (
-          <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm p-6 mb-8">
-            <div className="flex items-center mb-4">
+          <div className="mb-8 rounded-lg border border-gray-100 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-4 flex items-center">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-2"
+                className="mr-2 h-5 w-5 text-gray-500 dark:text-gray-400"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -104,23 +104,23 @@ export default function Home() {
               {joinedProjects.map((project) => (
                 <div
                   key={`${project.id}-${project.memberId}`}
-                  className="bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 rounded-lg p-4 hover:shadow-md transition-shadow"
+                  className="rounded-lg border border-gray-100 bg-gray-50 p-4 transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800/50"
                 >
-                  <div className="flex justify-between items-center">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 mr-3 text-lg">
-                        {project.emoji || "📊"}
+                      <div className="mr-3 flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-lg dark:bg-gray-700">
+                        {project.emoji || '📊'}
                       </div>
                       <div>
                         <h3 className="font-medium text-gray-900 dark:text-white">{project.name}</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                           Joined as: <span className="font-medium">{project.memberName}</span>
                         </p>
                       </div>
                     </div>
                     <Link
                       href={`/projects/${project.id}?memberId=${project.memberId}`}
-                      className="flex items-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium"
+                      className="flex items-center font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                     >
                       <span className="mr-1">Open</span>
                       <svg
@@ -139,10 +139,10 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm mb-8">
+          <div className="mb-8 rounded-lg border border-gray-100 bg-white py-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              className="h-12 w-12 mx-auto text-gray-400 mb-4"
+              className="mx-auto mb-4 h-12 w-12 text-gray-400"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -154,16 +154,16 @@ export default function Home() {
                 d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
               />
             </svg>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">You haven't joined any projects yet.</p>
-            <p className="text-gray-500 dark:text-gray-500 text-sm">
+            <p className="mb-4 text-gray-600 dark:text-gray-400">You haven't joined any projects yet.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-500">
               Create a new project or join an existing one to get started.
             </p>
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-6">
-            <div className="flex items-center mb-4 text-blue-600 dark:text-blue-400">
+        <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-2">
+          <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-4 flex items-center text-blue-600 dark:text-blue-400">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-8 w-8"
@@ -178,7 +178,7 @@ export default function Home() {
                   d="M12 6v6m0 0v6m0-6h6m-6 0H6"
                 />
               </svg>
-              <h2 className="text-xl font-semibold ml-2">Create a New Project</h2>
+              <h2 className="ml-2 text-xl font-semibold">Create a New Project</h2>
             </div>
             <p className="mb-6 text-gray-600 dark:text-gray-400">
               Start a new group for splitting expenses with friends, family, or colleagues.
@@ -188,8 +188,8 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-6">
-            <div className="flex items-center mb-4 text-purple-600 dark:text-purple-400">
+          <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
+            <div className="mb-4 flex items-center text-purple-600 dark:text-purple-400">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-8 w-8"
@@ -204,7 +204,7 @@ export default function Home() {
                   d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
                 />
               </svg>
-              <h2 className="text-xl font-semibold ml-2">Join a Project</h2>
+              <h2 className="ml-2 text-xl font-semibold">Join a Project</h2>
             </div>
             <p className="mb-6 text-gray-600 dark:text-gray-400">
               Join an existing project using a project code and select your name.
@@ -214,8 +214,8 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-6 md:col-span-2">
-            <div className="flex items-center mb-4 text-green-600 dark:text-green-500">
+          <div className="rounded-lg border border-gray-100 bg-white p-6 shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-800 md:col-span-2">
+            <div className="mb-4 flex items-center text-green-600 dark:text-green-500">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-6 w-6"
@@ -230,22 +230,22 @@ export default function Home() {
                   d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                 />
               </svg>
-              <h2 className="text-lg font-semibold ml-2">Import from Spliit or Kostos</h2>
+              <h2 className="ml-2 text-lg font-semibold">Import from Spliit or Kostos</h2>
             </div>
-            <p className="mb-4 text-gray-600 dark:text-gray-400 text-sm">
+            <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
               Import a project from a Spliit export or another Kostos project.
             </p>
             <label
               className={`btn ${
-                isImporting ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"
-              } text-white px-3 py-2 rounded-lg text-sm flex items-center justify-center cursor-pointer`}
-              style={{ maxWidth: "220px" }}
+                isImporting ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'
+              } flex cursor-pointer items-center justify-center rounded-lg px-3 py-2 text-sm text-white`}
+              style={{ maxWidth: '220px' }}
             >
               {isImporting ? (
                 <span className="flex items-center">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    className="animate-spin h-4 w-4 mr-2"
+                    className="mr-2 h-4 w-4 animate-spin"
                     fill="none"
                     viewBox="0 0 24 24"
                   >
@@ -269,7 +269,7 @@ export default function Home() {
                 <span className="flex items-center">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 mr-2"
+                    className="mr-2 h-4 w-4"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -297,5 +297,5 @@ export default function Home() {
         </div>
       </div>
     </Layout>
-  );
+  )
 }

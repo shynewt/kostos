@@ -1,34 +1,34 @@
-import React, { ReactNode } from "react";
-import Link from "next/link";
-import { useRouter } from "next/router";
+import React, { ReactNode } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/router'
 
 interface LayoutProps {
-  children: ReactNode;
-  title?: string;
+  children: ReactNode
+  title?: string
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, title }) => {
-  const router = useRouter();
+  const router = useRouter()
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+    <div className="flex min-h-screen flex-col bg-gray-50 dark:bg-gray-900">
       <header className="bg-blue-600 text-white shadow-lg">
-        <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-          <Link href="/" className="text-xl font-bold flex items-center">
-            <img src="/icons/icon-192x192.webp" alt="Kostos" className="w-10 h-10 mr-2" />K O S T O S
+        <div className="container mx-auto flex items-center justify-between px-4 py-3">
+          <Link href="/" className="flex items-center text-xl font-bold">
+            <img src="/icons/icon-192x192.webp" alt="Kostos" className="mr-2 h-10 w-10" />K O S T O S
           </Link>
 
-          {title && <h1 className="text-lg font-medium hidden md:block">{title}</h1>}
+          {title && <h1 className="hidden text-lg font-medium md:block">{title}</h1>}
 
-          <div className="flex space-x-4 items-center">
-            {router.pathname !== "/" && (
+          <div className="flex items-center space-x-4">
+            {router.pathname !== '/' && (
               <Link
                 href="/"
-                className="flex items-center hover:bg-blue-700 px-3 py-1 rounded-md transition-colors"
+                className="flex items-center rounded-md px-3 py-1 transition-colors hover:bg-blue-700"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
-                  className="h-4 w-4 mr-1"
+                  className="mr-1 h-4 w-4"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -48,21 +48,21 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
       </header>
 
       {title && (
-        <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 md:hidden">
+        <div className="border-b border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800 md:hidden">
           <div className="container mx-auto px-4 py-3">
             <h1 className="text-lg font-medium">{title}</h1>
           </div>
         </div>
       )}
 
-      <main className="flex-grow container mx-auto px-4 py-6">{children}</main>
+      <main className="container mx-auto flex-grow px-4 py-6">{children}</main>
 
-      <footer className="bg-white dark:bg-gray-800 py-4 border-t border-gray-200 dark:border-gray-700 shadow-inner">
-        <div className="container mx-auto px-4 text-center text-gray-600 dark:text-gray-400 text-sm">
-          A project by{" "}
+      <footer className="border-t border-gray-200 bg-white py-4 shadow-inner dark:border-gray-700 dark:bg-gray-800">
+        <div className="container mx-auto px-4 text-center text-sm text-gray-600 dark:text-gray-400">
+          A project by{' '}
           <a href="https://shynewt.com" target="_blank" className="font-bold">
             Shy Newt Technologies
-          </a>{" "}
+          </a>{' '}
           <span className="mx-2 font-bold">|</span>
           <a className="underline" href="https://github.com/shynewt/kostos?ref=kostos" target="_blank">
             Source
@@ -70,7 +70,7 @@ const Layout: React.FC<LayoutProps> = ({ children, title }) => {
         </div>
       </footer>
     </div>
-  );
-};
+  )
+}
 
-export default Layout;
+export default Layout

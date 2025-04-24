@@ -1,15 +1,15 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-import { db, schema } from '../../../db';
-import { generateId } from '../../../utils/id';
-import { sendSuccess, sendError } from '../../../utils/api';
-import { eq } from 'drizzle-orm';
+import { NextApiRequest, NextApiResponse } from 'next'
+import { db, schema } from '../../../db'
+import { generateId } from '../../../utils/id'
+import { sendSuccess, sendError } from '../../../utils/api'
+import { eq } from 'drizzle-orm'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   switch (req.method) {
     case 'POST':
-      return createExpense(req, res);
+      return createExpense(req, res)
     default:
-      return sendError(res, 'Method not allowed', 405);
+      return sendError(res, 'Method not allowed', 405)
   }
 }
 
@@ -27,35 +27,35 @@ async function createExpense(req: NextApiRequest, res: NextApiResponse) {
       notes,
       payments,
       splits,
-    } = req.body;
+    } = req.body
 
     // Validate required fields
     if (!projectId) {
-      return sendError(res, 'Project ID is required');
+      return sendError(res, 'Project ID is required')
     }
 
     if (!description) {
-      return sendError(res, 'Description is required');
+      return sendError(res, 'Description is required')
     }
 
     if (!amount || amount <= 0) {
-      return sendError(res, 'Amount must be greater than 0');
+      return sendError(res, 'Amount must be greater than 0')
     }
 
     if (!splitType) {
-      return sendError(res, 'Split type is required');
+      return sendError(res, 'Split type is required')
     }
 
     if (!payments || !Array.isArray(payments) || payments.length === 0) {
-      return sendError(res, 'At least one payment is required');
+      return sendError(res, 'At least one payment is required')
     }
 
     if (!splits || !Array.isArray(splits) || splits.length === 0) {
-      return sendError(res, 'At least one split is required');
+      return sendError(res, 'At least one split is required')
     }
 
     // Generate a unique ID for the expense
-    const expenseId = generateId();
+    const expenseId = generateId()
 
     // Create the expense
     await db.insert(schema.expenses).values({
@@ -69,7 +69,7 @@ async function createExpense(req: NextApiRequest, res: NextApiResponse) {
       paymentMethodId: paymentMethodId || null,
       notes: notes || null,
       createdAt: new Date(),
-    });
+    })
 
     // Create payments
     await Promise.all(
@@ -81,7 +81,7 @@ async function createExpense(req: NextApiRequest, res: NextApiResponse) {
           amount: payment.amount,
         })
       )
-    );
+    )
 
     // Create splits
     await Promise.all(
@@ -96,31 +96,29 @@ async function createExpense(req: NextApiRequest, res: NextApiResponse) {
           owedAmount: split.owedAmount,
         })
       )
-    );
+    )
 
     // Fetch the created expense with payments and splits
-    const [expense] = await db
-      .select()
-      .from(schema.expenses)
-      .where(eq(schema.expenses.id, expenseId));
+    const [expense] = await db.select().from(schema.expenses).where(eq(schema.expenses.id, expenseId))
 
     const expensePayments = await db
       .select()
       .from(schema.payments)
-      .where(eq(schema.payments.expenseId, expenseId));
+      .where(eq(schema.payments.expenseId, expenseId))
 
-    const expenseSplits = await db
-      .select()
-      .from(schema.splits)
-      .where(eq(schema.splits.expenseId, expenseId));
+    const expenseSplits = await db.select().from(schema.splits).where(eq(schema.splits.expenseId, expenseId))
 
-    return sendSuccess(res, {
-      ...expense,
-      payments: expensePayments,
-      splits: expenseSplits,
-    }, 201);
+    return sendSuccess(
+      res,
+      {
+        ...expense,
+        payments: expensePayments,
+        splits: expenseSplits,
+      },
+      201
+    )
   } catch (error) {
-    console.error('Error creating expense:', error);
-    return sendError(res, 'Failed to create expense');
+    console.error('Error creating expense:', error)
+    return sendError(res, 'Failed to create expense')
   }
 }

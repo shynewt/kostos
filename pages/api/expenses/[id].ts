@@ -1,59 +1,50 @@
-import { NextApiRequest, NextApiResponse } from 'next';
-import { db, schema } from '../../../db';
-import { sendSuccess, sendError } from '../../../utils/api';
-import { eq } from 'drizzle-orm';
+import { NextApiRequest, NextApiResponse } from 'next'
+import { db, schema } from '../../../db'
+import { sendSuccess, sendError } from '../../../utils/api'
+import { eq } from 'drizzle-orm'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { id } = req.query;
-  
+  const { id } = req.query
+
   if (!id || typeof id !== 'string') {
-    return sendError(res, 'Invalid expense ID', 400);
+    return sendError(res, 'Invalid expense ID', 400)
   }
-  
+
   switch (req.method) {
     case 'PUT':
-      return updateExpense(req, res, id);
+      return updateExpense(req, res, id)
     case 'DELETE':
-      return deleteExpense(req, res, id);
+      return deleteExpense(req, res, id)
     default:
-      return sendError(res, 'Method not allowed', 405);
+      return sendError(res, 'Method not allowed', 405)
   }
 }
 
 // Update an existing expense
 async function updateExpense(req: NextApiRequest, res: NextApiResponse, expenseId: string) {
   try {
-    const {
-      description,
-      amount,
-      date,
-      splitType,
-      categoryId,
-      paymentMethodId,
-      notes,
-      payments,
-      splits,
-    } = req.body;
+    const { description, amount, date, splitType, categoryId, paymentMethodId, notes, payments, splits } =
+      req.body
 
     // Validate required fields
     if (!description) {
-      return sendError(res, 'Description is required');
+      return sendError(res, 'Description is required')
     }
 
     if (!amount || amount <= 0) {
-      return sendError(res, 'Amount must be greater than 0');
+      return sendError(res, 'Amount must be greater than 0')
     }
 
     if (!splitType) {
-      return sendError(res, 'Split type is required');
+      return sendError(res, 'Split type is required')
     }
 
     if (!payments || !Array.isArray(payments) || payments.length === 0) {
-      return sendError(res, 'At least one payment is required');
+      return sendError(res, 'At least one payment is required')
     }
 
     if (!splits || !Array.isArray(splits) || splits.length === 0) {
-      return sendError(res, 'At least one split is required');
+      return sendError(res, 'At least one split is required')
     }
 
     // Update the expense
@@ -68,16 +59,12 @@ async function updateExpense(req: NextApiRequest, res: NextApiResponse, expenseI
         paymentMethodId: paymentMethodId || null,
         notes: notes || null,
       })
-      .where(eq(schema.expenses.id, expenseId));
+      .where(eq(schema.expenses.id, expenseId))
 
     // Delete existing payments and splits
-    await db
-      .delete(schema.payments)
-      .where(eq(schema.payments.expenseId, expenseId));
+    await db.delete(schema.payments).where(eq(schema.payments.expenseId, expenseId))
 
-    await db
-      .delete(schema.splits)
-      .where(eq(schema.splits.expenseId, expenseId));
+    await db.delete(schema.splits).where(eq(schema.splits.expenseId, expenseId))
 
     // Create new payments
     await Promise.all(
@@ -89,7 +76,7 @@ async function updateExpense(req: NextApiRequest, res: NextApiResponse, expenseI
           amount: payment.amount,
         })
       )
-    );
+    )
 
     // Create new splits
     await Promise.all(
@@ -104,32 +91,26 @@ async function updateExpense(req: NextApiRequest, res: NextApiResponse, expenseI
           owedAmount: split.owedAmount,
         })
       )
-    );
+    )
 
     // Fetch the updated expense with payments and splits
-    const [expense] = await db
-      .select()
-      .from(schema.expenses)
-      .where(eq(schema.expenses.id, expenseId));
+    const [expense] = await db.select().from(schema.expenses).where(eq(schema.expenses.id, expenseId))
 
     const expensePayments = await db
       .select()
       .from(schema.payments)
-      .where(eq(schema.payments.expenseId, expenseId));
+      .where(eq(schema.payments.expenseId, expenseId))
 
-    const expenseSplits = await db
-      .select()
-      .from(schema.splits)
-      .where(eq(schema.splits.expenseId, expenseId));
+    const expenseSplits = await db.select().from(schema.splits).where(eq(schema.splits.expenseId, expenseId))
 
     return sendSuccess(res, {
       ...expense,
       payments: expensePayments,
       splits: expenseSplits,
-    });
+    })
   } catch (error) {
-    console.error('Error updating expense:', error);
-    return sendError(res, 'Failed to update expense');
+    console.error('Error updating expense:', error)
+    return sendError(res, 'Failed to update expense')
   }
 }
 
@@ -137,30 +118,27 @@ async function updateExpense(req: NextApiRequest, res: NextApiResponse, expenseI
 async function deleteExpense(req: NextApiRequest, res: NextApiResponse, expenseId: string) {
   try {
     // Check if expense exists
-    const [existingExpense] = await db
-      .select()
-      .from(schema.expenses)
-      .where(eq(schema.expenses.id, expenseId));
-    
+    const [existingExpense] = await db.select().from(schema.expenses).where(eq(schema.expenses.id, expenseId))
+
     if (!existingExpense) {
-      return sendError(res, 'Expense not found', 404);
+      return sendError(res, 'Expense not found', 404)
     }
-    
+
     // Delete payments and splits first (foreign key constraints)
-    await db.delete(schema.payments).where(eq(schema.payments.expenseId, expenseId));
-    await db.delete(schema.splits).where(eq(schema.splits.expenseId, expenseId));
-    
+    await db.delete(schema.payments).where(eq(schema.payments.expenseId, expenseId))
+    await db.delete(schema.splits).where(eq(schema.splits.expenseId, expenseId))
+
     // Delete the expense
-    await db.delete(schema.expenses).where(eq(schema.expenses.id, expenseId));
-    
-    return sendSuccess(res, { id: expenseId });
+    await db.delete(schema.expenses).where(eq(schema.expenses.id, expenseId))
+
+    return sendSuccess(res, { id: expenseId })
   } catch (error) {
-    console.error('Error deleting expense:', error);
-    return sendError(res, 'Failed to delete expense');
+    console.error('Error deleting expense:', error)
+    return sendError(res, 'Failed to delete expense')
   }
 }
 
 // Helper function to generate ID (copied from utils/id.ts to avoid circular imports)
 function generateId() {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
 }

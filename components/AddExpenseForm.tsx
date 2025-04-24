@@ -1,61 +1,61 @@
-import { useEffect, useState } from "react";
-import { formatCurrency } from "../utils/currency";
+import { useEffect, useState } from 'react'
+import { formatCurrency } from '../utils/currency'
 
 const roundToCent = (value: number): number => {
-  return Math.round(value * 100) / 100;
-};
+  return Math.round(value * 100) / 100
+}
 
 interface Member {
-  id: string;
-  name: string;
+  id: string
+  name: string
 }
 
 interface Category {
-  id: string;
-  name: string;
-  color: string;
+  id: string
+  name: string
+  color: string
 }
 
 interface Payment {
-  memberId: string;
-  amount: number;
+  memberId: string
+  amount: number
 }
 
 interface Split {
-  memberId: string;
-  amount?: number;
-  shares?: number;
-  percent?: number;
-  owedAmount: number;
+  memberId: string
+  amount?: number
+  shares?: number
+  percent?: number
+  owedAmount: number
 }
 
 interface PaymentMethod {
-  id: string;
-  name: string;
-  icon: string;
+  id: string
+  name: string
+  icon: string
 }
 
 interface AddExpenseFormProps {
-  projectId: string;
-  members: Member[];
-  categories: Category[];
-  paymentMethods: PaymentMethod[];
-  currentMemberId: string;
-  onClose: () => void;
-  onExpenseAdded: () => void;
-  currency: string;
+  projectId: string
+  members: Member[]
+  categories: Category[]
+  paymentMethods: PaymentMethod[]
+  currentMemberId: string
+  onClose: () => void
+  onExpenseAdded: () => void
+  currency: string
   expense?: {
-    id: string;
-    description: string;
-    amount: number;
-    date: string | Date;
-    splitType: "even" | "amount" | "percent" | "shares";
-    categoryId: string | null;
-    payments: Payment[];
-    splits: Split[];
-    notes?: string;
-  };
-  isEditing?: boolean;
+    id: string
+    description: string
+    amount: number
+    date: string | Date
+    splitType: 'even' | 'amount' | 'percent' | 'shares'
+    categoryId: string | null
+    payments: Payment[]
+    splits: Split[]
+    notes?: string
+  }
+  isEditing?: boolean
 }
 
 export default function AddExpenseForm({
@@ -70,74 +70,74 @@ export default function AddExpenseForm({
   expense,
   isEditing = false,
 }: AddExpenseFormProps) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const [description, setDescription] = useState(expense?.description || "");
-  const [amount, setAmount] = useState(expense ? expense.amount.toString() : "");
+  const [description, setDescription] = useState(expense?.description || '')
+  const [amount, setAmount] = useState(expense ? expense.amount.toString() : '')
   const [date, setDate] = useState(() => {
     if (expense?.date) {
       if (expense.date instanceof Date) {
-        return expense.date.toISOString().split("T")[0];
-      } else if (typeof expense.date === "string") {
-        const dateObj = new Date(expense.date);
+        return expense.date.toISOString().split('T')[0]
+      } else if (typeof expense.date === 'string') {
+        const dateObj = new Date(expense.date)
         if (!isNaN(dateObj.getTime())) {
-          return dateObj.toISOString().split("T")[0];
+          return dateObj.toISOString().split('T')[0]
         }
       }
     }
-    return new Date().toISOString().split("T")[0];
-  });
-  const [splitType, setSplitType] = useState<"even" | "amount" | "shares">(() => {
-    if (expense?.splitType === "percent") {
-      return "shares";
+    return new Date().toISOString().split('T')[0]
+  })
+  const [splitType, setSplitType] = useState<'even' | 'amount' | 'shares'>(() => {
+    if (expense?.splitType === 'percent') {
+      return 'shares'
     }
-    return (expense?.splitType as "even" | "amount" | "shares") || "even";
-  });
-  const [categoryId, setCategoryId] = useState<string | null>(expense?.categoryId || null);
-  const [notes, setNotes] = useState<string>(expense?.notes || "");
+    return (expense?.splitType as 'even' | 'amount' | 'shares') || 'even'
+  })
+  const [categoryId, setCategoryId] = useState<string | null>(expense?.categoryId || null)
+  const [notes, setNotes] = useState<string>(expense?.notes || '')
 
   const initialParticipants = expense?.splits
     ? expense.splits.map((split) => split.memberId)
-    : members.map((member) => member.id);
+    : members.map((member) => member.id)
 
-  const [participants, setParticipants] = useState<string[]>(initialParticipants);
+  const [participants, setParticipants] = useState<string[]>(initialParticipants)
 
   const [payers, setPayers] = useState<Payment[]>(
     expense?.payments || [{ memberId: currentMemberId, amount: 0 }]
-  );
+  )
 
-  const [splits, setSplits] = useState<Split[]>(expense?.splits || []);
-
-  useEffect(() => {
-    initializeSplitsStructure();
-  }, [participants, splitType]);
+  const [splits, setSplits] = useState<Split[]>(expense?.splits || [])
 
   useEffect(() => {
-    const parsedAmount = parseFloat(amount) || 0;
-    recalculateOwedAmounts(parsedAmount);
-  }, [amount, participants, splitType, splits]);
+    initializeSplitsStructure()
+  }, [participants, splitType])
+
+  useEffect(() => {
+    const parsedAmount = parseFloat(amount) || 0
+    recalculateOwedAmounts(parsedAmount)
+  }, [amount, participants, splitType, splits])
 
   const toggleParticipant = (memberId: string) => {
     if (participants.includes(memberId)) {
-      if (participants.length <= 1) return;
+      if (participants.length <= 1) return
 
-      setParticipants(participants.filter((id) => id !== memberId));
+      setParticipants(participants.filter((id) => id !== memberId))
     } else {
-      setParticipants([...participants, memberId]);
+      setParticipants([...participants, memberId])
     }
-  };
+  }
 
   const initializeSplitsStructure = () => {
-    const participantMembers = members.filter((member) => participants.includes(member.id));
-    const participantCount = participantMembers.length;
-    const parsedAmount = parseFloat(amount) || 0;
+    const participantMembers = members.filter((member) => participants.includes(member.id))
+    const participantCount = participantMembers.length
+    const parsedAmount = parseFloat(amount) || 0
 
     const updatedSplits = members.map((member) => {
-      const existingSplit = splits.find((s) => s.memberId === member.id);
+      const existingSplit = splits.find((s) => s.memberId === member.id)
 
       if (!participants.includes(member.id)) {
-        return { ...(existingSplit || { memberId: member.id }), owedAmount: 0 };
+        return { ...(existingSplit || { memberId: member.id }), owedAmount: 0 }
       }
 
       const baseSplit: Split = existingSplit || {
@@ -145,194 +145,194 @@ export default function AddExpenseForm({
         owedAmount: 0,
         amount: undefined,
         shares: undefined,
-      };
-
-      let structureUpdate: Partial<Split> = {};
-      switch (splitType) {
-        case "amount":
-          if (baseSplit.amount === undefined || baseSplit.amount === null) {
-            structureUpdate.amount = participantCount > 0 ? roundToCent(parsedAmount / participantCount) : 0;
-          }
-          break;
-        case "shares":
-          if (baseSplit.shares === undefined || baseSplit.shares === null) {
-            structureUpdate.shares = 1;
-          }
-          break;
-        case "even":
-        default:
-          break;
       }
-      const finalSplit: Split = { ...baseSplit, ...structureUpdate };
-      return finalSplit;
-    });
 
-    setSplits(updatedSplits);
-  };
+      let structureUpdate: Partial<Split> = {}
+      switch (splitType) {
+        case 'amount':
+          if (baseSplit.amount === undefined || baseSplit.amount === null) {
+            structureUpdate.amount = participantCount > 0 ? roundToCent(parsedAmount / participantCount) : 0
+          }
+          break
+        case 'shares':
+          if (baseSplit.shares === undefined || baseSplit.shares === null) {
+            structureUpdate.shares = 1
+          }
+          break
+        case 'even':
+        default:
+          break
+      }
+      const finalSplit: Split = { ...baseSplit, ...structureUpdate }
+      return finalSplit
+    })
+
+    setSplits(updatedSplits)
+  }
 
   const addPayer = () => {
-    const existingPayerIds = payers.map((p) => p.memberId);
-    const availableMembers = members.filter((m) => !existingPayerIds.includes(m.id));
+    const existingPayerIds = payers.map((p) => p.memberId)
+    const availableMembers = members.filter((m) => !existingPayerIds.includes(m.id))
 
     if (availableMembers.length > 0) {
-      setPayers([...payers, { memberId: availableMembers[0].id, amount: 0 }]);
+      setPayers([...payers, { memberId: availableMembers[0].id, amount: 0 }])
     }
-  };
+  }
 
   const removePayer = (index: number) => {
     if (payers.length > 1) {
-      const newPayers = [...payers];
-      newPayers.splice(index, 1);
-      setPayers(newPayers);
+      const newPayers = [...payers]
+      newPayers.splice(index, 1)
+      setPayers(newPayers)
     }
-  };
+  }
 
-  const updatePayer = (index: number, field: "memberId" | "amount", value: string | number) => {
-    const newPayers = [...payers];
+  const updatePayer = (index: number, field: 'memberId' | 'amount', value: string | number) => {
+    const newPayers = [...payers]
     newPayers[index] = {
       ...newPayers[index],
-      [field]: field === "amount" ? parseFloat(value as string) || 0 : value,
-    };
-    setPayers(newPayers);
-  };
+      [field]: field === 'amount' ? parseFloat(value as string) || 0 : value,
+    }
+    setPayers(newPayers)
+  }
 
-  const updateSplit = (index: number, field: "amount" | "shares", value: string) => {
-    const newSplits = [...splits];
+  const updateSplit = (index: number, field: 'amount' | 'shares', value: string) => {
+    const newSplits = [...splits]
     newSplits[index] = {
       ...newSplits[index],
       [field]: parseFloat(value) || 0,
-    };
+    }
 
-    setSplits(newSplits);
+    setSplits(newSplits)
 
-    if (field === "shares") {
+    if (field === 'shares') {
       const totalShares = newSplits
         .filter((s) => participants.includes(s.memberId))
-        .reduce((sum, s) => sum + (s.shares || 0), 0);
+        .reduce((sum, s) => sum + (s.shares || 0), 0)
 
       if (totalShares > 0) {
-        const totalAmountNum = parseFloat(amount) || 0;
+        const totalAmountNum = parseFloat(amount) || 0
 
         const updatedSplits = newSplits.map((split) => {
           if (!participants.includes(split.memberId)) {
-            return split;
+            return split
           }
 
           return {
             ...split,
             owedAmount: roundToCent(totalAmountNum * ((split.shares || 0) / totalShares)),
-          };
-        });
+          }
+        })
 
-        const participantSplits = updatedSplits.filter((s) => participants.includes(s.memberId));
-        const totalCalculated = participantSplits.reduce((sum, s) => sum + s.owedAmount, 0);
-        const difference = roundToCent(totalAmountNum - totalCalculated);
+        const participantSplits = updatedSplits.filter((s) => participants.includes(s.memberId))
+        const totalCalculated = participantSplits.reduce((sum, s) => sum + s.owedAmount, 0)
+        const difference = roundToCent(totalAmountNum - totalCalculated)
 
         if (Math.abs(difference) > 0.001 && participantSplits.length > 0) {
-          const lastParticipantId = participantSplits[participantSplits.length - 1].memberId;
-          const lastIndex = updatedSplits.findIndex((s) => s.memberId === lastParticipantId);
+          const lastParticipantId = participantSplits[participantSplits.length - 1].memberId
+          const lastIndex = updatedSplits.findIndex((s) => s.memberId === lastParticipantId)
 
           if (lastIndex >= 0) {
             updatedSplits[lastIndex].owedAmount = roundToCent(
               updatedSplits[lastIndex].owedAmount + difference
-            );
+            )
           }
         }
 
-        setSplits(updatedSplits);
+        setSplits(updatedSplits)
       }
-    } else if (field === "amount") {
-      const memberIndex = newSplits.findIndex((s, i) => i === index);
+    } else if (field === 'amount') {
+      const memberIndex = newSplits.findIndex((s, i) => i === index)
       if (memberIndex >= 0) {
-        const updatedSplits = [...newSplits];
-        updatedSplits[memberIndex].owedAmount = updatedSplits[memberIndex].amount || 0;
-        setSplits(updatedSplits);
+        const updatedSplits = [...newSplits]
+        updatedSplits[memberIndex].owedAmount = updatedSplits[memberIndex].amount || 0
+        setSplits(updatedSplits)
       }
     }
-  };
+  }
 
   const recalculateOwedAmounts = (totalAmount: number) => {
     if (participants.length === 0 || totalAmount <= 0) {
-      setSplits((prevSplits) => prevSplits.map((split) => ({ ...split, owedAmount: 0 })));
-      return;
+      setSplits((prevSplits) => prevSplits.map((split) => ({ ...split, owedAmount: 0 })))
+      return
     }
 
-    let calculatedSplits: Split[] = [];
+    let calculatedSplits: Split[] = []
 
-    const participantSplits = splits.filter((s) => participants.includes(s.memberId));
+    const participantSplits = splits.filter((s) => participants.includes(s.memberId))
 
     switch (splitType) {
-      case "even":
-        calculatedSplits = calculateEvenSplits(totalAmount);
-        break;
-      case "amount":
+      case 'even':
+        calculatedSplits = calculateEvenSplits(totalAmount)
+        break
+      case 'amount':
         calculatedSplits = participantSplits.map((split) => ({
           ...split,
           owedAmount: split.amount || 0,
-        }));
-        break;
-      case "shares":
-        calculatedSplits = calculateSharesSplits(totalAmount);
-        break;
+        }))
+        break
+      case 'shares':
+        calculatedSplits = calculateSharesSplits(totalAmount)
+        break
     }
 
     setSplits((prevSplits) => {
-      const calculatedMap = new Map(calculatedSplits.map((s) => [s.memberId, s.owedAmount]));
+      const calculatedMap = new Map(calculatedSplits.map((s) => [s.memberId, s.owedAmount]))
       return prevSplits.map((split) => ({
         ...split,
-        owedAmount: participants.includes(split.memberId) ? calculatedMap.get(split.memberId) ?? 0 : 0,
-      }));
-    });
-  };
+        owedAmount: participants.includes(split.memberId) ? (calculatedMap.get(split.memberId) ?? 0) : 0,
+      }))
+    })
+  }
 
   const validateForm = () => {
     if (!description.trim()) {
-      setError("Description is required");
-      return false;
+      setError('Description is required')
+      return false
     }
 
-    const parsedAmount = parseFloat(amount);
+    const parsedAmount = parseFloat(amount)
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      setError("Valid amount is required");
-      return false;
+      setError('Valid amount is required')
+      return false
     }
 
-    const totalPayment = payers.reduce((sum, payer) => sum + payer.amount, 0);
+    const totalPayment = payers.reduce((sum, payer) => sum + payer.amount, 0)
     if (Math.abs(totalPayment - parsedAmount) > 0.01) {
-      setError("Total payment amount must equal expense amount");
-      return false;
+      setError('Total payment amount must equal expense amount')
+      return false
     }
 
-    if (splitType === "amount") {
-      const totalSplitAmount = splits.reduce((sum, split) => sum + (split.owedAmount || 0), 0);
+    if (splitType === 'amount') {
+      const totalSplitAmount = splits.reduce((sum, split) => sum + (split.owedAmount || 0), 0)
       if (Math.abs(totalSplitAmount - parsedAmount) > 0.01) {
-        setError("Total split amount must equal expense amount");
-        return false;
+        setError('Total split amount must equal expense amount')
+        return false
       }
     }
 
-    return true;
-  };
+    return true
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+    e.preventDefault()
 
     if (!validateForm()) {
-      return;
+      return
     }
 
-    setIsLoading(true);
-    setError(null);
+    setIsLoading(true)
+    setError(null)
 
     try {
-      const url = isEditing && expense ? `/api/expenses/${expense.id}` : "/api/expenses";
+      const url = isEditing && expense ? `/api/expenses/${expense.id}` : '/api/expenses'
 
-      const method = isEditing ? "PUT" : "POST";
+      const method = isEditing ? 'PUT' : 'POST'
 
       const response = await fetch(url, {
         method,
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           projectId,
@@ -346,144 +346,144 @@ export default function AddExpenseForm({
           splits,
           notes: notes.trim() || null,
         }),
-      });
+      })
 
-      const result = await response.json();
+      const result = await response.json()
 
       if (!result.success) {
-        throw new Error(result.error || `Failed to ${isEditing ? "update" : "create"} expense`);
+        throw new Error(result.error || `Failed to ${isEditing ? 'update' : 'create'} expense`)
       }
 
-      onExpenseAdded();
+      onExpenseAdded()
 
-      onClose();
+      onClose()
     } catch (error) {
-      console.error(`Error ${isEditing ? "updating" : "creating"} expense:`, error);
+      console.error(`Error ${isEditing ? 'updating' : 'creating'} expense:`, error)
       setError(
-        error instanceof Error ? error.message : `Failed to ${isEditing ? "update" : "create"} expense`
-      );
-      setIsLoading(false);
+        error instanceof Error ? error.message : `Failed to ${isEditing ? 'update' : 'create'} expense`
+      )
+      setIsLoading(false)
     }
-  };
+  }
 
   const getMemberName = (memberId: string) => {
-    const member = members.find((m) => m.id === memberId);
-    return member ? member.name : "Unknown";
-  };
+    const member = members.find((m) => m.id === memberId)
+    return member ? member.name : 'Unknown'
+  }
 
   const formatAmount = (value: number) => {
-    return formatCurrency(value, currency);
-  };
+    return formatCurrency(value, currency)
+  }
 
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>("");
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
 
   const handleAmountChange = (newValue: string) => {
-    let value = newValue;
-    if (value === ".") value = "0.";
+    let value = newValue
+    if (value === '.') value = '0.'
     if (/^\d*\.?\d*$/.test(value)) {
-      const parsedValue = parseFloat(value) || 0;
-      setAmount(value);
+      const parsedValue = parseFloat(value) || 0
+      setAmount(value)
 
       if (payers.length === 1) {
-        setPayers([{ ...payers[0], amount: parsedValue }]);
+        setPayers([{ ...payers[0], amount: parsedValue }])
       }
 
-      const evenSplits = calculateEvenSplits(parsedValue);
+      const evenSplits = calculateEvenSplits(parsedValue)
 
-      const sharesSplits = calculateSharesSplits(parsedValue);
+      const sharesSplits = calculateSharesSplits(parsedValue)
 
       const updatedSplits = splits.map((split) => {
         if (!participants.includes(split.memberId)) {
-          return split;
+          return split
         }
 
-        let updatedSplit;
-        if (splitType === "even") {
-          updatedSplit = evenSplits.find((s) => s.memberId === split.memberId) || split;
-        } else if (splitType === "shares") {
-          updatedSplit = sharesSplits.find((s) => s.memberId === split.memberId) || split;
+        let updatedSplit
+        if (splitType === 'even') {
+          updatedSplit = evenSplits.find((s) => s.memberId === split.memberId) || split
+        } else if (splitType === 'shares') {
+          updatedSplit = sharesSplits.find((s) => s.memberId === split.memberId) || split
         } else {
-          updatedSplit = { ...split };
+          updatedSplit = { ...split }
         }
 
         return {
           ...split,
           owedAmount: updatedSplit.owedAmount,
-        };
-      });
+        }
+      })
 
-      setSplits(updatedSplits);
+      setSplits(updatedSplits)
     }
-  };
+  }
 
   const calculateEvenSplits = (totalAmount: number): Split[] => {
-    if (participants.length === 0 || totalAmount <= 0) return [];
+    if (participants.length === 0 || totalAmount <= 0) return []
 
-    const evenAmount = totalAmount / participants.length;
-    const splits: Split[] = [];
+    const evenAmount = totalAmount / participants.length
+    const splits: Split[] = []
 
     participants.forEach((pId) => {
       splits.push({
         memberId: pId,
         owedAmount: roundToCent(evenAmount),
-      });
-    });
+      })
+    })
 
-    const totalCalculated = splits.reduce((sum, s) => sum + s.owedAmount, 0);
-    const difference = roundToCent(totalAmount - totalCalculated);
+    const totalCalculated = splits.reduce((sum, s) => sum + s.owedAmount, 0)
+    const difference = roundToCent(totalAmount - totalCalculated)
 
     if (Math.abs(difference) > 0.001 && splits.length > 0) {
-      const lastIndex = splits.length - 1;
-      splits[lastIndex].owedAmount = roundToCent(splits[lastIndex].owedAmount + difference);
+      const lastIndex = splits.length - 1
+      splits[lastIndex].owedAmount = roundToCent(splits[lastIndex].owedAmount + difference)
     }
 
-    return splits;
-  };
+    return splits
+  }
 
   const calculateSharesSplits = (totalAmount: number): Split[] => {
-    if (participants.length === 0 || totalAmount <= 0) return [];
+    if (participants.length === 0 || totalAmount <= 0) return []
 
-    const participantSplits = splits.filter((s) => participants.includes(s.memberId));
-    const totalShares = participantSplits.reduce((sum, s) => sum + (s.shares || 0), 0);
+    const participantSplits = splits.filter((s) => participants.includes(s.memberId))
+    const totalShares = participantSplits.reduce((sum, s) => sum + (s.shares || 0), 0)
 
     if (totalShares <= 0) {
-      return calculateEvenSplits(totalAmount);
+      return calculateEvenSplits(totalAmount)
     }
 
-    const newSplits: Split[] = [];
+    const newSplits: Split[] = []
 
     participants.forEach((pId) => {
-      const existingSplit = splits.find((s) => s.memberId === pId);
-      const shares = existingSplit?.shares || 0;
-      const sharesProportion = shares / totalShares;
+      const existingSplit = splits.find((s) => s.memberId === pId)
+      const shares = existingSplit?.shares || 0
+      const sharesProportion = shares / totalShares
 
       newSplits.push({
         memberId: pId,
         shares,
         owedAmount: roundToCent(totalAmount * sharesProportion),
-      });
-    });
+      })
+    })
 
-    const totalCalculated = newSplits.reduce((sum, s) => sum + s.owedAmount, 0);
-    const difference = roundToCent(totalAmount - totalCalculated);
+    const totalCalculated = newSplits.reduce((sum, s) => sum + s.owedAmount, 0)
+    const difference = roundToCent(totalAmount - totalCalculated)
 
     if (Math.abs(difference) > 0.001 && newSplits.length > 0) {
-      const lastIndex = newSplits.length - 1;
-      newSplits[lastIndex].owedAmount = roundToCent(newSplits[lastIndex].owedAmount + difference);
+      const lastIndex = newSplits.length - 1
+      newSplits[lastIndex].owedAmount = roundToCent(newSplits[lastIndex].owedAmount + difference)
     }
 
-    return newSplits;
-  };
+    return newSplits
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">{error}</div>
+        <div className="mb-4 rounded border border-red-400 bg-red-100 px-4 py-3 text-red-700">{error}</div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div>
-          <label htmlFor="description" className="block text-sm font-medium mb-1">
+          <label htmlFor="description" className="mb-1 block text-sm font-medium">
             Description
           </label>
           <input
@@ -498,7 +498,7 @@ export default function AddExpenseForm({
         </div>
 
         <div>
-          <label htmlFor="amount" className="block text-sm font-medium mb-1">
+          <label htmlFor="amount" className="mb-1 block text-sm font-medium">
             Amount {currency && `(${currency})`}
           </label>
           <input
@@ -515,9 +515,9 @@ export default function AddExpenseForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div>
-          <label htmlFor="date" className="block text-sm font-medium mb-1">
+          <label htmlFor="date" className="mb-1 block text-sm font-medium">
             Date
           </label>
           <input
@@ -526,10 +526,10 @@ export default function AddExpenseForm({
             className="input w-full"
             value={date}
             onChange={(e) => {
-              const { value } = e.target;
-              const date = new Date(value);
+              const { value } = e.target
+              const date = new Date(value)
               if (/^\d{4}-\d{2}-\d{2}$/.test(value) && !isNaN(date.getTime())) {
-                setDate(value);
+                setDate(value)
               }
             }}
             required
@@ -537,9 +537,9 @@ export default function AddExpenseForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Category (Optional)</label>
+          <label className="mb-1 block text-sm font-medium">Category (Optional)</label>
           <select
-            value={categoryId || ""}
+            value={categoryId || ''}
             onChange={(e) => setCategoryId(e.target.value || null)}
             className="input w-full"
           >
@@ -553,9 +553,9 @@ export default function AddExpenseForm({
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Payment Method (Optional)</label>
+          <label className="mb-1 block text-sm font-medium">Payment Method (Optional)</label>
           <select
-            value={selectedPaymentMethod || ""}
+            value={selectedPaymentMethod || ''}
             onChange={(e) => setSelectedPaymentMethod(e.target.value)}
             className="input w-full"
           >
@@ -569,23 +569,20 @@ export default function AddExpenseForm({
         </div>
       </div>
 
-      <div className="border-t pt-4 mt-1">
-        <div className="flex justify-between items-center mb-2">
+      <div className="mt-1 border-t pt-4">
+        <div className="mb-2 flex items-center justify-between">
           <h3 className="text-md font-medium">Who's involved?</h3>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-4">
+        <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3">
           {members.map((member) => (
             <div
               key={member.id}
-              className={`
-                p-2 rounded border cursor-pointer flex items-center
-                ${
-                  participants.includes(member.id)
-                    ? "bg-blue-100 border-blue-500 dark:bg-blue-900 dark:border-blue-400"
-                    : "bg-gray-100 border-gray-300 dark:bg-gray-800 dark:border-gray-600"
-                }
-              `}
+              className={`flex cursor-pointer items-center rounded border p-2 ${
+                participants.includes(member.id)
+                  ? 'border-blue-500 bg-blue-100 dark:border-blue-400 dark:bg-blue-900'
+                  : 'border-gray-300 bg-gray-100 dark:border-gray-600 dark:bg-gray-800'
+              } `}
               onClick={() => toggleParticipant(member.id)}
             >
               <input
@@ -600,7 +597,7 @@ export default function AddExpenseForm({
         </div>
 
         <div className="mt-4">
-          <h3 className="text-md font-medium mb-2">Paid by</h3>
+          <h3 className="text-md mb-2 font-medium">Paid by</h3>
 
           <div className="space-y-3">
             {payers.map((payer, index) => (
@@ -608,7 +605,7 @@ export default function AddExpenseForm({
                 <select
                   className="input flex-grow"
                   value={payer.memberId}
-                  onChange={(e) => updatePayer(index, "memberId", e.target.value)}
+                  onChange={(e) => updatePayer(index, 'memberId', e.target.value)}
                 >
                   {members.map((member) => (
                     <option key={member.id} value={member.id}>
@@ -621,8 +618,8 @@ export default function AddExpenseForm({
                   <input
                     type="number"
                     className="input w-24"
-                    value={payer.amount || ""}
-                    onChange={(e) => updatePayer(index, "amount", e.target.value)}
+                    value={payer.amount || ''}
+                    onChange={(e) => updatePayer(index, 'amount', e.target.value)}
                     placeholder="0.00"
                     step="0.01"
                     min="0"
@@ -652,72 +649,72 @@ export default function AddExpenseForm({
         </div>
       </div>
 
-      <div className="border-t pt-4 mt-1">
-        <div className="flex justify-between items-center mb-2">
+      <div className="mt-1 border-t pt-4">
+        <div className="mb-2 flex items-center justify-between">
           <h3 className="text-md font-medium">How to split?</h3>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="mb-4 grid grid-cols-3 gap-2">
           <button
             type="button"
-            className={`btn ${splitType === "even" ? "btn-primary" : "btn-secondary"}`}
-            onClick={() => setSplitType("even")}
+            className={`btn ${splitType === 'even' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setSplitType('even')}
           >
             Split Evenly
           </button>
 
           <button
             type="button"
-            className={`btn ${splitType === "amount" ? "btn-primary" : "btn-secondary"}`}
-            onClick={() => setSplitType("amount")}
+            className={`btn ${splitType === 'amount' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setSplitType('amount')}
           >
             By Amount
           </button>
 
           <button
             type="button"
-            className={`btn ${splitType === "shares" ? "btn-primary" : "btn-secondary"}`}
-            onClick={() => setSplitType("shares")}
+            className={`btn ${splitType === 'shares' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setSplitType('shares')}
           >
             By Shares
           </button>
         </div>
 
-        <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700">
-          <h4 className="text-sm font-medium mb-2">Split Details</h4>
+        <div className="rounded border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
+          <h4 className="mb-2 text-sm font-medium">Split Details</h4>
 
           <div className="space-y-3">
             {splits
               .filter((split) => participants.includes(split.memberId))
               .map((split) => {
-                const originalIndex = splits.findIndex((s) => s.memberId === split.memberId);
-                if (originalIndex === -1) return null;
+                const originalIndex = splits.findIndex((s) => s.memberId === split.memberId)
+                if (originalIndex === -1) return null
 
                 return (
-                  <div key={originalIndex} className="flex gap-2 items-center">
+                  <div key={originalIndex} className="flex items-center gap-2">
                     <span className="w-1/4">{getMemberName(split.memberId)}</span>
 
-                    {splitType === "amount" && (
+                    {splitType === 'amount' && (
                       <input
                         type="number"
                         className="input flex-grow"
                         value={
-                          typeof split.amount === "number" ? split.amount.toFixed(2) : split.amount ?? ""
+                          typeof split.amount === 'number' ? split.amount.toFixed(2) : (split.amount ?? '')
                         }
-                        onChange={(e) => updateSplit(originalIndex, "amount", e.target.value)}
+                        onChange={(e) => updateSplit(originalIndex, 'amount', e.target.value)}
                         placeholder="0.00"
                         step="0.01"
                         min="0"
                       />
                     )}
 
-                    {splitType === "shares" && (
-                      <div className="flex items-center flex-grow">
+                    {splitType === 'shares' && (
+                      <div className="flex flex-grow items-center">
                         <input
                           type="number"
                           className="input flex-grow"
-                          value={split.shares ?? ""}
-                          onChange={(e) => updateSplit(originalIndex, "shares", e.target.value)}
+                          value={split.shares ?? ''}
+                          onChange={(e) => updateSplit(originalIndex, 'shares', e.target.value)}
                           placeholder="1"
                           step="1"
                           min="0"
@@ -725,20 +722,20 @@ export default function AddExpenseForm({
                         {(() => {
                           const totalShares = splits
                             .filter((s) => participants.includes(s.memberId))
-                            .reduce((sum, s) => sum + (s.shares || 0), 0);
+                            .reduce((sum, s) => sum + (s.shares || 0), 0)
 
                           if (totalShares > 0 && split.shares) {
-                            const percentage = (split.shares / totalShares) * 100;
-                            const displayPercentage = Math.round(percentage);
-                            const needsApprox = Math.abs(percentage - displayPercentage) > 0.01;
+                            const percentage = (split.shares / totalShares) * 100
+                            const displayPercentage = Math.round(percentage)
+                            const needsApprox = Math.abs(percentage - displayPercentage) > 0.01
                             return (
-                              <span className="ml-2 text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                                {needsApprox ? "~" : ""}
+                              <span className="ml-2 whitespace-nowrap text-gray-500 dark:text-gray-400">
+                                {needsApprox ? '~' : ''}
                                 {displayPercentage}%
                               </span>
-                            );
+                            )
                           }
-                          return null;
+                          return null
                         })()}
                       </div>
                     )}
@@ -747,51 +744,51 @@ export default function AddExpenseForm({
                       {formatAmount(split.owedAmount)}
                     </span>
                   </div>
-                );
+                )
               })}
             <div className="pt-1">
-              {splitType === "amount" &&
+              {splitType === 'amount' &&
                 (() => {
-                  const totalAmountNum = parseFloat(amount) || 0;
-                  const participantSplits = splits.filter((s) => participants.includes(s.memberId));
+                  const totalAmountNum = parseFloat(amount) || 0
+                  const participantSplits = splits.filter((s) => participants.includes(s.memberId))
                   const currentSplitTotalAmount = participantSplits.reduce(
                     (sum, s) => sum + (s.amount || 0),
                     0
-                  );
-                  const difference = roundToCent(totalAmountNum - currentSplitTotalAmount);
-                  const isMatch = Math.abs(difference) < 0.01;
-                  const hasInput = participantSplits.some((s) => s.amount !== undefined && s.amount !== null);
+                  )
+                  const difference = roundToCent(totalAmountNum - currentSplitTotalAmount)
+                  const isMatch = Math.abs(difference) < 0.01
+                  const hasInput = participantSplits.some((s) => s.amount !== undefined && s.amount !== null)
 
-                  let textColor = "text-gray-500 dark:text-gray-400";
-                  let fontWeight = "font-normal";
-                  let hintText = `Total must equal ${formatAmount(totalAmountNum)}.`;
+                  let textColor = 'text-gray-500 dark:text-gray-400'
+                  let fontWeight = 'font-normal'
+                  let hintText = `Total must equal ${formatAmount(totalAmountNum)}.`
 
                   if (hasInput) {
                     if (isMatch) {
-                      textColor = "text-green-600 dark:text-green-400";
-                      fontWeight = "font-semibold";
-                      hintText = `Total matches: ${formatAmount(totalAmountNum)}`;
+                      textColor = 'text-green-600 dark:text-green-400'
+                      fontWeight = 'font-semibold'
+                      hintText = `Total matches: ${formatAmount(totalAmountNum)}`
                     } else {
-                      textColor = "text-red-600 dark:text-red-400";
-                      fontWeight = "font-semibold";
+                      textColor = 'text-red-600 dark:text-red-400'
+                      fontWeight = 'font-semibold'
                       hintText = `${formatAmount(Math.abs(difference))} ${
-                        difference > 0 ? "left" : "over"
-                      }. Current total: ${formatAmount(currentSplitTotalAmount)}`;
+                        difference > 0 ? 'left' : 'over'
+                      }. Current total: ${formatAmount(currentSplitTotalAmount)}`
                     }
                   }
 
-                  return <p className={`text-sm mt-1 ${textColor} ${fontWeight}`}>{hintText}</p>;
+                  return <p className={`mt-1 text-sm ${textColor} ${fontWeight}`}>{hintText}</p>
                 })()}
-              {splitType === "shares" && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Total shares:{" "}
+              {splitType === 'shares' && (
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Total shares:{' '}
                   {splits
                     .filter((s) => participants.includes(s.memberId))
                     .reduce((sum, s) => sum + (s.shares || 0), 0)}
                 </p>
               )}
-              {splitType === "even" && participants.length > 0 && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              {splitType === 'even' && participants.length > 0 && (
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                   Each person pays {formatAmount(roundToCent(parseFloat(amount) / participants.length))}
                 </p>
               )}
@@ -801,7 +798,7 @@ export default function AddExpenseForm({
       </div>
 
       <div>
-        <label htmlFor="notes" className="block text-sm font-medium mb-1">
+        <label htmlFor="notes" className="mb-1 block text-sm font-medium">
           Notes (Optional)
         </label>
         <textarea
@@ -821,13 +818,13 @@ export default function AddExpenseForm({
         <button type="submit" className="btn btn-primary" disabled={isLoading}>
           {isLoading
             ? isEditing
-              ? "Updating..."
-              : "Adding..."
+              ? 'Updating...'
+              : 'Adding...'
             : isEditing
-            ? "Update Expense"
-            : "Add Expense"}
+              ? 'Update Expense'
+              : 'Add Expense'}
         </button>
       </div>
     </form>
-  );
+  )
 }

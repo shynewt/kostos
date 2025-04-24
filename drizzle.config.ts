@@ -1,4 +1,4 @@
-import type { Config } from 'drizzle-kit';
+import type { Config } from 'drizzle-kit'
 
 export default {
   schema: './db/schema.ts',
@@ -7,4 +7,4 @@ export default {
   dbCredentials: {
     url: './kostos.db',
   },
-} satisfies Config;
+} satisfies Config

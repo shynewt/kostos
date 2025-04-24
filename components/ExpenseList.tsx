@@ -1,45 +1,45 @@
-import { formatCurrency } from "../utils/currency";
-import { useState } from "react";
-import ExpenseItem from "./ui/ExpenseItem";
+import { formatCurrency } from '../utils/currency'
+import { useState } from 'react'
+import ExpenseItem from './ui/ExpenseItem'
 
 interface Category {
-  id: string;
-  name: string;
-  color: string;
+  id: string
+  name: string
+  color: string
 }
 
 interface PaymentMethod {
-  id: string;
-  name: string;
-  icon: string;
+  id: string
+  name: string
+  icon: string
 }
 
 interface ExpenseListProps {
-  expenses: any[];
-  members: any[];
-  categories: Category[];
-  paymentMethods: PaymentMethod[];
-  currency: string;
-  onEditExpense: (expense: any) => void;
-  onDeleteExpense: (expense: any) => void;
-  itemsPerPage?: number;
+  expenses: any[]
+  members: any[]
+  categories: Category[]
+  paymentMethods: PaymentMethod[]
+  currency: string
+  onEditExpense: (expense: any) => void
+  onDeleteExpense: (expense: any) => void
+  itemsPerPage?: number
 }
 
 function getInitials(name: string): string {
   return name
-    .split(" ")
+    .split(' ')
     .map((word) => word[0])
-    .join("")
-    .toUpperCase();
+    .join('')
+    .toUpperCase()
 }
 
 function formatDate(date: Date | string | number): string {
-  const d = new Date(date);
-  return d.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  const d = new Date(date)
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
 }
 
 export default function ExpenseList({
@@ -52,27 +52,27 @@ export default function ExpenseList({
   onDeleteExpense,
   itemsPerPage = 50,
 }: ExpenseListProps) {
-  const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState(itemsPerPage);
+  const [currentPage, setCurrentPage] = useState(1)
+  const [perPage, setPerPage] = useState(itemsPerPage)
 
   const formatAmount = (amount: number): string => {
-    return formatCurrency(amount, currency);
-  };
+    return formatCurrency(amount, currency)
+  }
 
-  const totalPages = Math.ceil(expenses.length / perPage);
-  const indexOfLastExpense = currentPage * perPage;
-  const indexOfFirstExpense = indexOfLastExpense - perPage;
-  const currentExpenses = expenses.slice(indexOfFirstExpense, indexOfLastExpense);
+  const totalPages = Math.ceil(expenses.length / perPage)
+  const indexOfLastExpense = currentPage * perPage
+  const indexOfFirstExpense = indexOfLastExpense - perPage
+  const currentExpenses = expenses.slice(indexOfFirstExpense, indexOfLastExpense)
 
   const goToPage = (page: number) => {
-    setCurrentPage(page);
-  };
+    setCurrentPage(page)
+  }
 
   const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newPerPage = parseInt(e.target.value, 10);
-    setPerPage(newPerPage);
-    setCurrentPage(1);
-  };
+    const newPerPage = parseInt(e.target.value, 10)
+    setPerPage(newPerPage)
+    setCurrentPage(1)
+  }
 
   return (
     <div>
@@ -93,10 +93,10 @@ export default function ExpenseList({
       </div>
 
       {expenses.length > 0 && (
-        <div className="mt-6 flex flex-col sm:flex-row items-center justify-between space-y-3 sm:space-y-0">
+        <div className="mt-6 flex flex-col items-center justify-between space-y-3 sm:flex-row sm:space-y-0">
           <div className="flex items-center text-sm text-gray-500 dark:text-gray-400">
             <span>
-              Showing {indexOfFirstExpense + 1}-{Math.min(indexOfLastExpense, expenses.length)} of{" "}
+              Showing {indexOfFirstExpense + 1}-{Math.min(indexOfLastExpense, expenses.length)} of{' '}
               {expenses.length} expenses
             </span>
             <div className="ml-4 flex items-center">
@@ -107,7 +107,7 @@ export default function ExpenseList({
                 id="itemsPerPage"
                 value={perPage}
                 onChange={handleItemsPerPageChange}
-                className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-sm"
+                className="rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700"
               >
                 <option value="10">10</option>
                 <option value="25">25</option>
@@ -121,7 +121,7 @@ export default function ExpenseList({
             <button
               onClick={() => goToPage(1)}
               disabled={currentPage === 1}
-              className="p-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 disabled:opacity-50"
+              className="rounded-md border border-gray-300 bg-white p-1.5 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -141,7 +141,7 @@ export default function ExpenseList({
             <button
               onClick={() => goToPage(currentPage - 1)}
               disabled={currentPage === 1}
-              className="p-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 disabled:opacity-50"
+              className="rounded-md border border-gray-300 bg-white p-1.5 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -156,38 +156,38 @@ export default function ExpenseList({
 
             <div className="flex items-center">
               {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum;
+                let pageNum
 
                 if (totalPages <= 5) {
-                  pageNum = i + 1;
+                  pageNum = i + 1
                 } else if (currentPage <= 3) {
-                  pageNum = i + 1;
+                  pageNum = i + 1
                 } else if (currentPage >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
+                  pageNum = totalPages - 4 + i
                 } else {
-                  pageNum = currentPage - 2 + i;
+                  pageNum = currentPage - 2 + i
                 }
 
                 return (
                   <button
                     key={pageNum}
                     onClick={() => goToPage(pageNum)}
-                    className={`w-8 h-8 mx-0.5 rounded-md ${
+                    className={`mx-0.5 h-8 w-8 rounded-md ${
                       currentPage === pageNum
-                        ? "bg-indigo-600 text-white"
-                        : "border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200"
+                        ? 'bg-indigo-600 text-white'
+                        : 'border border-gray-300 bg-white text-gray-700 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200'
                     }`}
                   >
                     {pageNum}
                   </button>
-                );
+                )
               })}
             </div>
 
             <button
               onClick={() => goToPage(currentPage + 1)}
               disabled={currentPage === totalPages || totalPages === 0}
-              className="p-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 disabled:opacity-50"
+              className="rounded-md border border-gray-300 bg-white p-1.5 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -202,7 +202,7 @@ export default function ExpenseList({
             <button
               onClick={() => goToPage(totalPages)}
               disabled={currentPage === totalPages || totalPages === 0}
-              className="p-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 disabled:opacity-50"
+              className="rounded-md border border-gray-300 bg-white p-1.5 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -223,5 +223,5 @@ export default function ExpenseList({
         </div>
       )}
     </div>
-  );
+  )
 }
