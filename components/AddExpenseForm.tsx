@@ -775,7 +775,7 @@ export default function AddExpenseForm({
           </label>
           <input
             type="text"
-            inputMode="decimal"
+            inputMode="tel"
             id="amount"
             className="input w-full"
             value={amount}
@@ -891,7 +891,7 @@ export default function AddExpenseForm({
                   <div className="relative w-28">
                     <input
                       type="text"
-                      inputMode="decimal"
+                      inputMode="tel"
                       className="input w-full pr-9"
                       value={payer.amount || ''}
                       onChange={(e) => updatePayer(index, 'amount', e.target.value)}
@@ -1008,7 +1008,7 @@ export default function AddExpenseForm({
                       <div className="relative flex-grow">
                         <input
                           type="text"
-                          inputMode="decimal"
+                          inputMode="tel"
                           className={`input w-full pr-9 ${
                             !isValidNumberFormat(split.amountInput, true)
                               ? 'border-red-500 bg-red-50 dark:border-red-400 dark:bg-red-900/20'
@@ -1078,7 +1078,7 @@ export default function AddExpenseForm({
                         <div className="relative flex-grow">
                           <input
                             type="text"
-                            inputMode="decimal"
+                            inputMode="tel"
                             className={`input flex-grow pr-9 ${
                               !isValidNumberFormat(split.sharesInput)
                                 ? 'border-red-500 bg-red-50 dark:border-red-400 dark:bg-red-900/20'
