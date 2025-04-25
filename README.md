@@ -25,17 +25,6 @@ Kostos makes it easy for groups to track, manage, and split expenses together. N
 - **Progressive Web App (PWA):** Configured for PWA capabilities via `next-pwa`.
 - **Dockerized:** Includes `Dockerfile` and `compose.yaml` for easy deployment.
 
-## ⚙️ Tech Stack
-
-- **Framework:** [Next.js](https://nextjs.org/)
-- **Language:** [TypeScript](https://www.typescriptlang.org/)
-- **UI Library:** [React](https://reactjs.org/)
-- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
-- **Database:** [SQLite](https://www.sqlite.org/index.html)
-- **ORM:** [Drizzle ORM](https://orm.drizzle.team/)
-- **Charting:** [Chart.js](https://www.chartjs.org/) / [react-chartjs-2](https://react-chartjs-2.js.org/)
-- **Date Handling:** [date-fns](https://date-fns.org/)
-
 ## 🚀 Self Hosting
 
 1. Get the docker compose file
@@ -115,9 +104,16 @@ This project uses Drizzle ORM to manage the SQLite database schema and queries.
 - **Schema:** Defined in `db/schema.ts`.
 - **Migrations:** Managed by Drizzle Kit. Generate new migrations using `npm run db:generate` after changing the schema. Apply migrations using `npm run db:migrate` (or potentially `db:push` during development).
 
-## 🐳 Docker
+## ⚙️ Tech Stack
 
-A `Dockerfile` and `compose.yaml` are provided for building and running the application using Docker containers. Refer to these files for details on the container setup.
+- **Framework:** [Next.js](https://nextjs.org/)
+- **Language:** [TypeScript](https://www.typescriptlang.org/)
+- **UI Library:** [React](https://reactjs.org/)
+- **Styling:** [Tailwind CSS](https://tailwindcss.com/)
+- **Database:** [SQLite](https://www.sqlite.org/index.html)
+- **ORM:** [Drizzle ORM](https://orm.drizzle.team/)
+- **Charting:** [Chart.js](https://www.chartjs.org/) / [react-chartjs-2](https://react-chartjs-2.js.org/)
+- **Date Handling:** [date-fns](https://date-fns.org/)
 
 # Screenshots
 
