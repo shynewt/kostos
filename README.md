@@ -4,18 +4,9 @@
 
 > NOTE: This project was 100% vive coded. It was built to meet our own needs for a feature-rich, user-friendly open source expense splitting app. It works reliably for us and we use it daily, but we do not plan to refactor it. It fulfills its intended purpose as-is.
 
-Kostos is a web application designed to help groups manage and split expenses collaboratively within projects.
+Kostos makes it easy for groups to track, manage, and split expenses together. No user registration is required. A simple interface with powerful features designed for effortless collaboration.
 
-Track who paid what, categorize expenses, manage payment methods, easily calculate who owes whom based on flexible splitting rules, and see project stats to understand how you are spending.
-
-<h5 align="center">Main Project Dashboard</h5>
-<img src="misc/screenshot_1.png" align="center" />
-
-<h5 align="center">Project Stats</h5>
-<img src="misc/screenshot_2.png" align="center" />
-
-<h5 align="center">Add Expense Form</h5>
-<img src="misc/screenshot_3.png" align="center" />
+<h4 align="center"><a href="#screenshots">VIEW SCREENSHOTS</a></h4>
 
 ---
 
@@ -23,13 +14,14 @@ Track who paid what, categorize expenses, manage payment methods, easily calcula
 
 - **Project Management:** Create new projects or join existing ones to manage shared expenses.
 - **Member Management:** Add members to projects.
+- **No user accounts required:** Uses unique user and project IDs, your session is stored in your browser local storage.
 - **Expense Tracking:** Record expenses with details like description, amount, date, category, and payment method.
-- **Flexible Splitting:** Split expenses evenly, by specific amounts, by shares, or by percentage.
-- **Payment Tracking:** Record which member(s) paid for each expense.
+- **Flexible Splitting:** Split expenses evenly, by specific amounts (supports basic math expressions!) or by shares.
+- **Payment Tracking:** Record which member(s) paid for each expense. Support multiple payers.
 - **Category Management:** Create custom categories with names and colors to organize expenses.
-- **Payment Method Management:** Define custom payment methods with names and icons.
-- **Statistics:** Visualize project expense data (likely via charts).
-- **Data Import/Export:** Functionality to import/export project data (inferred from API routes).
+- **Payment Method Management:** Define and track custom payment methods with names and icons.
+- **Statistics:** Visualize project expense data with beautiful charts.
+- **Data Import/Export:** Functionality to import/export project data (uses Spliit format).
 - **Progressive Web App (PWA):** Configured for PWA capabilities via `next-pwa`.
 - **Dockerized:** Includes `Dockerfile` and `compose.yaml` for easy deployment.
 
@@ -126,3 +118,14 @@ This project uses Drizzle ORM to manage the SQLite database schema and queries.
 ## 🐳 Docker
 
 A `Dockerfile` and `compose.yaml` are provided for building and running the application using Docker containers. Refer to these files for details on the container setup.
+
+# Screenshots
+
+<h5 align="center">Main Project Dashboard</h5>
+<img src="misc/screenshot_1.png" align="center" />
+
+<h5 align="center">Project Stats</h5>
+<img src="misc/screenshot_2.png" align="center" />
+
+<h5 align="center">Add Expense Form</h5>
+<img src="misc/screenshot_3.png" align="center" />
