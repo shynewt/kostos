@@ -48,7 +48,8 @@ Track who paid what, categorize expenses, manage payment methods, easily calcula
 2. Run
 
    ```
-   docker compose up -d
+   # The sqlite file must exist before running
+   touch kostos.db && docker compose up -d
    ```
 
 3. Open [http://localhost:3000](http://localhost:3000) in your browser
