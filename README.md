@@ -8,7 +8,14 @@ Kostos is a web application designed to help groups manage and split expenses co
 
 Track who paid what, categorize expenses, manage payment methods, easily calculate who owes whom based on flexible splitting rules, and see project stats to understand how you are spending.
 
+<h5 align="center">Main Project Dashboard</h5>
 <img src="misc/screenshot_1.png" align="center" />
+
+<h5 align="center">Project Stats</h5>
+<img src="misc/screenshot_2.png" align="center" />
+
+<h5 align="center">Add Expense Form</h5>
+<img src="misc/screenshot_3.png" align="center" />
 
 ---
 
