@@ -24,7 +24,7 @@ Track who paid what, categorize expenses, manage payment methods, easily calcula
 - **Statistics:** Visualize project expense data (likely via charts).
 - **Data Import/Export:** Functionality to import/export project data (inferred from API routes).
 - **Progressive Web App (PWA):** Configured for PWA capabilities via `next-pwa`.
-- **Dockerized:** Includes `Dockerfile` and `compose.yaml` for easy containerization and deployment.
+- **Dockerized:** Includes `Dockerfile` and `compose.yaml` for easy deployment.
 
 ## ⚙️ Tech Stack
 
@@ -37,16 +37,15 @@ Track who paid what, categorize expenses, manage payment methods, easily calcula
 - **Charting:** [Chart.js](https://www.chartjs.org/) / [react-chartjs-2](https://react-chartjs-2.js.org/)
 - **Date Handling:** [date-fns](https://date-fns.org/)
 
-## 🚀 Getting Started
+## 🚀 Self Hosting
 
-1. Clone the repository
+1. Get the docker compose file
 
    ```bash
-   git clone <repository-url>
-   cd kostos
+   wget -O docker-compose.yml https://raw.githubusercontent.com/shynewt/kostos/refs/heads/main/compose.yaml
    ```
 
-2. Run with Docker Compose
+2. Run
 
    ```
    docker compose up -d

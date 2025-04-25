@@ -1,13 +1,12 @@
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  kostos:
+    image: ghcr.io/shynewt/kostos:latest
     ports:
       - '3000:3000'
     volumes:
-      # Mount the SQLite database file into the container
-      # Use './data:/app/data' if you prefer to keep the db in a subdirectory
+      # Mount the SQLite database file into the container for persistent storage
+      # IMPORTANT: The file must exist on the host machine. You can create it with:
+      # touch ./kostos.db
       - ./kostos.db:/app/kostos.db
     command: sh -c "npm run db:migrate && npm start"
     environment:
