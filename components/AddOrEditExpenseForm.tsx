@@ -233,11 +233,18 @@ export default function AddOrEditExpenseForm({
   }
 
   const updatePayer = (index: number, field: 'memberId' | 'amount', rawValue: string | number) => {
-    const value = typeof rawValue === 'string' ? rawValue.replace(/[^0-9.,]/g, '') : rawValue
+    let value: string | number
+    if (field === 'amount') {
+      value = typeof rawValue === 'string' ? rawValue.replace(/[^0-9.,]/g, '') : rawValue
+      value = parseFloat(value as string) || 0
+    } else {
+      value = rawValue
+    }
+
     const newPayers = [...payers]
     newPayers[index] = {
       ...newPayers[index],
-      [field]: field === 'amount' ? parseFloat(value as string) || 0 : value,
+      [field]: value,
     }
     setPayers(newPayers)
   }
