@@ -6,7 +6,7 @@
 
 Kostos makes it easy for groups to track, manage, and split expenses together. No user registration is required. A simple interface with powerful features designed for effortless collaboration.
 
-<h4 align="center"><a href="#screenshots">VIEW SCREENSHOTS</a></h4>
+<h4 align="center"><a href="#screenshots">VIEW SCREENSHOTS</a> | <a href="https://kostos.shynewt.com/projects/join?projectId=oGJIl2wqOJ">DEMO</a></h4>
 
 ---
 
