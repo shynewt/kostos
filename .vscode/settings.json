@@ -34,5 +34,6 @@
   },
   "eslint.enable": true,
   "debug.javascript.autoAttachFilter": "always",
-  "tailwindCSS.classAttributes": ["class", "className", "classNames", "ngClass", ".*classNames?"]
+  "tailwindCSS.classAttributes": ["class", "className", "classNames", "ngClass", ".*classNames?"],
+  "cursor.general.globalCursorIgnoreList": []
 }
