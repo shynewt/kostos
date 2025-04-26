@@ -37,6 +37,4 @@ COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
 # Expose the port the app runs on
 EXPOSE 3000
 
-# Set the command to start the app
-# Note: We will run migrations via docker-compose command override for better control
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npm run db:migrate && npm start"]

@@ -59,13 +59,7 @@ Kostos makes it easy for groups to track, manage, and split expenses together. N
 
 3. **Set up the database:**
 
-   - Initialize the database schema (if starting fresh):
-
-     ```bash
-     npm run db:push
-     ```
-
-   - Alternatively, run existing migrations:
+   - Run all migrations (creates the database if it doesn't exist):
 
      ```bash
      npm run db:migrate
@@ -92,17 +86,24 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - `npm run start`: Starts the production server (requires `build` first).
 - `npm run lint`: Runs Next.js's built-in linter.
 - `npm run db:generate`: Generates SQL migration files based on schema changes using Drizzle Kit.
-- `npm run db:push`: Pushes schema changes directly to the database (useful for development, potentially destructive).
+- `npm run db:migrate`: Applies all pending migrations to the database using Drizzle Kit.
+- `npm run db:push`: Pushes schema changes directly to the database (useful for rapid prototyping, potentially destructive).
 - `npm run db:studio`: Opens Drizzle Studio, a GUI for interacting with the database.
 - `npm run db:init`: Runs a script to potentially initialize/seed the database (see `scripts/init-db.js`).
-- `npm run db:migrate`: Runs database migration scripts (see `scripts/run-migrations.js`).
+- `npm run db:pull`: Introspects the current database schema and updates `db/schema.ts`.
 
 ## 💾 Database
 
 This project uses Drizzle ORM to manage the SQLite database schema and queries.
 
 - **Schema:** Defined in `db/schema.ts`.
-- **Migrations:** Managed by Drizzle Kit. Generate new migrations using `npm run db:generate` after changing the schema. Apply migrations using `npm run db:migrate` (or potentially `db:push` during development).
+- **Migrations:** Managed by Drizzle Kit. Generate new migrations using `npm run db:generate` after changing the schema. Apply migrations using `npm run db:migrate`.
+
+## 🐳 Docker
+
+- The Docker image uses an entrypoint script that ensures the database file exists and runs all migrations before starting the app.
+- You do **not** need to manually create the database file; it will be created automatically.
+- On container startup, migrations are always applied to keep the schema up to date.
 
 ## ⚙️ Tech Stack
 
