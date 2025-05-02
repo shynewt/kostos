@@ -16,6 +16,16 @@ export const CURRENCY_OPTIONS: CurrencyOption[] = [
   { code: 'BRL', symbol: 'R$', name: 'Brazilian Real' },
   { code: 'CAD', symbol: 'C$', name: 'Canadian Dollar' },
   { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+  { code: 'DKK', symbol: 'kr', name: 'Danish Krone' },
+  { code: 'CHF', symbol: 'CHF', name: 'Swiss Franc' },
+  { code: 'SEK', symbol: 'kr', name: 'Swedish Krona' },
+  { code: 'NOK', symbol: 'kr', name: 'Norwegian Krone' },
+  { code: 'KRW', symbol: '₩', name: 'South Korean Won' },
+  { code: 'MXN', symbol: '$', name: 'Mexican Peso' },
+  { code: 'SGD', symbol: '$', name: 'Singapore Dollar' },
+  { code: 'HKD', symbol: '$', name: 'Hong Kong Dollar' },
+  { code: 'NZD', symbol: '$', name: 'New Zealand Dollar' },
+  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
 ]
 
 /**
