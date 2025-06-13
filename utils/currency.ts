@@ -9,6 +9,7 @@ export const CURRENCY_OPTIONS: CurrencyOption[] = [
   { code: 'USD', symbol: '$', name: 'US Dollar' },
   { code: 'EUR', symbol: '€', name: 'Euro' },
   { code: 'GBP', symbol: '£', name: 'British Pound' },
+  { code: 'RON', symbol: 'R', name: 'Romanian Leu' },
   { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
   { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
   { code: 'RUB', symbol: '₽', name: 'Russian Ruble' },
