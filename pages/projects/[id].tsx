@@ -2207,8 +2207,8 @@ export default function ProjectDetail() {
                                         router.push('/')
                                       }
                                     } else {
-                                      // Refresh project data
-                                      router.replace(router.asPath)
+                                      // Refresh project data dynamically
+                                      fetchProject()
                                     }
                                   } else {
                                     alert('Failed to remove member: ' + result.error)

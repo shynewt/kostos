@@ -150,9 +150,10 @@ export default function AddOrEditExpenseForm({
   const [categoryId, setCategoryId] = useState<string | null>(expense?.categoryId || null)
   const [notes, setNotes] = useState<string>(expense?.notes || '')
 
-  const initialParticipants = expense?.splits
-    ? expense.splits.map((split) => split.memberId)
-    : members.map((member) => member.id)
+  const initialParticipants =
+    expense?.splits && expense.splits.length > 0
+      ? expense.splits.filter((split) => split.owedAmount > 0).map((split) => split.memberId)
+      : members.map((member) => member.id)
 
   const [participants, setParticipants] = useState<string[]>(initialParticipants)
 
