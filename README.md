@@ -105,6 +105,7 @@ This project uses Drizzle ORM to manage the SQLite database schema and queries.
 - The Docker image runs database migrations before starting the app.
 - SQLite data is stored in the host file `./kostos.db`, mounted at `/data/kostos.db` inside the container.
 - Before migrations run, a timestamped backup is written to `./backups/`.
+- If you run the container as a non-root user, ensure `kostos.db` and `backups/` are writable by that user.
 - To upgrade safely, stop the container and copy `kostos.db` somewhere safe before pulling a new image.
 
 ## ⚙️ Tech Stack
