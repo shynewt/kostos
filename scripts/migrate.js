@@ -42,12 +42,12 @@ function backupDatabaseIfNeeded() {
 
 function baselineExistingDatabaseIfNeeded() {
   const hasProjectsTable = tableExists('projects')
-  const hasMigrationsTable = tableExists('__drizzle_migrations')
 
   // Databases initialized by the old scripts may already have Kostos tables but no Drizzle
   // migration ledger. Mark the initial schema as applied so future migrations are additive
-  // instead of trying to recreate existing tables.
-  if (!hasProjectsTable || hasMigrationsTable) return
+  // instead of trying to recreate existing tables. Also handles a previous failed migration
+  // attempt that created an empty __drizzle_migrations table.
+  if (!hasProjectsTable) return
 
   sqlite.exec(`CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
     id SERIAL PRIMARY KEY,
@@ -57,6 +57,12 @@ function baselineExistingDatabaseIfNeeded() {
 
   const initialMigration = path.join(migrationsFolder, '0000_sweet_brood.sql')
   const hash = crypto.createHash('sha256').update(fs.readFileSync(initialMigration)).digest('hex')
+  const alreadyApplied = sqlite
+    .prepare('SELECT 1 FROM "__drizzle_migrations" WHERE hash = ? LIMIT 1')
+    .get(hash)
+
+  if (alreadyApplied) return
+
   sqlite.prepare('INSERT INTO "__drizzle_migrations" (hash, created_at) VALUES (?, ?)').run(hash, Date.now())
   console.log('Existing database schema detected; baseline migration marked as applied')
 }
