@@ -10,27 +10,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return sendError(res, 'Invalid payment method ID', 400)
   }
 
-  if (req.method === 'DELETE') {
-    try {
-      // Check if the payment method exists
-      const [paymentMethod] = await db
-        .select()
-        .from(schema.paymentMethods)
-        .where(eq(schema.paymentMethods.id, id))
-
-      if (!paymentMethod) {
-        return sendError(res, 'Payment method not found', 404)
-      }
-
-      // Delete the payment method
-      await db.delete(schema.paymentMethods).where(eq(schema.paymentMethods.id, id))
-
-      return sendSuccess(res, { id })
-    } catch (error) {
-      console.error('Error deleting payment method:', error)
-      return sendError(res, 'Failed to delete payment method')
-    }
+  switch (req.method) {
+    case 'DELETE':
+      return deletePaymentMethod(req, res, id)
+    default:
+      return sendError(res, 'Method not allowed', 405)
   }
+}
 
-  return sendError(res, 'Method not allowed', 405)
+async function deletePaymentMethod(req: NextApiRequest, res: NextApiResponse, id: string) {
+  try {
+    const [paymentMethod] = await db
+      .select()
+      .from(schema.paymentMethods)
+      .where(eq(schema.paymentMethods.id, id))
+
+    if (!paymentMethod) return sendError(res, 'Payment method not found', 404)
+
+    const usedByExpenses = await db
+      .select({ id: schema.expenses.id })
+      .from(schema.expenses)
+      .where(eq(schema.expenses.paymentMethodId, id))
+      .limit(1)
+
+    if (usedByExpenses.length > 0) {
+      await db.update(schema.expenses).set({ paymentMethodId: null }).where(eq(schema.expenses.paymentMethodId, id))
+    }
+
+    await db.delete(schema.paymentMethods).where(eq(schema.paymentMethods.id, id))
+
+    return sendSuccess(res, { id })
+  } catch (error) {
+    console.error('Error deleting payment method:', error)
+    return sendError(res, 'Failed to delete payment method')
+  }
 }

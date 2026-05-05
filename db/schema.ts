@@ -1,14 +1,6 @@
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
-export const categories = sqliteTable('categories', {
-  id: text('id').primaryKey().notNull(),
-  projectId: text('project_id').notNull(),
-  name: text('name').notNull(),
-  color: text('color').notNull().default('#3b82f6'),
-  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s', 'now'))`),
-})
-
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey().notNull(),
   name: text('name').notNull(),
@@ -17,6 +9,16 @@ export const projects = sqliteTable('projects', {
   currency: text('currency').notNull().default('USD'),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s', 'now'))`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).default(sql`(strftime('%s', 'now'))`),
+})
+
+export const categories = sqliteTable('categories', {
+  id: text('id').primaryKey().notNull(),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  color: text('color').notNull().default('#3b82f6'),
+  createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s', 'now'))`),
 })
 
 export const members = sqliteTable('members', {
@@ -30,7 +32,9 @@ export const members = sqliteTable('members', {
 
 export const paymentMethods = sqliteTable('payment_methods', {
   id: text('id').primaryKey().notNull(),
-  projectId: text('project_id').notNull(),
+  projectId: text('project_id')
+    .notNull()
+    .references(() => projects.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   icon: text('icon').notNull().default('💳'),
   createdAt: integer('created_at', { mode: 'timestamp' }).default(sql`(strftime('%s', 'now'))`),

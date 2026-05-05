@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { generateId } from '../utils/id'
 
 interface PaymentMethod {
   id: string

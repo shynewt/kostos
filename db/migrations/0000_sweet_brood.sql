@@ -3,7 +3,8 @@ CREATE TABLE `categories` (
 	`project_id` text NOT NULL,
 	`name` text NOT NULL,
 	`color` text DEFAULT '#3b82f6' NOT NULL,
-	`created_at` integer DEFAULT (strftime('%s', 'now'))
+	`created_at` integer DEFAULT (strftime('%s', 'now')),
+	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
 CREATE TABLE `expenses` (
@@ -35,7 +36,8 @@ CREATE TABLE `payment_methods` (
 	`project_id` text NOT NULL,
 	`name` text NOT NULL,
 	`icon` text DEFAULT '💳' NOT NULL,
-	`created_at` integer DEFAULT (strftime('%s', 'now'))
+	`created_at` integer DEFAULT (strftime('%s', 'now')),
+	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
 CREATE TABLE `payments` (

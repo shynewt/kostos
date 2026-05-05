@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next'
 import { db, schema } from '../../../db'
 import { generateId } from '../../../utils/id'
 import { sendSuccess, sendError } from '../../../utils/api'
+import { asColor, asTrimmedString, isPlainObject } from '../../../utils/apiValidation'
 import { eq } from 'drizzle-orm'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -15,7 +16,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 }
 
-// Get categories for a project
 async function getCategories(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { projectId } = req.query
@@ -36,36 +36,26 @@ async function getCategories(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
-// Create a new category
 async function createCategory(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { projectId, name, color } = req.body
+    if (!isPlainObject(req.body)) return sendError(res, 'Request body must be an object', 400)
 
-    if (!projectId) {
-      return sendError(res, 'Project ID is required')
-    }
+    const projectId = asTrimmedString(req.body.projectId, 'Project ID', 128)
+    const name = asTrimmedString(req.body.name, 'Category name')
+    const color = asColor(req.body.color)
 
-    if (!name) {
-      return sendError(res, 'Category name is required')
-    }
+    const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId))
+    if (!project) return sendError(res, 'Project not found', 404)
 
-    // Generate a unique ID for the category
     const categoryId = generateId()
 
-    // Create the category
-    await db.insert(schema.categories).values({
-      id: categoryId,
-      projectId,
-      name,
-      color: color || '#3b82f6', // Default blue color
-    })
+    await db.insert(schema.categories).values({ id: categoryId, projectId, name, color })
 
-    // Fetch the created category
     const [category] = await db.select().from(schema.categories).where(eq(schema.categories.id, categoryId))
 
     return sendSuccess(res, category, 201)
   } catch (error) {
     console.error('Error creating category:', error)
-    return sendError(res, 'Failed to create category')
+    return sendError(res, error instanceof Error ? error.message : 'Failed to create category', 400)
   }
 }

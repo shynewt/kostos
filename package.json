@@ -6,43 +6,47 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "npm run typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push:sqlite",
+    "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:init": "node scripts/init-db.js",
-    "db:pull": "drizzle-kit pull --out=./db/schema.ts --url=./kostos.db --dialect=sqlite",
-    "format": "prettier --write ."
+    "db:pull": "drizzle-kit introspect",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit",
+    "db:migrate:runtime": "node scripts/migrate.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "better-sqlite3": "^11.9.1",
     "chart.js": "^4.4.8",
     "date-fns": "^4.1.0",
-    "drizzle-kit": "^0.31.1",
-    "drizzle-orm": "^0.41.0",
-    "mathjs": "^14.4.0",
-    "next": "^15.2.4",
-    "next-pwa": "^5.6.0",
+    "drizzle-orm": "^0.45.2",
+    "next": "^16.2.4",
     "react": "^19.1.0",
     "react-chartjs-2": "^5.3.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.13.14",
     "@types/react": "^19.0.12",
     "@types/react-dom": "^19.0.4",
     "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.31",
+    "drizzle-kit": "^0.31.10",
+    "postcss": "^8.5.14",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "sharp": "^0.33.5",
     "tailwindcss": "^3.3.3",
     "typescript": "^5.8.2"
+  },
+  "overrides": {
+    "postcss": "^8.5.14",
+    "esbuild": "^0.25.12"
   }
 }

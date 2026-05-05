@@ -4,4 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - 3000:3000
+      - '3000:3000'
+    volumes:
+      - ./kostos.db:/data/kostos.db
+      - ./backups:/data/backups
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: /data/kostos.db

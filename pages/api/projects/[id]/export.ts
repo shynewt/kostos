@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { db, schema } from '../../../../db'
 import { sendSuccess, sendError } from '../../../../utils/api'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 
 // Define interfaces for clarity (optional but good practice)
 interface Category {
@@ -129,30 +129,30 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       .from(schema.expenses)
       .where(eq(schema.expenses.projectId, id))
 
-    // 6. For each expense, get the payments and splits
-    const expensesWithDetails: ExpenseWithDetails[] = await Promise.all(
-      expenses.map(async (expense) => {
-        const payments: Payment[] = await db
-          .select()
-          .from(schema.payments)
-          .where(eq(schema.payments.expenseId, expense.id))
+    const expenseIds = expenses.map((expense) => expense.id)
+    const allPayments: Payment[] = expenseIds.length
+      ? await db.select().from(schema.payments).where(inArray(schema.payments.expenseId, expenseIds))
+      : []
+    const allSplits: Split[] = expenseIds.length
+      ? await db.select().from(schema.splits).where(inArray(schema.splits.expenseId, expenseIds))
+      : []
 
-        const splits: Split[] = await db
-          .select()
-          .from(schema.splits)
-          .where(eq(schema.splits.expenseId, expense.id))
+    const paymentsByExpense = new Map<string, Payment[]>()
+    for (const payment of allPayments) {
+      paymentsByExpense.set(payment.expenseId, [...(paymentsByExpense.get(payment.expenseId) ?? []), payment])
+    }
 
-        // Find the original category object
-        const category = categories.find((cat) => cat.id === expense.categoryId) || null
+    const splitsByExpense = new Map<string, Split[]>()
+    for (const split of allSplits) {
+      splitsByExpense.set(split.expenseId, [...(splitsByExpense.get(split.expenseId) ?? []), split])
+    }
 
-        return {
-          ...expense,
-          payments,
-          splits,
-          category, // Keep the original category object
-        }
-      })
-    )
+    const expensesWithDetails: ExpenseWithDetails[] = expenses.map((expense) => ({
+      ...expense,
+      payments: paymentsByExpense.get(expense.id) ?? [],
+      splits: splitsByExpense.get(expense.id) ?? [],
+      category: categories.find((cat) => cat.id === expense.categoryId) || null,
+    }))
 
     // 7. Convert to Kostos Export format
     const kostosExportData: KostosExportData = {
@@ -190,10 +190,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     // Set headers for file download
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${project.name}-KostosExport.json"` // Changed filename
-    )
+    const safeFileName = project.name.replace(/[^a-z0-9-_]+/gi, '-').replace(/^-+|-+$/g, '') || 'kostos'
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}-KostosExport.json"`)
     res.setHeader('Content-Type', 'application/json')
 
     // Return the JSON data

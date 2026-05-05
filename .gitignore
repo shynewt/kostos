@@ -138,4 +138,7 @@ dist
 .pnp.*
 .aider*
 kostos.db
+*.db-shm
+*.db-wal
+backups/
 *_project.json

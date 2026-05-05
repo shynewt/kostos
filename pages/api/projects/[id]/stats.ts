@@ -1,7 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { db, schema } from '../../../../db'
 import { sendSuccess, sendError } from '../../../../utils/api'
-import { eq, and, gte, lte, sql, desc, count } from 'drizzle-orm'
+import { eq, and, gte, lte, desc, inArray } from 'drizzle-orm'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { id: projectId } = req.query
@@ -100,23 +100,29 @@ async function getProjectStats(req: NextApiRequest, res: NextApiResponse, projec
       .where(and(...conditions))
       .orderBy(desc(schema.expenses.date))
 
-    // For each expense, get the payments and splits
-    const expensesWithDetails = await Promise.all(
-      expenses.map(async (expense) => {
-        const payments = await db
-          .select()
-          .from(schema.payments)
-          .where(eq(schema.payments.expenseId, expense.id))
+    const expenseIds = expenses.map((expense) => expense.id)
+    const allPayments = expenseIds.length
+      ? await db.select().from(schema.payments).where(inArray(schema.payments.expenseId, expenseIds))
+      : []
+    const allSplits = expenseIds.length
+      ? await db.select().from(schema.splits).where(inArray(schema.splits.expenseId, expenseIds))
+      : []
 
-        const splits = await db.select().from(schema.splits).where(eq(schema.splits.expenseId, expense.id))
+    const paymentsByExpense = new Map<string, typeof allPayments>()
+    for (const payment of allPayments) {
+      paymentsByExpense.set(payment.expenseId, [...(paymentsByExpense.get(payment.expenseId) ?? []), payment])
+    }
 
-        return {
-          ...expense,
-          payments,
-          splits,
-        }
-      })
-    )
+    const splitsByExpense = new Map<string, typeof allSplits>()
+    for (const split of allSplits) {
+      splitsByExpense.set(split.expenseId, [...(splitsByExpense.get(split.expenseId) ?? []), split])
+    }
+
+    const expensesWithDetails = expenses.map((expense) => ({
+      ...expense,
+      payments: paymentsByExpense.get(expense.id) ?? [],
+      splits: splitsByExpense.get(expense.id) ?? [],
+    }))
 
     // Filter expenses by current member if specified
     const memberExpensesWithDetails = currentMemberId
@@ -567,7 +573,8 @@ async function getProjectStats(req: NextApiRequest, res: NextApiResponse, projec
           monthlySpending: sortedMemberMonthlySpending,
           // Get the trend for personal spending
           spendingTrend:
-            sortedMemberMonthlySpending.length >= 2
+            sortedMemberMonthlySpending.length >= 2 &&
+            sortedMemberMonthlySpending[sortedMemberMonthlySpending.length - 2].owedAmount !== 0
               ? ((sortedMemberMonthlySpending[sortedMemberMonthlySpending.length - 1].owedAmount -
                   sortedMemberMonthlySpending[sortedMemberMonthlySpending.length - 2].owedAmount) /
                   sortedMemberMonthlySpending[sortedMemberMonthlySpending.length - 2].owedAmount) *

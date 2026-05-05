@@ -22,7 +22,7 @@ Kostos makes it easy for groups to track, manage, and split expenses together. N
 - **Payment Method Management:** Define and track custom payment methods with names and icons.
 - **Statistics:** Visualize project expense data with beautiful charts.
 - **Data Import/Export:** Functionality to import/export project data (uses Spliit format).
-- **Progressive Web App (PWA):** Configured for PWA capabilities via `next-pwa`.
+- **Installable web app assets:** Includes a web manifest and icons.
 - **Dockerized:** Includes `Dockerfile` and `compose.yaml` for easy deployment.
 
 ## 🚀 Self Hosting
@@ -36,7 +36,8 @@ Kostos makes it easy for groups to track, manage, and split expenses together. N
 2. Run
 
    ```
-   # The sqlite file must exist before running
+   # The SQLite file is stored on the host and mounted into the container.
+   # If you already have a kostos.db from an older install, keep it here.
    touch kostos.db && docker compose up -d
    ```
 
@@ -101,9 +102,10 @@ This project uses Drizzle ORM to manage the SQLite database schema and queries.
 
 ## 🐳 Docker
 
-- The Docker image uses an entrypoint script that ensures the database file exists and runs all migrations before starting the app.
-- You do **not** need to manually create the database file; it will be created automatically.
-- On container startup, migrations are always applied to keep the schema up to date.
+- The Docker image runs database migrations before starting the app.
+- SQLite data is stored in the host file `./kostos.db`, mounted at `/data/kostos.db` inside the container.
+- Before migrations run, a timestamped backup is written to `./backups/`.
+- To upgrade safely, stop the container and copy `kostos.db` somewhere safe before pulling a new image.
 
 ## ⚙️ Tech Stack
 

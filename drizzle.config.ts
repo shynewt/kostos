@@ -5,6 +5,6 @@ export default {
   out: './db/migrations',
   dialect: 'sqlite',
   dbCredentials: {
-    url: './kostos.db',
+    url: process.env.DATABASE_URL || './kostos.db',
   },
 } satisfies Config

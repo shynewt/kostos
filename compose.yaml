@@ -4,10 +4,10 @@ services:
     ports:
       - '3000:3000'
     volumes:
-      # Mount the SQLite database file into the container for persistent storage
-      # IMPORTANT: The file must exist on the host machine. You can create it with:
-      # touch ./kostos.db
-      - ./kostos.db:/app/kostos.db
-    command: sh -c "npm run db:migrate && npm start"
+      # Keeps the same host-side database file used by older compose files.
+      - ./kostos.db:/data/kostos.db
+      # Automatic migration backups are written next to the database file.
+      - ./backups:/data/backups
     environment:
       NODE_ENV: production
+      DATABASE_URL: /data/kostos.db

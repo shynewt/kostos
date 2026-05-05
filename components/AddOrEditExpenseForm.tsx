@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatCurrency } from '../utils/currency'
+import { evaluateArithmeticExpression } from '../utils/mathExpression'
 
 const roundToCent = (value: number): number => {
   return Math.round(value * 100) / 100
@@ -53,6 +54,7 @@ interface AddOrEditExpenseFormProps {
     date: string | Date
     splitType: 'even' | 'amount' | 'percent' | 'shares'
     categoryId: string | null
+    paymentMethodId?: string | null
     payments: Payment[]
     splits: Split[]
     notes?: string
@@ -74,49 +76,10 @@ export default function AddOrEditExpenseForm({
 }: AddOrEditExpenseFormProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [mathEvaluate, setMathEvaluate] = useState<((expr: string) => number) | null>(null)
 
-  // Dynamically import mathjs on client-side only
-  useEffect(() => {
-    let isMounted = true
-    const loadMathjs = async () => {
-      try {
-        const mathjs = await import('mathjs')
-        if (isMounted) {
-          setMathEvaluate(() => mathjs.evaluate)
-        }
-      } catch (err) {
-        console.error('Failed to load mathjs:', err)
-      }
-    }
-
-    loadMathjs()
-    return () => {
-      isMounted = false
-    }
-  }, [])
-
-  // Client-side evaluateExpression function that uses mathjs when available
+  // Safe arithmetic-only evaluator for split amount inputs.
   const evaluateExpressionClient = (expression: string): number | null => {
-    if (!expression.trim()) return null
-
-    try {
-      // Replace commas with dots for decimal notation
-      const normalizedExpression = expression.replace(/,/g, '.')
-
-      // If mathjs is loaded, use it for complex expressions
-      if (mathEvaluate) {
-        const result = mathEvaluate(normalizedExpression)
-        if (typeof result === 'number') return result
-      }
-
-      // Fallback to simple parsing
-      const parsedNumber = Number(normalizedExpression)
-      if (Number.isFinite(parsedNumber)) return parsedNumber
-      return null
-    } catch (error) {
-      return null
-    }
+    return evaluateArithmeticExpression(expression)
   }
 
   // Move isValidNumberFormat inside component to use evaluateExpressionClient
@@ -600,7 +563,9 @@ export default function AddOrEditExpenseForm({
     return formatCurrency(value, currency)
   }
 
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>('')
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>(
+    expense?.paymentMethodId ?? ''
+  )
 
   const handleAmountChange = (rawNewValue: string) => {
     const newValue = rawNewValue.replace(/[^0-9.,]/g, '')

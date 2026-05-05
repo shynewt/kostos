@@ -1,7 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next'
 import { db, schema } from '../../../../db'
 import { sendSuccess, sendError } from '../../../../utils/api'
-import { eq, sql } from 'drizzle-orm'
+import { asCurrency, asEmoji, asOptionalTrimmedString, asTrimmedString, isPlainObject } from '../../../../utils/apiValidation'
+import { eq, inArray, sql } from 'drizzle-orm'
 
 // Get project details
 async function getProject(req: NextApiRequest, res: NextApiResponse, projectId: string) {
@@ -31,23 +32,29 @@ async function getProject(req: NextApiRequest, res: NextApiResponse, projectId: 
     // Get project expenses with payments and splits
     const expenses = await db.select().from(schema.expenses).where(eq(schema.expenses.projectId, projectId))
 
-    // For each expense, get the payments and splits
-    const expensesWithDetails = await Promise.all(
-      expenses.map(async (expense) => {
-        const payments = await db
-          .select()
-          .from(schema.payments)
-          .where(eq(schema.payments.expenseId, expense.id))
+    const expenseIds = expenses.map((expense) => expense.id)
+    const allPayments = expenseIds.length
+      ? await db.select().from(schema.payments).where(inArray(schema.payments.expenseId, expenseIds))
+      : []
+    const allSplits = expenseIds.length
+      ? await db.select().from(schema.splits).where(inArray(schema.splits.expenseId, expenseIds))
+      : []
 
-        const splits = await db.select().from(schema.splits).where(eq(schema.splits.expenseId, expense.id))
+    const paymentsByExpense = new Map<string, typeof allPayments>()
+    for (const payment of allPayments) {
+      paymentsByExpense.set(payment.expenseId, [...(paymentsByExpense.get(payment.expenseId) ?? []), payment])
+    }
 
-        return {
-          ...expense,
-          payments,
-          splits,
-        }
-      })
-    )
+    const splitsByExpense = new Map<string, typeof allSplits>()
+    for (const split of allSplits) {
+      splitsByExpense.set(split.expenseId, [...(splitsByExpense.get(split.expenseId) ?? []), split])
+    }
+
+    const expensesWithDetails = expenses.map((expense) => ({
+      ...expense,
+      payments: paymentsByExpense.get(expense.id) ?? [],
+      splits: splitsByExpense.get(expense.id) ?? [],
+    }))
 
     return sendSuccess(res, {
       ...project,
@@ -65,8 +72,7 @@ async function getProject(req: NextApiRequest, res: NextApiResponse, projectId: 
 // Update project details
 async function updateProject(req: NextApiRequest, res: NextApiResponse, projectId: string) {
   try {
-    // Get updatable fields from request body
-    const { name, description, currency, emoji } = req.body
+    if (!isPlainObject(req.body)) return sendError(res, 'Request body must be an object', 400)
 
     // Check if the project exists
     const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId))
@@ -75,12 +81,19 @@ async function updateProject(req: NextApiRequest, res: NextApiResponse, projectI
       return sendError(res, 'Project not found', 404)
     }
 
-    // Build update object with only provided fields
-    const updateData: Record<string, any> = {}
-    if (name !== undefined) updateData.name = name
-    if (description !== undefined) updateData.description = description
-    if (currency !== undefined) updateData.currency = currency
-    if (emoji !== undefined) updateData.emoji = emoji
+    // Build update object with only provided and validated fields
+    const updateData: Partial<{
+      name: string
+      description: string | null
+      currency: string
+      emoji: string
+    }> = {}
+    if (req.body.name !== undefined) updateData.name = asTrimmedString(req.body.name, 'Project name')
+    if (req.body.description !== undefined) {
+      updateData.description = asOptionalTrimmedString(req.body.description, 'Description', 1_000)
+    }
+    if (req.body.currency !== undefined) updateData.currency = asCurrency(req.body.currency)
+    if (req.body.emoji !== undefined) updateData.emoji = asEmoji(req.body.emoji)
 
     // Only update if there are fields to update
     if (Object.keys(updateData).length > 0) {
@@ -99,7 +112,7 @@ async function updateProject(req: NextApiRequest, res: NextApiResponse, projectI
     return sendSuccess(res, updatedProject)
   } catch (error) {
     console.error('Error updating project:', error)
-    return sendError(res, 'Failed to update project')
+    return sendError(res, error instanceof Error ? error.message : 'Failed to update project', 400)
   }
 }
 
