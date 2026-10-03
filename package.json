@@ -43,7 +43,7 @@
 		"@fontsource/jetbrains-mono": "^5.2.8",
 		"qr-scanner": "^1.4.2",
 		"qrcode": "^1.5.4",
-		"ws": "^8.20.1",
+		"ws": "^8.22.0",
 		"y-indexeddb": "^9.0.12",
 		"yjs": "^13.6.30"
 	}
