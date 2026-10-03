@@ -67,11 +67,21 @@ async function pickCurrency(code: string): Promise<void> {
 }
 
 const amountInput = () => page.locator('[aria-label="Amount, accepts math expressions"]');
-const rateInput = () => page.locator('[aria-label="Exchange rate to EUR"]');
 const chargedInput = () => page.locator('[aria-label="Amount charged in EUR"]');
+const delta = () => page.locator('.fx-delta');
+
+async function saveAndOpen(title: string): Promise<string> {
+	await page.fill('input[placeholder="What was it for?"]', title);
+	await page.click('.save-btn');
+	await page.waitForURL(/\/p\/DEMO$/);
+	await page.goto(`${BASE}/p/DEMO/expenses`);
+	await page.getByText(title).first().click();
+	await page.waitForURL(/\/expenses\/[^/]+$/);
+	return page.url();
+}
 
 describe('exchange rate', () => {
-	it('keeps a typed rate when an automatic fetch resolves afterwards', async () => {
+	it('keeps a charged amount typed while the market rate is still loading', async () => {
 		let release!: () => void;
 		const held = new Promise<void>((resolve) => (release = resolve));
 		let fetchStarted!: () => void;
@@ -86,35 +96,58 @@ describe('exchange rate', () => {
 		await amountInput().fill('10');
 		await pickCurrency('USD');
 		await started;
-		await rateInput().fill('0.8');
+		await chargedInput().fill('8.00');
 		release();
-		await page.waitForTimeout(500);
+		await expect.poll(() => page.locator('.fx-status').innerText()).toContain('Market 1 USD = 0.92 EUR');
 
-		expect(await rateInput().inputValue()).toBe('0.8');
 		expect(await chargedInput().inputValue()).toBe('8.00');
+		expect(await delta().innerText()).toBe('−13.0%');
 	});
 
-	it('reopens a typed rate exactly, so changing $3 to $6 gives €2.00', async () => {
+	it('defaults to the market value and follows the amount until a charge is typed', async () => {
 		await page.route(FX_API, (route) => route.fulfill(fxResponse(0.9)));
 		await openAddForm();
-		await amountInput().fill('3');
+		await amountInput().fill('10');
 		await pickCurrency('USD');
-		await rateInput().fill('0.3333333333333333');
-		await page.fill('input[placeholder="What was it for?"]', 'E2E ferry');
-		await page.click('.save-btn');
-		await page.waitForURL(/\/p\/DEMO$/);
+		await expect.poll(() => chargedInput().inputValue()).toBe('9.00');
+		expect(await delta().innerText()).toBe('market');
 
-		await page.goto(`${BASE}/p/DEMO/expenses`);
-		await page.getByText('E2E ferry').first().click();
-		await page.waitForURL(/\/expenses\/[^/]+$/);
-		const detailUrl = page.url();
+		await amountInput().fill('20');
+		await expect.poll(() => chargedInput().inputValue()).toBe('18.00');
+
+		await chargedInput().fill('18.90');
+		await amountInput().fill('30');
+		expect(await chargedInput().inputValue()).toBe('18.90');
+
+		await page.getByText('Use market rate').click();
+		await expect.poll(() => chargedInput().inputValue()).toBe('27.00');
+	});
+
+	it('keeps what the bank charged through save, reopen and an amount edit, and reports the fee', async () => {
+		await page.route(FX_API, (route) => route.fulfill(fxResponse(0.9213)));
+		await openAddForm();
+		await amountInput().fill('100');
+		await pickCurrency('USD');
+		await expect.poll(() => chargedInput().inputValue()).toBe('92.13');
+		await chargedInput().fill('94.20');
+		expect(await delta().innerText()).toBe('+2.2%');
+		const detailUrl = await saveAndOpen('E2E card dinner');
+
+		await expect.poll(() => page.locator('.hero-fee').innerText()).toContain('(2.2%) above the market rate of 0.9213');
 
 		await page.goto(`${detailUrl}/edit`);
-		await amountInput().fill('6');
-		expect(await chargedInput().inputValue()).toBe('2.00');
+		expect(await chargedInput().inputValue()).toBe('94.20');
+		await amountInput().fill('120');
+		expect(await chargedInput().inputValue()).toBe('94.20');
 		await page.click('.save-btn');
 		await page.waitForURL(detailUrl);
-		await expect.poll(() => page.locator('.hero-fx').innerText()).toContain('€2.00');
+		await expect.poll(() => page.locator('.hero-fx').innerText()).toContain('= €94.20');
+
+		await page.goto(`${BASE}/p/DEMO/stats`);
+		// pinned at €94.20 while $120 is worth €110.56 at market: the card beat the market
+		await expect.poll(() => page.locator('.fee-tile').innerText()).toMatch(/exchange fees/i);
+		expect(await page.locator('.fee-value').innerText()).toBe('−€16.36');
+		expect(await page.locator('.fee-tile .stat-sub').innerText()).toContain('14.8% below the market rate on 1');
 	});
 
 	it('shows what a rounded charged amount is saved as', async () => {
@@ -123,7 +156,7 @@ describe('exchange rate', () => {
 		await amountInput().fill('1');
 		await pickCurrency('USD');
 		await chargedInput().fill('1.234');
-		await expect.poll(() => page.locator('.rate-note').innerText()).toContain('Saved as 1.23 EUR.');
+		await expect.poll(() => page.locator('.fx-status').innerText()).toContain('Saved as 1.23 EUR.');
 	});
 });
 
@@ -133,7 +166,7 @@ describe('rounding notes', () => {
 		await openAddForm();
 		await amountInput().fill('2.47');
 		await pickCurrency('KWD');
-		await rateInput().fill('3');
+		await chargedInput().fill('7.41');
 	});
 
 	it('flags exact-split rows that round in opposite directions', async () => {

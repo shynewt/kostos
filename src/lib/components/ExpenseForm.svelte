@@ -17,15 +17,18 @@
 		isPrecisionCapped,
 		type CurrencyPreset
 	} from '$lib/currencies';
+	import { mathInput } from '$lib/actions/mathInput';
+	import { formatRate } from '$lib/currency-convert';
 	import {
-		applyFetchedRate,
+		applyMarket,
 		createRequestGate,
 		editCharged,
-		editRate,
-		EMPTY_RATE_DRAFT,
+		EMPTY_FX,
+		fxForSave,
+		fxView,
 		parseMoney,
-		rateFields,
-		seedRateDraft
+		seedFx,
+		useMarket
 	} from '$lib/expense-draft';
 	import { resolveRate } from '$lib/fx-cache';
 	import { formatAmount, toInputValue } from '$lib/money';
@@ -208,22 +211,23 @@
 
 	let currencyCode = $state(untrack(() => seed?.currency ?? project.currency));
 	let currencyOpen = $state(false);
-	let rateDraft = $state(untrack(() => seedRateDraft(seed, project.currency)));
-	let rateTouched = $state(false);
-	let rateFetching = $state(false);
-	let rateError = $state(false);
-	let rateAsOf = $state<number | null>(seed?.rateFetchedAt ?? null);
-	let rateStale = $state(false);
-	const rateRequests = createRequestGate();
-	// market rate fetched this session, so a charged amount can show the bank's markup
-	let marketRate = $state<number | null>(null);
-
 	const baseDecimals = currencyDecimals(untrack(() => project.currency));
 	const baseAmountStr = (cents: number) => (cents / 10 ** baseDecimals).toFixed(baseDecimals);
+	let fx = $state(untrack(() => seedFx(seed, project.currency, baseDecimals)));
+	let fxFetching = $state(false);
+	let fxError = $state(false);
+	const rateRequests = createRequestGate();
 
-	const rateAsOfLabel = $derived(
-		rateAsOf ? new Date(rateAsOf).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : ''
-	);
+	const marketWhen = $derived.by(() => {
+		const quote = fx.market;
+		if (!quote?.at) return '';
+		const day = (ms: number) => new Date(ms).toDateString();
+		const label =
+			day(quote.at) === day(Date.now())
+				? 'today'
+				: new Date(quote.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+		return quote.stale ? `offline, from ${label}` : label;
+	});
 
 	function symbolForCode(code: string): string {
 		if (code === project.currency) return project.currencySymbol;
@@ -240,92 +244,64 @@
 	function amountStr(cents: number): string {
 		return (cents / 10 ** decimals).toFixed(decimals);
 	}
-	const rateCtx = $derived({
+	const fxCtx = $derived({
 		amountCents,
 		currency: currencyCode,
 		baseCurrency: project.currency,
 		baseDecimals
 	});
-	const fields = $derived(rateFields(rateDraft, rateCtx));
-	const exchangeRate = $derived(fields.rateValue);
-	const markupPercent = $derived(
-		rateDraft.source === 'charged' && marketRate && exchangeRate
-			? (exchangeRate / marketRate - 1) * 100
-			: null
+	const fxNow = $derived(fxView(fx, fxCtx));
+	// show the comparison once it's more than rounding noise
+	const fxDelta = $derived(
+		fxNow.percent !== null && Math.abs(fxNow.percent) >= 0.05 ? fxNow.percent : null
 	);
 
-	function onRateInput(value: string) {
-		// what the user types wins over any fetch still in flight
+	function resetFx() {
 		rateRequests.invalidate();
-		rateFetching = false;
-		rateDraft = editRate(rateDraft, value);
-		rateTouched = true;
-		rateAsOf = null;
-		rateStale = false;
-	}
-
-	function onChargedInput(value: string) {
-		rateDraft = editCharged(rateDraft, value);
-		rateTouched = true;
-		rateAsOf = null;
-		rateStale = false;
-	}
-
-	function resetRate() {
-		rateRequests.invalidate();
-		rateFetching = false;
-		rateDraft = EMPTY_RATE_DRAFT;
-		rateTouched = false;
-		rateError = false;
-		rateAsOf = null;
-		rateStale = false;
-		marketRate = null;
+		fxFetching = false;
+		fxError = false;
+		fx = EMPTY_FX;
 	}
 
 	function pickCurrency(p: CurrencyPreset) {
 		currencyCode = p.code;
-		resetRate();
+		resetFx();
 	}
 
 	function pickCustomCurrency(sym: string) {
 		currencyCode = sym;
-		resetRate();
+		resetFx();
 	}
 
-	// cache-first; `force` skips the freshness window for the explicit "Fetch rate" button.
-	// With a charged amount pinned, fetching only records the market rate for the markup hint.
+	// cache-first; `force` skips the freshness window for the refresh button. A market rate
+	// never overrides a charged amount the user typed; see applyMarket.
 	async function loadRate(force = false) {
 		if (!isForeign) return;
-		rateError = false;
-		rateFetching = true;
+		fxError = false;
+		fxFetching = true;
 		const request = rateRequests.begin();
 		const resolved = await resolveRate(currencyCode, project.currency, force);
-		// a currency switch, a typed rate or a newer fetch happened while this was in flight
+		// a currency switch or a newer fetch happened while this was in flight
 		if (!rateRequests.isCurrent(request)) return;
-		rateFetching = false;
+		fxFetching = false;
 		if (!resolved) {
-			rateError = true;
-			if (rateDraft.source === 'rate') {
-				rateAsOf = null;
-				rateStale = false;
-			}
+			fxError = true;
 			return;
 		}
-		marketRate = resolved.rate;
-		if (rateDraft.source === 'charged') return;
-		rateDraft = applyFetchedRate(rateDraft, resolved.rate);
-		rateAsOf = resolved.at;
-		rateStale = resolved.source === 'stale';
+		fx = applyMarket(
+			fx,
+			{ rate: resolved.rate, at: resolved.at, stale: resolved.source === 'stale' },
+			fxCtx
+		);
 	}
 
 	// plain (non-reactive) guard: only auto-resolve once per currency so a failed request
 	// never retries in a loop and hammers the API. Edits start "resolved" so opening one
-	// never swaps its stored rate for today's.
+	// never fetches; the refresh button is there for that.
 	let lastAutoRateKey = untrack(() => (mode === 'edit' && seed?.exchangeRate ? seed.currency : ''));
 	$effect(() => {
 		const key = currencyCode;
 		if (!isForeign || !project.autoFetchRates) return;
-		if (untrack(() => rateTouched)) return;
 		if (key === lastAutoRateKey) return;
 		lastAutoRateKey = key;
 		void loadRate(false);
@@ -416,7 +392,8 @@
 		splitMode === 'amount' && amountCents > 0 && remaining > 0 && emptyInvolvedCount > 0
 	);
 
-	const rateValid = $derived(!isForeign || exchangeRate !== null);
+	const chargedInvalid = $derived(isForeign && !!fxNow.chargedParsed?.invalid);
+	const rateValid = $derived(!isForeign || ((fxNow.chargedCents ?? 0) > 0 && fxNow.rate !== null));
 
 	const amountInvalid = $derived(amountParsed.invalid);
 	const splitInvalid = $derived(
@@ -428,6 +405,7 @@
 	const saveProblem = $derived.by<string | null>(() => {
 		if (amountInvalid) return "The amount isn't a valid number or expression.";
 		if (amountCents <= 0) return null;
+		if (chargedInvalid) return "The charged amount isn't a valid number or expression.";
 		if (payerInvalid) return "One of the paid-by amounts isn't a valid number.";
 		if (!paymentsValid && !(isMultiPayer && paidTotal !== amountCents))
 			return 'Every payer needs a person and an amount.';
@@ -445,6 +423,7 @@
 		problem: saveProblem,
 		inputs: [
 			amountInput,
+			fx.chargedInput,
 			splitMode,
 			[...involved].join(','),
 			...payers.map((p) => `${p.memberId}=${p.amount}`),
@@ -563,13 +542,6 @@
 		paymentMethodId = m.id;
 	}
 
-	function rateTimestamp(): number | undefined {
-		if (seed && seed.currency === currencyCode && seed.exchangeRate === exchangeRate) {
-			return seed.rateFetchedAt;
-		}
-		return rateAsOf ?? Date.now();
-	}
-
 	async function handleSubmit(event?: Event) {
 		event?.preventDefault();
 		if (submitting || !canSave) return;
@@ -579,13 +551,16 @@
 			? payers.map((p, i) => ({ memberId: p.memberId, amount: payerCents[i] }))
 			: [{ memberId: payers[0].memberId, amount: amountCents }];
 
+		const conversion = isForeign ? fxForSave(fx, fxCtx, Date.now()) : null;
 		const expense: Expense = {
 			id: seed?.id ?? generateId(),
 			payments: finalPayments,
 			amount: amountCents,
 			currency: currencyCode,
-			exchangeRate: isForeign ? (exchangeRate ?? undefined) : undefined,
-			rateFetchedAt: isForeign ? rateTimestamp() : undefined,
+			exchangeRate: conversion?.exchangeRate,
+			rateFetchedAt: conversion?.rateFetchedAt,
+			chargedAmount: conversion?.chargedAmount,
+			marketRate: conversion?.marketRate,
 			description: title.trim(),
 			categoryId,
 			paymentMethodId,
@@ -671,64 +646,70 @@
 		{/if}
 
 		{#if isForeign}
-			<div class="card rate-card">
-				<div class="row between rate-head">
-					<span class="eyebrow">Exchange rate</span>
+			<div class="card fx-card">
+				<div class="row between fx-head">
+					<label class="eyebrow" for="fx-charged">Charged in {project.currency}</label>
 					<button
 						type="button"
-						class="btn btn-ghost rate-fetch"
+						class="fx-refresh"
+						class:spinning={fxFetching}
 						onclick={() => loadRate(true)}
-						disabled={rateFetching}
+						disabled={fxFetching}
+						aria-label="Refresh the market rate"
+						title="Refresh the market rate"
 					>
-						{rateFetching ? 'Fetching…' : 'Fetch rate'}
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65" /><path d="M20 4v5h-5" /></svg>
 					</button>
 				</div>
-				<div class="row gap-8 rate-row">
-					<span class="rate-eq mono">1 {currencyCode} =</span>
+				<div class="fx-field" class:invalid={chargedInvalid}>
+					<span class="fx-sym num">{project.currencySymbol}</span>
 					<input
-						class="input rate-input mono"
-						value={fields.rate}
-						oninput={(e) => onRateInput(e.currentTarget.value)}
-						inputmode="decimal"
-						placeholder="0.000000"
-						aria-label="Exchange rate to {project.currency}"
-					/>
-					<span class="rate-base mono">{project.currency}</span>
-				</div>
-				<div class="row gap-8 rate-row">
-					<span class="rate-eq mono">Charged</span>
-					<input
-						class="input rate-input mono"
-						value={fields.charged}
-						oninput={(e) => onChargedInput(e.currentTarget.value)}
+						id="fx-charged"
+						class="fx-input mono"
+						value={fxNow.charged}
+						use:mathInput
+						oninput={(e) => (fx = editCharged(fx, e.currentTarget.value))}
 						inputmode="decimal"
 						placeholder={baseAmountStr(0)}
+						autocomplete="off"
 						aria-label="Amount charged in {project.currency}"
+						aria-describedby="fx-status"
 					/>
-					<span class="rate-base mono">{project.currency}</span>
+					{#if fxDelta !== null}
+						<span class="fx-delta num" class:over={fxDelta > 0} class:under={fxDelta < 0}>
+							{fxDelta > 0 ? '+' : '−'}{Math.abs(fxDelta).toFixed(1)}%
+						</span>
+					{:else if fx.market && !fx.pinned}
+						<span class="fx-delta at-market">market</span>
+					{/if}
 				</div>
-				{#if fields.chargedParsed?.rounded}
-					<p class="dim mono rate-note">
-						Saved as {baseAmountStr(fields.baseCents)} {project.currency}.
-					</p>
-				{:else if markupPercent !== null && Math.abs(markupPercent) >= 0.05}
-					<p class="dim mono rate-note">
-						{Math.abs(markupPercent).toFixed(1)}% {markupPercent > 0 ? 'above' : 'below'} market rate
-					</p>
-				{:else if exchangeRate}
-					<p class="dim mono rate-note">
-						{#if rateDraft.source === 'charged'}
-							From what your bank charged
-						{:else}
-							Bank charged a different amount? Edit it above.{#if rateStale && rateAsOfLabel}
-								· offline, rate from {rateAsOfLabel}{/if}
-						{/if}
-					</p>
-				{:else if rateError}
-					<p class="dim rate-note">Couldn't fetch a rate. Enter it or the charged amount.</p>
-				{:else}
-					<p class="dim rate-note">Set the rate or the amount charged in {project.currency}.</p>
-				{/if}
+				<div class="fx-status" id="fx-status">
+					{#if fx.market}
+						<p class="dim mono">
+							Market 1 {currencyCode} = {formatRate(fx.market.rate)} {project.currency}{#if marketWhen}{' · '}{marketWhen}{/if}
+						</p>
+					{:else if fxFetching}
+						<p class="dim mono">Getting the market rate…</p>
+					{:else if fx.kept && fxNow.rate !== null}
+						<p class="dim mono">Saved at 1 {currencyCode} = {formatRate(fxNow.rate)} {project.currency}</p>
+					{:else if fxError}
+						<p class="dim">Couldn't get a market rate. Type what you were charged.</p>
+					{:else}
+						<p class="dim">Type what you were charged, or refresh for the market rate.</p>
+					{/if}
+					{#if fxNow.chargedParsed?.rounded && fxNow.chargedCents !== null}
+						<p class="dim mono">Saved as {baseAmountStr(fxNow.chargedCents)} {project.currency}.</p>
+					{:else if fx.market && fx.pinned && fxNow.rate !== null}
+						<p class="dim mono fx-paid">
+							<span>You paid 1 {currencyCode} = {formatRate(fxNow.rate)} {project.currency}</span>
+							{#if fxNow.canUseMarket}
+								<button type="button" class="fx-reset" onclick={() => (fx = useMarket(fx))}>
+									Use market rate
+								</button>
+							{/if}
+						</p>
+					{/if}
+				</div>
 			</div>
 		{/if}
 
@@ -898,54 +879,152 @@
 		color: var(--ink-3);
 	}
 
-	.rate-card {
-		padding: 14px;
+	.fx-card {
+		padding: 12px 14px 14px;
 		margin-bottom: 10px;
 		display: flex;
 		flex-direction: column;
-		gap: 10px;
+		gap: 8px;
 	}
 
-	.rate-head {
+	.fx-head {
 		align-items: center;
 	}
 
-	.rate-fetch {
-		padding: 6px 10px;
-		font-size: 12px;
+	.fx-refresh {
+		width: 30px;
+		height: 30px;
+		margin: -6px -6px -6px 0;
+		display: grid;
+		place-items: center;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
 		color: var(--ink-2);
+		cursor: pointer;
 	}
 
-	.rate-row {
+	.fx-refresh:hover:not(:disabled) {
+		color: var(--accent);
+	}
+
+	.fx-refresh:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
+	}
+
+	.fx-refresh svg {
+		width: 16px;
+		height: 16px;
+	}
+
+	.fx-refresh.spinning svg {
+		animation: fx-spin 0.9s linear infinite;
+	}
+
+	@keyframes fx-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.fx-refresh.spinning svg {
+			animation: none;
+			opacity: 0.5;
+		}
+	}
+
+	.fx-field {
+		display: flex;
 		align-items: center;
+		gap: 8px;
+		padding: 4px 6px 4px 12px;
+		background: var(--bg-2);
+		border: 1px solid var(--line);
+		border-radius: var(--radius);
+		transition: border-color 0.12s ease;
 	}
 
-	.rate-row + .rate-row {
-		margin-top: 8px;
+	.fx-field:focus-within {
+		border-color: var(--accent);
 	}
 
-	.rate-eq {
-		font-size: 13px;
+	.fx-field.invalid {
+		border-color: var(--owe);
+	}
+
+	.fx-sym {
+		font-size: 18px;
+		font-weight: 600;
 		color: var(--ink-2);
-		white-space: nowrap;
-		min-width: 64px;
 	}
 
-	.rate-input {
+	.fx-input {
 		flex: 1;
-		padding: 10px 12px;
-		font-size: 14px;
-		text-align: center;
+		min-width: 0;
+		padding: 8px 0;
+		background: transparent;
+		border: 0;
+		outline: none;
+		color: var(--ink);
+		font-size: 20px;
+		letter-spacing: 0.02em;
 	}
 
-	.rate-base {
-		font-size: 13px;
+	.fx-delta {
+		flex: none;
+		padding: 3px 8px;
+		border-radius: 999px;
+		font-size: 12px;
+		font-weight: 600;
+		background: var(--bg-3, var(--line));
 		color: var(--ink-2);
 	}
 
-	.rate-note {
+	.fx-delta.over {
+		color: var(--owe);
+		background: color-mix(in oklab, var(--owe) 16%, transparent);
+	}
+
+	.fx-delta.under {
+		color: var(--owed);
+		background: color-mix(in oklab, var(--owed) 16%, transparent);
+	}
+
+	.fx-delta.at-market {
+		font-family: var(--font-mono);
+		font-weight: 500;
 		font-size: 11px;
+	}
+
+	.fx-status {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.fx-status p {
 		margin: 0;
+		font-size: 11px;
+		line-height: 1.5;
+	}
+
+	.fx-paid {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 4px 10px;
+	}
+
+	.fx-reset {
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: var(--accent);
+		cursor: pointer;
 	}
 
 	.title-field {

@@ -1,34 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { convertCents } from './currency-convert';
+import { convertCents, expenseBaseAmount, exchangeFee, rateFromAmounts } from './currency-convert';
 import {
-	EMPTY_RATE_DRAFT,
-	applyFetchedRate,
+	EMPTY_FX,
+	applyMarket,
 	createRequestGate,
-	draftRate,
 	editCharged,
-	editRate,
+	fxForSave,
+	fxView,
 	parseMoney,
-	rateFields,
-	seedRateDraft,
-	type RateDraft
+	seedFx,
+	useMarket,
+	type FxDraft
 } from './expense-draft';
 import type { Expense } from './types';
 
+const NOW = 1_790_000_000_000;
 const ctx = (amountCents: number, currency = 'USD') => ({
 	amountCents,
 	currency,
 	baseCurrency: 'EUR',
 	baseDecimals: 2
 });
+const market = (rate: number) => ({ rate, at: NOW - 1000 });
 
 // what the form stores on save, reduced to the money fields
-function save(draft: RateDraft, amountCents: number, currency = 'USD'): Expense {
+function save(draft: FxDraft, amountCents: number, currency = 'USD'): Expense {
+	const fx = fxForSave(draft, ctx(amountCents, currency), NOW);
+	if (!fx) throw new Error('nothing to save');
 	return {
 		id: 'e1',
 		payments: [{ memberId: 'a', amount: amountCents }],
 		amount: amountCents,
 		currency,
-		exchangeRate: draftRate(draft, ctx(amountCents, currency)) ?? undefined,
+		...fx,
 		date: 0,
 		splitMode: 'even',
 		splits: [{ memberId: 'a' }],
@@ -36,8 +40,13 @@ function save(draft: RateDraft, amountCents: number, currency = 'USD'): Expense 
 		createdBy: 'a'
 	};
 }
-
-const baseOf = (e: Expense) => convertCents(e.amount, e.currency, 'EUR', e.exchangeRate!);
+const reopen = (e: Expense) => seedFx(e, 'EUR', 2);
+const fxFields = (e: Expense) => ({
+	exchangeRate: e.exchangeRate,
+	chargedAmount: e.chargedAmount,
+	marketRate: e.marketRate,
+	rateFetchedAt: e.rateFetchedAt
+});
 
 describe('parseMoney', () => {
 	it('separates empty, invalid, negative, exact and rounded input', () => {
@@ -50,86 +59,141 @@ describe('parseMoney', () => {
 	});
 });
 
-describe('rate draft across save and reopen', () => {
-	it('keeps a long typed rate when the amount changes after reopening', () => {
-		const saved = save(editRate(EMPTY_RATE_DRAFT, '0.3333333333333333'), 300);
-		const reopened = seedRateDraft(saved, 'EUR');
-		const edited = save(reopened, 600);
-		expect(edited.exchangeRate).toBe(0.3333333333333333);
-		expect(baseOf(edited)).toBe(200);
+describe('a new foreign expense', () => {
+	it('defaults the charged amount to the market value and follows the foreign amount', () => {
+		const draft = applyMarket(EMPTY_FX, market(0.9213), ctx(10000));
+		expect(fxView(draft, ctx(10000))).toMatchObject({ charged: '92.13', percent: 0, canUseMarket: false });
+		expect(fxView(draft, ctx(20000)).charged).toBe('184.26');
+
+		const saved = save(draft, 10000);
+		expect(fxFields(saved)).toEqual({
+			exchangeRate: 0.9213,
+			chargedAmount: 9213,
+			marketRate: 0.9213,
+			rateFetchedAt: NOW - 1000
+		});
+		expect(exchangeFee(saved, 'EUR')!.fee).toBe(0);
 	});
 
-	it('reopens a charged amount on its exact rate, short or long', () => {
-		for (const [amount, charged] of [
-			[100, '0.95'],
-			[10000, '93.87'],
-			[123456, '777.13']
-		] as const) {
-			const currency = amount === 123456 ? 'JPY' : 'USD';
-			const saved = save(editCharged(EMPTY_RATE_DRAFT, charged), amount, currency);
-			const resaved = save(seedRateDraft(saved, 'EUR'), amount, currency);
-			expect(resaved.exchangeRate).toBe(saved.exchangeRate);
-			expect(baseOf(resaved) / 100).toBe(Number(charged));
+	it('stores what the bank charged next to the market rate, and the fee follows', () => {
+		const draft = editCharged(applyMarket(EMPTY_FX, market(0.9213), ctx(10000)), '94.20');
+		const view = fxView(draft, ctx(10000));
+		expect(view.percent).toBeCloseTo(2.247, 2);
+		expect(view.canUseMarket).toBe(true);
+
+		const saved = save(draft, 10000);
+		expect(saved.chargedAmount).toBe(9420);
+		expect(saved.marketRate).toBe(0.9213);
+		expect(expenseBaseAmount(saved, 'EUR')).toBe(9420);
+		// older clients only read exchangeRate; it has to land on the same balance
+		expect(convertCents(saved.amount, 'USD', 'EUR', saved.exchangeRate!)).toBe(9420);
+		expect(exchangeFee(saved, 'EUR')!.fee).toBe(207);
+	});
+
+	it('keeps a typed charged amount when the foreign amount changes, until reset to market', () => {
+		let draft = editCharged(applyMarket(EMPTY_FX, market(0.9), ctx(4000)), '50.00');
+		expect(fxView(draft, ctx(6000)).charged).toBe('50.00');
+		draft = useMarket(draft);
+		expect(fxView(draft, ctx(6000)).charged).toBe('54.00');
+	});
+
+	it('keeps a charged amount typed while the market rate was still loading', () => {
+		const typed = editCharged(EMPTY_FX, '9.50');
+		const landed = applyMarket(typed, market(0.92), ctx(1000));
+		expect(fxView(landed, ctx(1000))).toMatchObject({ charged: '9.50', rate: 0.95 });
+		expect(fxView(landed, ctx(1000)).percent).toBeCloseTo(3.26, 1);
+	});
+
+	it('saves offline with only a charged amount, and refuses to save with nothing', () => {
+		expect(fxForSave(EMPTY_FX, ctx(1000), NOW)).toBeNull();
+		const saved = save(editCharged(EMPTY_FX, '1000*0.91/100'), 1000);
+		expect(saved).toMatchObject({ chargedAmount: 910, marketRate: undefined, rateFetchedAt: NOW });
+		expect(convertCents(1000, 'USD', 'EUR', saved.exchangeRate!)).toBe(910);
+		expect(exchangeFee(saved, 'EUR')).toBeNull();
+	});
+
+	it('flags a charged amount finer than the currency keeps', () => {
+		expect(fxView(editCharged(EMPTY_FX, '1.234'), ctx(100)).chargedParsed?.rounded).toBe(true);
+	});
+});
+
+describe('reopening an expense', () => {
+	it('writes back exactly what was stored when nothing changes', () => {
+		const atMarket = save(applyMarket(EMPTY_FX, market(0.9213), ctx(10000)), 10000);
+		const charged = save(editCharged(applyMarket(EMPTY_FX, market(0.9213), ctx(10000)), '94.20'), 10000);
+		const odd = save(editCharged(applyMarket(EMPTY_FX, market(0.0061), ctx(123456, 'JPY')), '777.13'), 123456, 'JPY');
+		for (const e of [atMarket, charged, odd]) {
+			expect(fxFields(save(reopen(e), e.amount, e.currency))).toEqual(fxFields(e));
 		}
 	});
 
-	it('shows the kept rate rounded while still saving it exactly', () => {
-		const saved = save(editRate(EMPTY_RATE_DRAFT, '0.93871234'), 10000);
-		const reopened = seedRateDraft(saved, 'EUR');
-		const fields = rateFields(reopened, ctx(10000));
-		expect(fields.rate).toBe('0.938712');
-		expect(fields.charged).toBe('93.87');
-		expect(save(reopened, 10000).exchangeRate).toBe(0.93871234);
+	it('keeps the charged amount, not the rate, when the foreign amount is edited', () => {
+		const saved = save(editCharged(applyMarket(EMPTY_FX, market(0.9), ctx(10000)), '94.20'), 10000);
+		const resaved = save(reopen(saved), 12000);
+		expect(resaved.chargedAmount).toBe(9420);
+		expect(resaved.exchangeRate).toBe(rateFromAmounts(12000, 'USD', 9420, 'EUR'));
+	});
+});
+
+describe('expenses saved before charged amounts existed', () => {
+	const legacy = (amount: number, rate: number): Expense => ({
+		id: 'old',
+		payments: [{ memberId: 'a', amount }],
+		amount,
+		currency: 'USD',
+		exchangeRate: rate,
+		rateFetchedAt: 42,
+		date: 0,
+		splitMode: 'even',
+		splits: [{ memberId: 'a' }],
+		createdAt: 0,
+		createdBy: 'a'
 	});
 
-	it('pins the charged amount while the foreign amount changes', () => {
-		const draft = editCharged(EMPTY_RATE_DRAFT, '50.00');
-		expect(baseOf(save(draft, 4000))).toBe(5000);
-		expect(baseOf(save(draft, 6000))).toBe(5000);
+	it('are left exactly as stored by an untouched save', () => {
+		const old = legacy(10000, 0.93871234);
+		expect(fxFields(save(reopen(old), 10000))).toEqual(fxFields(old));
+		expect(fxView(reopen(old), ctx(10000))).toMatchObject({ charged: '93.87', percent: null });
 	});
 
-	it('lets a fetch replace a kept rate but never a pinned charged amount', () => {
-		const reopened = seedRateDraft(save(editRate(EMPTY_RATE_DRAFT, '0.9'), 1000), 'EUR');
-		expect(draftRate(applyFetchedRate(reopened, 0.92), ctx(1000))).toBe(0.92);
-		const charged = editCharged(EMPTY_RATE_DRAFT, '9.50');
-		expect(draftRate(applyFetchedRate(charged, 0.92), ctx(1000))).toBe(0.95);
+	it('keep their rate when the amount changes, so $3 at 1/3 becomes $6 for €2.00', () => {
+		const edited = save(reopen(legacy(300, 0.3333333333333333)), 600);
+		expect(edited.exchangeRate).toBe(0.3333333333333333);
+		expect(expenseBaseAmount(edited, 'EUR')).toBe(200);
 	});
 
-	it('reports the parsed charged amount so callers can show its rounding', () => {
-		const fields = rateFields(editCharged(EMPTY_RATE_DRAFT, '1.234'), ctx(100));
-		expect(fields.chargedParsed).toEqual({ cents: 123, empty: false, invalid: false, rounded: true });
-		expect(fields.baseCents).toBe(123);
-		expect(rateFields(editRate(EMPTY_RATE_DRAFT, '0.9'), ctx(100)).chargedParsed).toBeNull();
-	});
-
-	it('starts empty for base-currency expenses and expenses without a rate', () => {
-		expect(seedRateDraft(undefined, 'EUR')).toBe(EMPTY_RATE_DRAFT);
-		expect(seedRateDraft({ ...save(EMPTY_RATE_DRAFT, 100), currency: 'EUR' }, 'EUR')).toBe(EMPTY_RATE_DRAFT);
+	it('hold their value when a market rate is fetched, and then show the difference', () => {
+		const old = legacy(10000, 0.95);
+		const fetched = applyMarket(reopen(old), market(0.92), ctx(10000));
+		const view = fxView(fetched, ctx(10000));
+		expect(view.charged).toBe('95.00');
+		expect(view.percent).toBeCloseTo(3.26, 1);
+		expect(save(fetched, 10000)).toMatchObject({ chargedAmount: 9500, marketRate: 0.92 });
 	});
 });
 
 describe('late rate responses', () => {
-	// the form's sequence: start a fetch, the user types, then the response arrives
-	it('drops a response that resolves after the user typed a rate', async () => {
+	// the form's sequence: start a fetch, switch currency, then the stale response arrives
+	it('drops a response that resolves after the currency changed', async () => {
 		const gate = createRequestGate();
-		let draft = EMPTY_RATE_DRAFT;
+		let draft = EMPTY_FX;
 		let resolveFetch!: (rate: number) => void;
 		const pending = new Promise<number>((resolve) => (resolveFetch = resolve));
 
 		const token = gate.begin();
 		const landing = pending.then((rate) => {
-			if (gate.isCurrent(token)) draft = applyFetchedRate(draft, rate);
+			if (gate.isCurrent(token)) draft = applyMarket(draft, market(rate), ctx(1000));
 		});
 
 		gate.invalidate();
-		draft = editRate(draft, '0.8');
+		draft = EMPTY_FX;
 		resolveFetch(0.92);
 		await landing;
 
-		expect(draftRate(draft, ctx(1000))).toBe(0.8);
+		expect(draft.market).toBeNull();
 	});
 
-	it('lets only the newest of two overlapping fetches apply', async () => {
+	it('lets only the newest of two overlapping fetches apply', () => {
 		const gate = createRequestGate();
 		const first = gate.begin();
 		const second = gate.begin();
