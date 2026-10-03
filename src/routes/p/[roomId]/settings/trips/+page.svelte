@@ -11,6 +11,8 @@
 		updateTrip
 	} from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
+	import { expenseBaseAmount } from '$lib/currency-convert';
+	import { formatAmount } from '$lib/money';
 	import { partitionTrips, untaggedExpensesInTrip } from '$lib/trips';
 	import type { Trip } from '$lib/types';
 
@@ -96,15 +98,44 @@
 		editingId = null;
 	}
 
+	let offerExpanded = $state(false);
+
 	function offerTagging(trip: Trip) {
+		offerExpanded = false;
 		const matches = untaggedExpensesInTrip(expenses, trip, [...trips, trip]);
 		tagOffer = matches.length > 0 ? { trip, expenseIds: matches.map((e) => e.id) } : null;
 	}
 
+	const OFFER_PREVIEW = 4;
+
+	// re-checked live: another device may have tagged or moved some of these meanwhile, and a
+	// deleted trip drops the offer
+	const offeredExpenses = $derived.by(() => {
+		if (!tagOffer) return [];
+		const trip = trips.find((t) => t.id === tagOffer!.trip.id);
+		if (!trip) return [];
+		const ids = new Set(tagOffer.expenseIds);
+		return untaggedExpensesInTrip(expenses, trip, trips)
+			.filter((e) => ids.has(e.id))
+			.sort((a, b) => a.date - b.date);
+	});
+
+	const offeredTotal = $derived(
+		offeredExpenses.reduce((sum, e) => sum + expenseBaseAmount(e, project?.currency), 0)
+	);
+
 	function acceptTagging() {
-		if (!tagOffer) return;
-		assignExpensesToTrip(handle, tagOffer.expenseIds, tagOffer.trip.id);
+		if (!tagOffer || offeredExpenses.length === 0) return;
+		assignExpensesToTrip(
+			handle,
+			offeredExpenses.map((e) => e.id),
+			tagOffer.trip.id
+		);
 		tagOffer = null;
+	}
+
+	function shortDay(ms: number): string {
+		return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 	}
 
 	function confirmDelete(t: Trip) {
@@ -210,21 +241,61 @@
 			</div>
 		{/snippet}
 
-		{#if tagOffer}
-			{@const count = tagOffer.expenseIds.length}
-			<div class="card tag-offer" role="status">
-				<p class="tag-offer-text">
-					{count} expense{count === 1 ? '' : 's'} from these dates {count === 1 ? "isn't" : "aren't"}
-					in any trip. Add {count === 1 ? 'it' : 'them'} to {tagOffer.trip.emoji}
-					{tagOffer.trip.name}?
-				</p>
-				<div class="row gap-8">
-					<button type="button" class="btn btn-ghost" onclick={() => (tagOffer = null)}>Skip</button>
-					<button type="button" class="btn btn-primary" onclick={acceptTagging}>
-						Add {count}
-					</button>
+		{#if tagOffer && offeredExpenses.length > 0}
+			{@const count = offeredExpenses.length}
+			<aside class="card tag-offer" aria-labelledby="tag-offer-title">
+				<span class="tag-offer-emoji" aria-hidden="true">{tagOffer.trip.emoji}</span>
+				<div class="tag-offer-body">
+					<div class="tag-offer-title" id="tag-offer-title">
+						Add {count} {count === 1 ? 'expense' : 'expenses'} to {tagOffer.trip.name}?
+					</div>
+					<p class="tag-offer-text">
+						{count === 1 ? 'It falls' : 'They fall'} within the trip's dates but {count === 1
+							? "isn't"
+							: "aren't"} in any trip yet.
+					</p>
+					<ul class="tag-offer-list" class:expanded={offerExpanded}>
+						{#each offerExpanded ? offeredExpenses : offeredExpenses.slice(0, OFFER_PREVIEW) as e (e.id)}
+							<li>
+								<span class="dim mono tag-offer-date">{shortDay(e.date)}</span>
+								<span class="tag-offer-name">{e.description || 'Expense'}</span>
+								<span class="num tag-offer-amount">
+									{formatAmount(expenseBaseAmount(e, project?.currency), project?.currencySymbol ?? '', project?.currency)}
+								</span>
+							</li>
+						{/each}
+					</ul>
+					<div class="row between tag-offer-summary">
+						{#if count > OFFER_PREVIEW}
+							<button
+								type="button"
+								class="tag-offer-more"
+								aria-expanded={offerExpanded}
+								onclick={() => (offerExpanded = !offerExpanded)}
+							>
+								{offerExpanded ? 'Show fewer' : `+${count - OFFER_PREVIEW} more`}
+							</button>
+						{:else}
+							<span></span>
+						{/if}
+						<span class="dim mono tag-offer-total">
+							{#if count > 1}{formatAmount(
+									offeredTotal,
+									project?.currencySymbol ?? '',
+									project?.currency
+								)} total{/if}
+						</span>
+					</div>
+					<div class="row gap-6 tag-offer-actions">
+						<button type="button" class="btn btn-primary tag-offer-btn" onclick={acceptTagging}>
+							{count === 1 ? 'Add it' : count === 2 ? 'Add both' : `Add all ${count}`}
+						</button>
+						<button type="button" class="btn btn-ghost tag-offer-btn" onclick={() => (tagOffer = null)}>
+							Not now
+						</button>
+					</div>
 				</div>
-			</div>
+			</aside>
 		{/if}
 
 		{#if editingId}
@@ -283,20 +354,106 @@
 <style>
 	.tag-offer {
 		display: flex;
-		flex-direction: column;
-		gap: 12px;
+		align-items: flex-start;
+		gap: 14px;
 		margin-top: 14px;
-		padding: 14px;
+		padding: 16px 16px 18px;
+		background: color-mix(in oklab, var(--accent) 9%, var(--bg-2));
+		border: 1px dashed color-mix(in oklab, var(--accent) 45%, var(--line));
+	}
+
+	.tag-offer-emoji {
+		font-size: 26px;
+		line-height: 1;
+		padding-top: 2px;
+	}
+
+	.tag-offer-body {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		min-width: 0;
+	}
+
+	.tag-offer-title {
+		font-size: 14px;
+		font-weight: 600;
 	}
 
 	.tag-offer-text {
 		margin: 0;
-		font-size: 14px;
+		font-size: 12px;
 		line-height: 1.45;
+		color: var(--ink-2);
 	}
 
-	.tag-offer .row {
-		justify-content: flex-end;
+	.tag-offer-list {
+		list-style: none;
+		margin: 2px 0;
+		padding: 0;
+		border-top: 1px solid var(--line);
+	}
+
+	.tag-offer-list li {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		padding: 7px 0;
+		border-bottom: 1px solid var(--line);
+		font-size: 13px;
+	}
+
+	.tag-offer-date {
+		flex: 0 0 48px;
+		font-size: 11px;
+	}
+
+	.tag-offer-name {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.tag-offer-amount {
+		font-size: 12px;
+		color: var(--ink-2);
+	}
+
+	.tag-offer-list.expanded {
+		max-height: 260px;
+		overflow-y: auto;
+	}
+
+	.tag-offer-summary {
+		align-items: center;
+		min-height: 18px;
+	}
+
+	.tag-offer-more {
+		padding: 0;
+		background: none;
+		border: 0;
+		font: inherit;
+		font-family: var(--font-mono);
+		font-size: 11px;
+		color: var(--accent);
+		cursor: pointer;
+	}
+
+	.tag-offer-total {
+		font-size: 11px;
+	}
+
+	.tag-offer-actions {
+		margin-top: 4px;
+	}
+
+	.tag-offer-btn {
+		padding: 8px 14px;
+		font-size: 13px;
 	}
 
 	.intro {
