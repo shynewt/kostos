@@ -5,7 +5,7 @@
  *  - `secret` is the key used to encrypt updates client-side; it must NEVER leave the client.
  *
  * The full token is shared as a URL with the secret in the fragment, e.g.
- *     https://kostos.app/join#prt-4f2k-9xba.<base64url-secret>
+ *     https://kostos.app/join?room=PRT-4F2K-9XBA#<base64url-secret>
  * Browsers don't send `#...` in requests, so even if the share URL leaks through a referer
  * header the secret is preserved.
  *
@@ -32,24 +32,52 @@ export function generateSecret(): string {
 	return base64url(bytes);
 }
 
-/** Accept either `roomId.secret` or a full URL with `#roomId.secret`. */
+/** Accept `roomId.secret`, the share URL (`/join?room=ROOM#SECRET`), or the older
+ *  `/join#roomId.secret` form. */
 export function parseToken(raw: string): ParsedToken | null {
-	let input = raw.trim();
+	const input = extractCandidate(raw);
 	if (!input) return null;
 
-	if (input.includes('://')) {
-		const hashIndex = input.indexOf('#');
-		if (hashIndex === -1) return null;
-		input = input.slice(hashIndex + 1);
+	if (input.includes('://') || input.startsWith('/') || input.includes('?room=')) {
+		const absolute = input.includes('://') || input.startsWith('/') ? input : `https://${input}`;
+		let url: URL;
+		try {
+			url = new URL(absolute, 'https://placeholder.invalid');
+		} catch {
+			return null;
+		}
+		const hash = url.hash.slice(1);
+		const room = url.searchParams.get('room');
+		if (room) return pair(room, hash);
+		return splitDotted(hash);
 	}
 
+	return splitDotted(input);
+}
+
+/** Chat apps paste links with surrounding text, `<...>` wrappers, a sentence's final period,
+ *  or without the scheme. None of those characters can appear in a room id or secret. */
+function extractCandidate(raw: string): string {
+	const words = raw.trim().split(/\s+/);
+	const word = words.find((w) => w.includes('room=')) ?? words[words.length - 1] ?? '';
+	return word.replace(/^[<(]+/, '').replace(/[.,;:!?)>]+$/, '');
+}
+
+function splitDotted(input: string): ParsedToken | null {
 	const dot = input.indexOf('.');
 	if (dot === -1) return null;
+	return pair(input.slice(0, dot), input.slice(dot + 1));
+}
 
-	const roomId = input.slice(0, dot).trim();
-	const secret = input.slice(dot + 1).trim();
-	if (!roomId || !secret) return null;
-	return { roomId: roomId.toUpperCase(), secret };
+const ROOM_PATTERN = new RegExp(`^PRT-[${ROOM_ALPHABET}]{4}-[${ROOM_ALPHABET}]{4}$`);
+// at least 16 bytes of base64url; generated secrets are 32 bytes (43 chars)
+const SECRET_PATTERN = /^[A-Za-z0-9_-]{22,}$/;
+
+function pair(roomId: string, secret: string): ParsedToken | null {
+	const room = roomId.trim().toUpperCase();
+	const key = secret.trim();
+	if (!ROOM_PATTERN.test(room) || !SECRET_PATTERN.test(key)) return null;
+	return { roomId: room, secret: key };
 }
 
 function base64url(bytes: Uint8Array): string {

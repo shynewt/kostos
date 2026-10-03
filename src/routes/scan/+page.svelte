@@ -14,19 +14,6 @@
 		const value = raw.trim();
 		if (!value) return false;
 
-		try {
-			const url = new URL(value, location.origin);
-			const isSameOrigin = url.origin === location.origin;
-			if (isSameOrigin && url.pathname === '/join' && url.searchParams.get('room')) {
-				const dest = `${url.pathname}${url.search}${url.hash}`;
-				status = 'matched';
-				goto(dest);
-				return true;
-			}
-		} catch {
-			// not a URL, fall through to token parse
-		}
-
 		const parsed = parseToken(value);
 		if (parsed) {
 			status = 'matched';
