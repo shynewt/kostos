@@ -510,6 +510,20 @@ function logActivity(handle: RoomHandle, ev: Omit<ActivityEvent, 'id' | 'at' | '
 	if (over > 0) handle.activity.delete(0, over);
 }
 
+/** Snapshot label for an expense in the activity log: the category emoji (if any)
+ *  prefixed to the description, e.g. "🍕 Dinner". Reads the live category set so the
+ *  glyph matches what the user saw when the event fired. */
+function expenseLabel(handle: RoomHandle, expense: Expense): string {
+	const name = expense.description || 'Expense';
+	if (!expense.categoryId) return name;
+	const raw = handle.project.get('categories') as Y.Array<Y.Map<unknown>> | undefined;
+	const list = raw
+		? raw.toArray().map((c) => ({ id: c.get('id') as string, emoji: c.get('emoji') as string }))
+		: DEFAULT_CATEGORIES;
+	const emoji = list.find((c) => c.id === expense.categoryId)?.emoji;
+	return emoji ? `${emoji} ${name}` : name;
+}
+
 export function addExpense(handle: RoomHandle, expense: Expense): void {
 	handle.doc.transact(() => {
 		handle.expenses.push([expenseMap(expense)]);
@@ -526,7 +540,7 @@ export function addExpense(handle: RoomHandle, expense: Expense): void {
 				: {
 						kind: 'expense.add',
 						expenseId: expense.id,
-						label: expense.description || 'Expense',
+						label: expenseLabel(handle, expense),
 						amount: expense.amount,
 						currency: expense.currency
 					}
@@ -539,9 +553,9 @@ export function removeExpense(handle: RoomHandle, id: string): void {
 	for (let i = 0; i < items.length; i++) {
 		const entry = items.get(i);
 		if (entry.get('id') === id) {
-			const label =
-				(entry.get('description') as string | undefined) ||
-				(entry.get('isSettlement') ? 'settlement' : 'Expense');
+			const label = entry.get('isSettlement')
+				? (entry.get('description') as string | undefined) || 'settlement'
+				: expenseLabel(handle, readExpenseEntry(entry));
 			handle.doc.transact(() => {
 				items.delete(i, 1);
 				logActivity(handle, { kind: 'expense.remove', expenseId: id, label });
@@ -557,7 +571,7 @@ export function updateExpense(handle: RoomHandle, expense: Expense): void {
 		if (items.get(i).get('id') === expense.id) {
 			const prev = readExpenseEntry(items.get(i));
 			const changes = diffExpense(prev, expense);
-			const label = expense.description || prev.description || 'Expense';
+			const label = expenseLabel(handle, expense);
 			handle.doc.transact(() => {
 				items.delete(i, 1);
 				items.insert(i, [expenseMap(expense)]);

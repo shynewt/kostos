@@ -71,4 +71,14 @@ describe('activity logging', () => {
 
 		expect(readActivity(h).map((e) => e.kind)).toEqual(['settle.add', 'expense.remove', 'member.add']);
 	});
+
+	it('prefixes the category emoji onto add and remove labels', () => {
+		const h = handle();
+		addExpense(h, expense({ id: 'e2', description: 'Dinner', categoryId: 'cat-restaurants' }));
+		removeExpense(h, 'e2');
+
+		const log = readActivity(h);
+		expect(log.find((e) => e.kind === 'expense.add')?.label).toBe('🍽️ Dinner');
+		expect(log.find((e) => e.kind === 'expense.remove')?.label).toBe('🍽️ Dinner');
+	});
 });
