@@ -348,7 +348,7 @@
 				<MemberBars rows={byMemberPaid} {currentMemberId} symbol={currencySymbol} {currency} />
 			{/if}
 
-			{#if byMethod.length > 0}
+			{#if byMethod.length > 0 && project?.paymentMethodsEnabled !== false}
 				<div class="section-head">
 					<div class="eyebrow">By payment method</div>
 				</div>

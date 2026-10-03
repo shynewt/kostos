@@ -49,7 +49,7 @@
 	});
 
 	const paymentMethod = $derived.by(() => {
-		if (!expense?.paymentMethodId || !project) return null;
+		if (!expense?.paymentMethodId || !project || project.paymentMethodsEnabled === false) return null;
 		return project.paymentMethods.find((m) => m.id === expense.paymentMethodId) ?? null;
 	});
 

@@ -38,8 +38,11 @@ export class RoomState {
 	categoryById = $derived<Map<string, Category>>(
 		new Map((this.project?.categories ?? []).map((c) => [c.id, c]))
 	);
+	// empty when the group turned payment methods off, so rows and search skip them
 	methodById = $derived<Map<string, PaymentMethodItem>>(
-		new Map((this.project?.paymentMethods ?? []).map((m) => [m.id, m]))
+		this.project?.paymentMethodsEnabled === false
+			? new Map()
+			: new Map((this.project?.paymentMethods ?? []).map((m) => [m.id, m]))
 	);
 	trips = $derived<Trip[]>(this.project?.trips ?? []);
 	tripsById = $derived<Map<string, Trip>>(new Map(this.trips.map((t) => [t.id, t])));

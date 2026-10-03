@@ -63,6 +63,7 @@
 			currencySymbol: a.project.currencySymbol,
 			defaultSplit: a.project.defaultSplit,
 			autoFetchRates: a.project.autoFetchRates,
+			paymentMethodsEnabled: a.project.paymentMethodsEnabled,
 			categories: a.project.categories,
 			paymentMethods: a.project.paymentMethods,
 			trips: a.project.trips ?? [],

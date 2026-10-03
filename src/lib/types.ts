@@ -64,6 +64,8 @@ export type Project = {
 	/** When set (default true), the expense form fetches a live FX rate for foreign-currency
 	 *  expenses. Turn off to keep every rate manual and avoid the outbound network call. */
 	autoFetchRates?: boolean;
+	/** Show the payment method field on expenses. Default true; some groups never track it. */
+	paymentMethodsEnabled?: boolean;
 	categories: Category[];
 	paymentMethods: PaymentMethodItem[];
 	trips: Trip[];

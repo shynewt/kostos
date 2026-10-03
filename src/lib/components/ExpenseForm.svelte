@@ -600,15 +600,17 @@
 				}}
 				onAddCustom={handleAddCategory}
 			/>
-			<hr class="hairline" />
-			<EmojiPickerField
-				label="Payment method"
-				fallbackEmoji="💳"
-				items={project.paymentMethods}
-				selectedId={paymentMethodId}
-				onSelect={(id) => (paymentMethodId = id)}
-				onAddCustom={handleAddMethod}
-			/>
+			{#if project.paymentMethodsEnabled ?? true}
+				<hr class="hairline" />
+				<EmojiPickerField
+					label="Payment method"
+					fallbackEmoji="💳"
+					items={project.paymentMethods}
+					selectedId={paymentMethodId}
+					onSelect={(id) => (paymentMethodId = id)}
+					onAddCustom={handleAddMethod}
+				/>
+			{/if}
 			{#if project.trips.length > 0}
 				<hr class="hairline" />
 				<TripPickerField

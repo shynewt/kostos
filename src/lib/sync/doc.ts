@@ -149,6 +149,7 @@ export function readProject(handle: RoomHandle): Project | null {
 		defaultSplit: p.get('defaultSplit') as Project['defaultSplit'],
 		// default on for projects created before the flag existed
 		autoFetchRates: (p.get('autoFetchRates') as boolean | undefined) ?? true,
+		paymentMethodsEnabled: (p.get('paymentMethodsEnabled') as boolean | undefined) ?? true,
 		categories,
 		paymentMethods,
 		trips,
@@ -179,6 +180,9 @@ export function initProject(handle: RoomHandle, project: Project, members: Membe
 		handle.project.set('defaultSplit', project.defaultSplit);
 		if (project.autoFetchRates !== undefined) {
 			handle.project.set('autoFetchRates', project.autoFetchRates);
+		}
+		if (project.paymentMethodsEnabled !== undefined) {
+			handle.project.set('paymentMethodsEnabled', project.paymentMethodsEnabled);
 		}
 		handle.project.set('createdAt', project.createdAt);
 		handle.project.set('categories', yArrayOf(project.categories, categoryMap));
@@ -318,6 +322,7 @@ export function updateProject(
 			| 'currencySymbol'
 			| 'defaultSplit'
 			| 'autoFetchRates'
+			| 'paymentMethodsEnabled'
 		>
 	>
 ): void {

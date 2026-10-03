@@ -73,6 +73,11 @@
 		updateProject(handle, { autoFetchRates: !(project.autoFetchRates ?? true) });
 	}
 
+	function togglePaymentMethods() {
+		if (!project) return;
+		updateProject(handle, { paymentMethodsEnabled: !(project.paymentMethodsEnabled ?? true) });
+	}
+
 	function onAddCategory(input: Omit<EditorItem, 'id'>) {
 		const cat: Category = { id: generateId(), name: input.name, emoji: input.emoji };
 		addCategory(handle, cat);
@@ -275,17 +280,38 @@
 
 			<div class="section-head">
 				<div class="eyebrow">Payment methods</div>
-				<span class="dim mono section-count">{project.paymentMethods.length}</span>
+				{#if project.paymentMethodsEnabled ?? true}
+					<span class="dim mono section-count">{project.paymentMethods.length}</span>
+				{/if}
 			</div>
-			<div class="card editor-card">
-				<EmojiListEditor
-					items={project.paymentMethods}
-					fallbackEmoji="💳"
-					onUpdate={onUpdateMethod}
-					onRemove={onRemoveMethod}
-					onAdd={onAddMethod}
-				/>
-			</div>
+			<button
+				type="button"
+				class="card field-card rate-toggle"
+				onclick={togglePaymentMethods}
+				aria-pressed={project.paymentMethodsEnabled ?? true}
+			>
+				<span class="col rate-toggle-text">
+					<span class="rate-toggle-title">Track payment method</span>
+					<span class="dim rate-toggle-sub">
+						Ask how each expense was paid (cash, card). Off hides the field for everyone in
+						this group; existing tags are kept.
+					</span>
+				</span>
+				<span class="rate-switch" data-on={project.paymentMethodsEnabled ?? true}>
+					<span class="rate-knob"></span>
+				</span>
+			</button>
+			{#if project.paymentMethodsEnabled ?? true}
+				<div class="card editor-card">
+					<EmojiListEditor
+						items={project.paymentMethods}
+						fallbackEmoji="💳"
+						onUpdate={onUpdateMethod}
+						onRemove={onRemoveMethod}
+						onAdd={onAddMethod}
+					/>
+				</div>
+			{/if}
 
 			<div class="section-head">
 				<div class="eyebrow">Members</div>
@@ -503,6 +529,10 @@
 
 	.editor-card {
 		padding: 10px 14px;
+	}
+
+	.rate-toggle + .editor-card {
+		margin-top: 8px;
 	}
 
 	.nav-row {
