@@ -20,7 +20,12 @@ export default {
 			if (request.headers.get('Upgrade') !== 'websocket') {
 				return new Response('Expected WebSocket', { status: 426 });
 			}
-			const roomId = decodeURIComponent(url.pathname.slice('/sync/'.length)).toUpperCase();
+			let roomId = '';
+			try {
+				roomId = decodeURIComponent(url.pathname.slice('/sync/'.length)).toUpperCase();
+			} catch {
+				return new Response('Bad roomId', { status: 400 });
+			}
 			if (!roomId) return new Response('Missing roomId', { status: 400 });
 			const id = env.SYNC_ROOM.idFromName(roomId);
 			return env.SYNC_ROOM.get(id).fetch(request);

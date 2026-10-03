@@ -51,8 +51,18 @@ function getRoom(id) {
 	return room;
 }
 
+// malformed escapes like /%ZZ throw URIError; callers treat null as a bad request
+function safeDecode(value) {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		return null;
+	}
+}
+
 function safeJoin(root, urlPath) {
-	const decoded = decodeURIComponent(urlPath.split('?')[0]);
+	const decoded = safeDecode(urlPath.split('?')[0]);
+	if (decoded === null) return null;
 	const normalized = normalize(decoded).replace(/^[/\\]+/, '');
 	const full = join(root, normalized);
 	return full.startsWith(root) ? full : null;
@@ -114,13 +124,22 @@ const server = createServer((req, res) => {
 const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (request, socket, head) => {
-	const url = new URL(request.url ?? '/', `http://${request.headers.host}`);
+	// an unhandled 'error' (bad frame, oversized payload) would take the whole process down
+	socket.on('error', () => socket.destroy());
+	// fixed base so the Host header can't affect parsing; a malformed target still throws
+	let url;
+	try {
+		url = new URL(request.url ?? '/', 'http://localhost');
+	} catch {
+		socket.destroy();
+		return;
+	}
 	const match = url.pathname.match(/^\/sync\/(.+)$/);
 	if (!match) {
 		socket.destroy();
 		return;
 	}
-	const roomId = decodeURIComponent(match[1]).toUpperCase();
+	const roomId = safeDecode(match[1])?.toUpperCase();
 	if (!roomId) {
 		socket.destroy();
 		return;
@@ -128,13 +147,21 @@ server.on('upgrade', (request, socket, head) => {
 	wss.handleUpgrade(request, socket, head, (ws) => {
 		const room = getRoom(roomId);
 		room.sockets.add(ws);
+		ws.on('error', () => {
+			room.sockets.delete(ws);
+			ws.terminate();
+		});
 
 		for (const blob of room.history) {
 			if (ws.readyState === ws.OPEN) ws.send(blob);
 		}
 
 		ws.on('message', (data, isBinary) => {
-			if (!isBinary) return;
+			if (!isBinary) {
+				// heartbeat, same contract as the dev relay and the Cloudflare auto-response
+				if (data.toString() === 'ping' && ws.readyState === ws.OPEN) ws.send('pong');
+				return;
+			}
 			const buf = data instanceof Buffer ? data : Buffer.from(data);
 			room.history.push(buf);
 			while (room.history.length > HISTORY_CAP) room.history.shift();

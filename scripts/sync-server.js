@@ -34,15 +34,28 @@ function getRoom(id) {
 const wss = new WebSocketServer({ port: PORT, host: HOST });
 
 wss.on('connection', (ws, req) => {
-	const url = new URL(req.url ?? '/', 'http://localhost');
-	const match = url.pathname.match(/^\/sync\/(.+)$/);
-	const roomId = match ? decodeURIComponent(match[1]).toUpperCase() : '';
+	// first thing: an unhandled 'error' (bad frame, oversized payload) kills the process,
+	// including on sockets we're about to reject
+	let room = null;
+	ws.on('error', () => {
+		room?.sockets.delete(ws);
+		ws.terminate();
+	});
+
+	let roomId = '';
+	try {
+		const url = new URL(req.url ?? '/', 'http://localhost');
+		const match = url.pathname.match(/^\/sync\/(.+)$/);
+		roomId = match ? decodeURIComponent(match[1]).toUpperCase() : '';
+	} catch {
+		// malformed target or escape; treated as a missing room below
+	}
 	if (!roomId) {
 		ws.close(1008, 'missing room');
 		return;
 	}
 
-	const room = getRoom(roomId);
+	room = getRoom(roomId);
 	room.sockets.add(ws);
 
 	for (const blob of room.history) {
@@ -71,4 +84,5 @@ wss.on('connection', (ws, req) => {
 	});
 });
 
-console.log(`Kostos sync relay listening on ws://${HOST}:${PORT}`);
+// log once the port is bound, not when the server object is created
+wss.on('listening', () => console.log(`Kostos sync relay listening on ws://${HOST}:${PORT}`));
