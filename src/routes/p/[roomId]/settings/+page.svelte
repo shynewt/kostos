@@ -59,10 +59,12 @@
 	}
 
 	function pickCurrency(p: { code: string; sym: string }) {
+		if (expenses.length > 0) return;
 		updateProject(handle, { currency: p.code, currencySymbol: p.sym });
 	}
 
 	function customCurrency(sym: string) {
+		if (expenses.length > 0) return;
 		updateProject(handle, { currency: '—', currencySymbol: sym });
 	}
 
@@ -227,10 +229,18 @@
 				<CurrencyPicker
 					code={project.currency}
 					symbol={project.currencySymbol}
+					locked={expenses.length > 0}
+					describedBy="currency-locked-note"
 					onSelect={pickCurrency}
 					onCustom={customCurrency}
 				/>
 			</div>
+			{#if expenses.length > 0}
+				<p class="dim currency-locked" id="currency-locked-note">
+					Fixed once the group has expenses: their exchange rates convert into this currency, so
+					switching would misread every one of them.
+				</p>
+			{/if}
 			<button
 				type="button"
 				class="card field-card rate-toggle"
@@ -442,6 +452,12 @@
 	.rate-toggle-title {
 		font-size: 14px;
 		font-weight: 600;
+	}
+
+	.currency-locked {
+		font-size: 11px;
+		line-height: 1.5;
+		margin: 8px 4px 0;
 	}
 
 	.rate-toggle-sub {
