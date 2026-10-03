@@ -3,6 +3,7 @@
 	import { pickMemberColor, pickMemberEmoji } from '$lib/avatar';
 	import { ANIMAL_EMOJIS } from '$lib/emojis';
 	import { computeBalances, expenseShares } from '$lib/balance';
+	import { expenseInBase } from '$lib/currency-convert';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import MemberEmojiPicker from '$lib/components/MemberEmojiPicker.svelte';
 	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
@@ -60,7 +61,10 @@
 	const statsById = $derived.by<Map<string, MemberStats>>(() => {
 		const out = new Map<string, MemberStats>();
 		for (const m of members) out.set(m.id, { paid: 0, owes: 0, count: 0 });
-		for (const e of expenses) {
+		// same basis as stats: spending only, converted to the group currency
+		for (const raw of expenses) {
+			if (raw.isSettlement) continue;
+			const e = expenseInBase(raw, currency);
 			const payerSet = new Set(e.payments.map((p) => p.memberId));
 			for (const p of e.payments) {
 				const cur = out.get(p.memberId);

@@ -6,6 +6,7 @@
 	import TabBar from '$lib/components/TabBar.svelte';
 	import TripSheet from '$lib/components/TripSheet.svelte';
 	import TripStrip from '$lib/components/TripStrip.svelte';
+	import { spentInBase } from '$lib/currency-convert';
 	import { formatAmount } from '$lib/money';
 	import { getCurrentMember } from '$lib/storage';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
@@ -99,9 +100,9 @@
 				bucket = { key, label: dayLabel(e.date), total: 0, items: [] };
 				buckets.set(key, bucket);
 			}
-			bucket.total += e.amount;
 			bucket.items.push(e);
 		}
+		for (const bucket of buckets.values()) bucket.total = spentInBase(bucket.items, currency);
 		return [...buckets.values()];
 	});
 
@@ -127,7 +128,7 @@
 		}
 	}
 
-	const overallTotal = $derived(filtered.reduce((s, e) => s + e.amount, 0));
+	const overallTotal = $derived(spentInBase(filtered, currency));
 	const isFiltering = $derived(query.trim().length > 0);
 
 	function dayKey(ts: number): string {
