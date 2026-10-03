@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { CURRENCY_PRESETS, type CurrencyPreset } from '$lib/currencies';
+	import {
+		POPULAR_COUNT,
+		findCurrency,
+		searchCurrencies,
+		type CurrencyPreset
+	} from '$lib/currencies';
 
 	type Props = {
 		code: string;
@@ -10,6 +15,9 @@
 		variant?: 'card' | 'inline';
 		label?: string;
 		startOpen?: boolean;
+		locked?: boolean;
+		/** id of the element explaining why the picker is locked */
+		describedBy?: string;
 	};
 
 	let {
@@ -19,15 +27,21 @@
 		onCustom,
 		variant = 'card',
 		label = 'Default currency',
-		startOpen = false
+		startOpen = false,
+		locked = false,
+		describedBy
 	}: Props = $props();
 
 	let open = $state(untrack(() => startOpen));
 	let customSym = $state('');
+	let query = $state('');
+
+	const searching = $derived(query.trim().length > 0);
+	const results = $derived(searchCurrencies(query));
 
 	const currentName = $derived.by(() => {
 		if (code === '—') return 'Custom';
-		return CURRENCY_PRESETS.find((p) => p.code === code)?.name ?? code;
+		return findCurrency(code)?.name ?? code;
 	});
 
 	function commitCustom() {
@@ -40,6 +54,7 @@
 
 	function selectPreset(p: CurrencyPreset) {
 		onSelect(p);
+		query = '';
 		open = false;
 	}
 </script>
@@ -49,22 +64,42 @@
 		type="button"
 		class="field field-button"
 		aria-expanded={open}
-		onclick={() => (open = !open)}
+		aria-disabled={locked}
+		aria-describedby={describedBy}
+		onclick={() => {
+			if (!locked) open = !open;
+		}}
 	>
-		<span class="field-icon num">{symbol}</span>
+		<span class="field-icon num" class:long={symbol.length > 2}>{symbol}</span>
 		<span class="col field-text">
 			<span class="field-label">{label}</span>
 			<span class="field-value-static">{code === '—' ? 'Custom' : code} · {currentName}</span>
 		</span>
-		<span class="field-chevron" aria-hidden="true">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-				<path d="M6 9l6 6 6-6" />
-			</svg>
-		</span>
+		{#if !locked}
+			<span class="field-chevron" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+					<path d="M6 9l6 6 6-6" />
+				</svg>
+			</span>
+		{/if}
 	</button>
-	{#if open}
+	{#if open && !locked}
+		<div class="currency-search">
+			<input
+				class="input picker-input"
+				type="search"
+				bind:value={query}
+				placeholder="Search currencies"
+				aria-label="Search currencies"
+				autocomplete="off"
+				spellcheck="false"
+			/>
+		</div>
 		<ul class="currency-list">
-			{#each CURRENCY_PRESETS as p (p.code)}
+			{#each results as p, i (p.code)}
+				{#if !searching && (i === 0 || i === POPULAR_COUNT)}
+					<li class="currency-group">{i === 0 ? 'Popular' : 'All currencies'}</li>
+				{/if}
 				<li>
 					<button
 						type="button"
@@ -72,7 +107,7 @@
 						class:on={p.code === code}
 						onclick={() => selectPreset(p)}
 					>
-						<span class="currency-sym num">{p.sym}</span>
+						<span class="currency-sym num" class:long={p.sym.length > 2}>{p.sym}</span>
 						<span class="col currency-text">
 							<span class="currency-code">{p.code}</span>
 							<span class="dim currency-name">{p.name}</span>
@@ -82,6 +117,8 @@
 						{/if}
 					</button>
 				</li>
+			{:else}
+				<li class="dim currency-empty">No match. Try the code, or use a custom symbol below.</li>
 			{/each}
 		</ul>
 		<div class="picker-custom">
@@ -132,6 +169,10 @@
 		font: inherit;
 	}
 
+	.field-button[aria-disabled='true'] {
+		cursor: default;
+	}
+
 	.field-icon {
 		font-family: var(--font-mono);
 		font-size: 18px;
@@ -139,6 +180,10 @@
 		text-align: center;
 		font-weight: 700;
 		color: var(--accent);
+	}
+
+	.field-icon.long {
+		font-size: 12px;
 	}
 
 	.field-text {
@@ -175,13 +220,32 @@
 		list-style: none;
 		margin: 0;
 		padding: 8px;
-		max-height: 280px;
+		max-height: 320px;
 		overflow-y: auto;
+	}
+
+	.currency-list li + li:not(.currency-group) {
 		border-top: 1px solid var(--line);
 	}
 
-	.currency-list li + li {
+	.currency-search {
+		display: flex;
+		padding: 10px 10px 0;
 		border-top: 1px solid var(--line);
+	}
+
+	.currency-group {
+		font-family: var(--font-mono);
+		font-size: 10px;
+		color: var(--ink-2);
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		padding: 12px 4px 6px;
+	}
+
+	.currency-empty {
+		font-size: 13px;
+		padding: 12px 4px;
 	}
 
 	.currency-row {
@@ -204,6 +268,10 @@
 		font-size: 16px;
 		font-weight: 600;
 		color: var(--accent);
+	}
+
+	.currency-sym.long {
+		font-size: 11px;
 	}
 
 	.currency-text {

@@ -16,7 +16,7 @@
  *    is possible vs v1 but the totals match).
  */
 
-import { CURRENCY_PRESETS, currencyDecimals } from '$lib/currencies';
+import { currencyDecimals, currencySymbolFor } from '$lib/currencies';
 import { generateId } from '$lib/sync/doc';
 import {
 	type Category,
@@ -117,12 +117,6 @@ function isoToMs(iso: string | null | undefined): number {
 	if (!iso) return Date.now();
 	const ms = Date.parse(iso);
 	return Number.isFinite(ms) ? ms : Date.now();
-}
-
-function currencySymbolFor(code: string): string {
-	const upper = code.toUpperCase();
-	const preset = CURRENCY_PRESETS.find((p) => p.code === upper);
-	return preset?.sym ?? upper;
 }
 
 /** Map a v1 splitType string to a v2 SplitMode, falling back to 'even'. */
@@ -250,7 +244,7 @@ export function mapV1ToV2(v1: V1Export): ImportResult {
 		emoji: '🏖',
 		color: 'lime',
 		currency: v1.currency,
-		currencySymbol: currencySymbolFor(v1.currency),
+		currencySymbol: currencySymbolFor(v1.currency.toUpperCase()),
 		defaultSplit: 'even',
 		categories,
 		paymentMethods,

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CURRENCY_PRESETS } from '$lib/currencies';
+	import { currencySymbolFor } from '$lib/currencies';
 	import { formatAmount } from '$lib/money';
 	import type { ActivityEvent, Member } from '$lib/types';
 	import Avatar from './Avatar.svelte';
@@ -27,7 +27,7 @@
 
 	function money(cents: number | undefined, currency: string | undefined): string {
 		if (cents === undefined || !currency) return '';
-		const sym = CURRENCY_PRESETS.find((p) => p.code === currency)?.sym ?? currency;
+		const sym = currencySymbolFor(currency);
 		return formatAmount(cents, sym, currency);
 	}
 

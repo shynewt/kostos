@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { expenseShares } from '$lib/balance';
-	import { CURRENCY_PRESETS } from '$lib/currencies';
+	import { currencySymbolFor } from '$lib/currencies';
 	import { expenseInBase } from '$lib/currency-convert';
 	import { formatAmount, formatSigned } from '$lib/money';
 	import type {
@@ -75,7 +75,7 @@
 	// lines up with the balances/settlement figures.
 	const isForeign = $derived(expense.currency !== currency);
 	const nativeSymbol = $derived(
-		isForeign ? (CURRENCY_PRESETS.find((p) => p.code === expense.currency)?.sym ?? expense.currency) : symbol
+		isForeign ? currencySymbolFor(expense.currency) : symbol
 	);
 	const baseExpense = $derived(expenseInBase(expense, currency));
 
