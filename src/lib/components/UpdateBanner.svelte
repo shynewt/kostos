@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	/* Service-worker update prompt (vite-pwa "prompt for update" recipe).
 	 *
@@ -14,6 +14,7 @@
 	let needRefresh = $state(false);
 	let updating = $state(false);
 	let triggerUpdate: (() => Promise<void>) | null = null;
+	let fallbackReload: ReturnType<typeof setTimeout> | null = null;
 
 	const POLL_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -38,8 +39,21 @@
 
 		triggerUpdate = async () => {
 			updating = true;
-			await updateSW(true);
+			try {
+				await updateSW(true);
+			} catch {
+				// swallowed: the fallback reload below recovers the stuck state
+			}
+			// updateSW(true) only posts SKIP_WAITING; the real reload is wired to workbox's
+			// `controlling` event. Some browsers never fire it after skip-waiting, leaving the
+			// bar stuck on "Updating…". Force a reload if the handoff hasn't taken over in time;
+			// if it already did, the page is gone before this runs.
+			fallbackReload = setTimeout(() => window.location.reload(), 4000);
 		};
+	});
+
+	onDestroy(() => {
+		if (fallbackReload) clearTimeout(fallbackReload);
 	});
 
 	async function onUpdate() {
