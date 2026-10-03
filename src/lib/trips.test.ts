@@ -4,7 +4,8 @@ import {
 	isTripActive,
 	partitionTrips,
 	scopeExpenses,
-	suggestTripIdForDate
+	suggestTripIdForDate,
+	untaggedExpensesInTrip
 } from './trips';
 import type { Expense, Trip } from './types';
 
@@ -158,5 +159,34 @@ describe('partitionTrips', () => {
 		const { past, active } = partitionTrips(trips, now);
 		expect(active).toHaveLength(0);
 		expect(past.map((t) => t.id)).toEqual(['newer', 'older']);
+	});
+});
+
+describe('untaggedExpensesInTrip', () => {
+	const day = 86_400_000;
+	const start = new Date(2026, 5, 10, 12).getTime();
+	const trip: Trip = { id: 't1', name: 'Lisbon', emoji: '🏖', startDate: start, endDate: start + 2 * day, createdAt: 0 };
+	const other: Trip = { id: 't2', name: 'Porto', emoji: '🏖', startDate: start, createdAt: 0 };
+
+	it('picks untagged expenses inside the range only', () => {
+		const expenses = [
+			expenseAt('before', start - day),
+			expenseAt('first', start),
+			expenseAt('last-evening', start + 2 * day + 10 * 3_600_000),
+			expenseAt('after', start + 3 * day),
+			expenseAt('other-trip', start, 't2'),
+			expenseAt('already', start, 't1'),
+			expenseAt('orphan', start + day, 'deleted-trip'),
+			{ ...expenseAt('settle', start), isSettlement: true }
+		];
+		const ids = untaggedExpensesInTrip(expenses, trip, [trip, other]).map((e) => e.id);
+		expect(ids).toEqual(['first', 'last-evening', 'orphan']);
+	});
+
+	it('treats open-ended trips as covering every later day', () => {
+		const ids = untaggedExpensesInTrip([expenseAt('later', start + 300 * day)], other, [other]).map(
+			(e) => e.id
+		);
+		expect(ids).toEqual(['later']);
 	});
 });

@@ -87,16 +87,31 @@ export function partitionTrips(
  *  (no endDate) match any date >= startDate. Returns null when none qualify. If
  *  multiple match (overlapping trips), the most recently started wins. */
 export function suggestTripIdForDate(trips: Trip[], dateMs: number): string | null {
-	const day = startOfDay(dateMs);
-	const active = trips.filter((t) => {
-		if (t.closedAt !== undefined) return false;
-		if (startOfDay(t.startDate) > day) return false;
-		if (t.endDate === undefined) return true;
-		return day <= startOfDay(t.endDate);
-	});
+	const active = trips.filter((t) => t.closedAt === undefined && tripCoversDate(t, dateMs));
 	if (active.length === 0) return null;
 	active.sort((a, b) => b.startDate - a.startDate);
 	return active[0].id;
+}
+
+/** Day-granular range check; open-ended trips cover every day from their start. */
+export function tripCoversDate(trip: Trip, dateMs: number): boolean {
+	const day = startOfDay(dateMs);
+	if (startOfDay(trip.startDate) > day) return false;
+	return trip.endDate === undefined || day <= startOfDay(trip.endDate);
+}
+
+/** Expenses dated inside the trip that belong to no trip yet, so the user can pull them in
+ *  after creating a trip late. Tags pointing at deleted trips count as untagged; expenses
+ *  already in another trip and settlements are left alone. */
+export function untaggedExpensesInTrip(expenses: Expense[], trip: Trip, trips: Trip[]): Expense[] {
+	const known = new Set(trips.map((t) => t.id));
+	return expenses.filter(
+		(e) =>
+			!e.isSettlement &&
+			(!e.tripId || !known.has(e.tripId)) &&
+			e.tripId !== trip.id &&
+			tripCoversDate(trip, e.date)
+	);
 }
 
 function startOfDay(ms: number): number {

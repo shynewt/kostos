@@ -426,6 +426,17 @@ export function updateTrip(
 	}
 }
 
+/** Tag existing expenses with a trip in one transaction; used when a trip is created after
+ *  the fact. Not logged: it moves no money and the activity feed would just fill up. */
+export function assignExpensesToTrip(handle: RoomHandle, expenseIds: string[], tripId: string): void {
+	const ids = new Set(expenseIds);
+	handle.doc.transact(() => {
+		for (const entry of handle.expenses.toArray()) {
+			if (ids.has(entry.get('id') as string)) entry.set('tripId', tripId);
+		}
+	});
+}
+
 /** Removing a trip leaves any expenses tagged with it as orphans. Their tripId still
  *  serializes but readers should treat unknown trip IDs as untagged. */
 export function removeTrip(handle: RoomHandle, id: string): void {

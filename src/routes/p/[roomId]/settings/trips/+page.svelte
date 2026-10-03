@@ -3,9 +3,15 @@
 	import EmojiTilePicker from '$lib/components/EmojiTilePicker.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
-	import { addTrip, generateId, removeTrip, updateTrip } from '$lib/sync/doc';
+	import {
+		addTrip,
+		assignExpensesToTrip,
+		generateId,
+		removeTrip,
+		updateTrip
+	} from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
-	import { partitionTrips } from '$lib/trips';
+	import { partitionTrips, untaggedExpensesInTrip } from '$lib/trips';
 	import type { Trip } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
@@ -21,6 +27,8 @@
 	let editingId = $state<string | null>(null);
 	let draft = $state<TripDraft>(emptyDraft());
 	let pastOpen = $state(false);
+	// untagged expenses that fell inside a trip's dates when it was saved
+	let tagOffer = $state<{ trip: Trip; expenseIds: string[] } | null>(null);
 
 	type TripDraft = {
 		name: string;
@@ -78,10 +86,25 @@
 				createdAt: Date.now()
 			};
 			addTrip(handle, trip);
+			offerTagging(trip);
 		} else {
+			const existing = trips.find((t) => t.id === editingId);
 			updateTrip(handle, editingId, { name, emoji, startDate, endDate });
+			const datesMoved = existing && (existing.startDate !== startDate || existing.endDate !== endDate);
+			if (existing && datesMoved) offerTagging({ ...existing, name, emoji, startDate, endDate });
 		}
 		editingId = null;
+	}
+
+	function offerTagging(trip: Trip) {
+		const matches = untaggedExpensesInTrip(expenses, trip, [...trips, trip]);
+		tagOffer = matches.length > 0 ? { trip, expenseIds: matches.map((e) => e.id) } : null;
+	}
+
+	function acceptTagging() {
+		if (!tagOffer) return;
+		assignExpensesToTrip(handle, tagOffer.expenseIds, tagOffer.trip.id);
+		tagOffer = null;
 	}
 
 	function confirmDelete(t: Trip) {
@@ -187,6 +210,23 @@
 			</div>
 		{/snippet}
 
+		{#if tagOffer}
+			{@const count = tagOffer.expenseIds.length}
+			<div class="card tag-offer" role="status">
+				<p class="tag-offer-text">
+					{count} expense{count === 1 ? '' : 's'} from these dates {count === 1 ? "isn't" : "aren't"}
+					in any trip. Add {count === 1 ? 'it' : 'them'} to {tagOffer.trip.emoji}
+					{tagOffer.trip.name}?
+				</p>
+				<div class="row gap-8">
+					<button type="button" class="btn btn-ghost" onclick={() => (tagOffer = null)}>Skip</button>
+					<button type="button" class="btn btn-primary" onclick={acceptTagging}>
+						Add {count}
+					</button>
+				</div>
+			</div>
+		{/if}
+
 		{#if editingId}
 			<div class="card edit-card">
 				<div class="eyebrow edit-head">{editingId === 'new' ? 'New trip' : 'Edit trip'}</div>
@@ -241,6 +281,24 @@
 </div>
 
 <style>
+	.tag-offer {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-top: 14px;
+		padding: 14px;
+	}
+
+	.tag-offer-text {
+		margin: 0;
+		font-size: 14px;
+		line-height: 1.45;
+	}
+
+	.tag-offer .row {
+		justify-content: flex-end;
+	}
+
 	.intro {
 		font-size: 12px;
 		font-family: var(--font-mono);
