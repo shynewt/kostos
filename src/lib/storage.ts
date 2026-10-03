@@ -183,11 +183,6 @@ export function setCurrentMember(roomId: string, memberId: string | null): void 
 
 /* --------------------------- Backward compatibility ------------------------- */
 
-/** Most-recently-active project, or null. */
-export function getCurrentProject(): ProjectRef | null {
-	return listProjects()[0] ?? null;
-}
-
 /** Shorthand for adding/promoting a project to most-recent. Pass null to forget all. */
 export function setCurrentProject(ref: ProjectRef | null): void {
 	if (ref === null) {

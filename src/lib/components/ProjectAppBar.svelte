@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
-	import { getCurrentProject } from '$lib/storage';
+	import { findProject } from '$lib/storage';
 	import type { RoomHandle } from '$lib/sync/doc';
 	import type { ConnectionStatus } from '$lib/sync/provider';
 	import type { Project } from '$lib/types';
@@ -39,8 +39,8 @@
 	let copied = $state(false);
 
 	const shareUrl = $derived.by(() => {
-		const stored = getCurrentProject();
-		if (!stored || stored.roomId !== roomId) return null;
+		const stored = findProject(roomId);
+		if (!stored) return null;
 		return `${location.origin}/join?room=${encodeURIComponent(roomId)}#${stored.secret}`;
 	});
 

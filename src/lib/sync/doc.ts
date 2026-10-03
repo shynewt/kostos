@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { browser } from '$app/environment';
-import { getCurrentMember, getCurrentProject } from '$lib/storage';
+import { findProject, getCurrentMember } from '$lib/storage';
 import {
 	DEFAULT_CATEGORIES,
 	DEFAULT_PAYMENT_METHODS,
@@ -98,9 +98,7 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 }
 
 function secretFromStorage(roomId: string): string | undefined {
-	const stored = getCurrentProject();
-	if (!stored || stored.roomId !== roomId) return undefined;
-	return stored.secret;
+	return findProject(roomId)?.secret;
 }
 
 export async function destroyRoom(roomId: string): Promise<void> {
