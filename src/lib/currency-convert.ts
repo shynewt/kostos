@@ -23,10 +23,29 @@ export function convertCents(
 /** An expense's total in the project base currency. Returns the native amount when the
  *  expense is already in base or has no stored rate. */
 export function expenseBaseAmount(expense: Expense, baseCurrency: string | undefined): number {
-	if (!baseCurrency || !expense.currency || expense.currency === baseCurrency || !expense.exchangeRate) {
-		return expense.amount;
-	}
+	if (!baseCurrency || !expense.currency || expense.currency === baseCurrency) return expense.amount;
+	if (expense.chargedAmount !== undefined) return expense.chargedAmount;
+	if (!expense.exchangeRate) return expense.amount;
 	return convertCents(expense.amount, expense.currency, baseCurrency, expense.exchangeRate);
+}
+
+export type ExchangeFee = {
+	/** charged minus the market value, base minor units; negative when it beat the market */
+	fee: number;
+	/** the expense's value at the market rate, base minor units */
+	atMarket: number;
+	percent: number;
+};
+
+/** What exchange cost on top of the market rate. Null when the expense is in base currency
+ *  or predates market rates being stored. */
+export function exchangeFee(expense: Expense, baseCurrency: string | undefined): ExchangeFee | null {
+	if (!baseCurrency || expense.currency === baseCurrency) return null;
+	if (expense.marketRate === undefined || expense.chargedAmount === undefined) return null;
+	const atMarket = convertCents(expense.amount, expense.currency, baseCurrency, expense.marketRate);
+	if (atMarket <= 0) return null;
+	const fee = expense.chargedAmount - atMarket;
+	return { fee, atMarket, percent: (fee / atMarket) * 100 };
 }
 
 /** Total spending in the base currency. Settlements move money between members rather
@@ -64,6 +83,8 @@ export function expenseInBase(expense: Expense, baseCurrency: string | undefined
 		amount: baseAmount,
 		currency: baseCurrency ?? expense.currency,
 		exchangeRate: undefined,
+		chargedAmount: undefined,
+		marketRate: undefined,
 		payments,
 		splits
 	};

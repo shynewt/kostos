@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	convertCents,
 	expenseBaseAmount,
+	exchangeFee,
 	expenseInBase,
 	rateFromAmounts,
 	spentInBase,
@@ -17,6 +18,8 @@ function expense(partial: Partial<Expense> & Pick<Expense, 'amount' | 'splits'>)
 		amount: partial.amount,
 		currency: partial.currency ?? 'USD',
 		exchangeRate: partial.exchangeRate,
+		chargedAmount: partial.chargedAmount,
+		marketRate: partial.marketRate,
 		date: 0,
 		splitMode: partial.splitMode ?? 'even',
 		splits: partial.splits,
@@ -154,5 +157,30 @@ describe('spentInBase', () => {
 			{ ...expense({ amount: 500, currency: 'EUR', splits: [] }), isSettlement: true }
 		];
 		expect(spentInBase(list, 'EUR')).toBe(1000 + 1200);
+	});
+});
+
+describe('charged amounts and exchange fees', () => {
+	const usd = (extra: Partial<Expense>) => expense({ amount: 10000, currency: 'USD', splits: [], ...extra });
+
+	it('uses the charged amount for balances when present', () => {
+		expect(expenseBaseAmount(usd({ exchangeRate: 0.9, chargedAmount: 9420 }), 'EUR')).toBe(9420);
+		expect(expenseBaseAmount(usd({ exchangeRate: 0.9 }), 'EUR')).toBe(9000);
+		expect(expenseInBase(usd({ chargedAmount: 9420, exchangeRate: 0.942 }), 'EUR').amount).toBe(9420);
+	});
+
+	it('reports the fee against the market rate, positive or negative', () => {
+		expect(exchangeFee(usd({ chargedAmount: 9420, marketRate: 0.9213 }), 'EUR')).toEqual({
+			fee: 207,
+			atMarket: 9213,
+			percent: (207 / 9213) * 100
+		});
+		expect(exchangeFee(usd({ chargedAmount: 9100, marketRate: 0.9213 }), 'EUR')!.fee).toBe(-113);
+	});
+
+	it('has no fee for base-currency expenses or ones without a stored market rate', () => {
+		expect(exchangeFee(usd({ chargedAmount: 9420, marketRate: 0.92, currency: 'EUR' }), 'EUR')).toBeNull();
+		expect(exchangeFee(usd({ exchangeRate: 0.9 }), 'EUR')).toBeNull();
+		expect(exchangeFee(usd({ chargedAmount: 9420 }), 'EUR')).toBeNull();
 	});
 });

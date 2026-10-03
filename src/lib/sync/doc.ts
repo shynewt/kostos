@@ -608,6 +608,8 @@ function readExpenseEntry(entry: Y.Map<unknown>): Expense {
 		currency: entry.get('currency') as string,
 		exchangeRate: entry.get('exchangeRate') as number | undefined,
 		rateFetchedAt: entry.get('rateFetchedAt') as number | undefined,
+		chargedAmount: entry.get('chargedAmount') as number | undefined,
+		marketRate: entry.get('marketRate') as number | undefined,
 		description: entry.get('description') as string | undefined,
 		categoryId: entry.get('categoryId') as string | undefined,
 		paymentMethodId: entry.get('paymentMethodId') as string | undefined,
@@ -637,6 +639,8 @@ function expenseMap(e: Expense): Y.Map<unknown> {
 	ym.set('currency', e.currency);
 	if (e.exchangeRate !== undefined) ym.set('exchangeRate', e.exchangeRate);
 	if (e.rateFetchedAt !== undefined) ym.set('rateFetchedAt', e.rateFetchedAt);
+	if (e.chargedAmount !== undefined) ym.set('chargedAmount', e.chargedAmount);
+	if (e.marketRate !== undefined) ym.set('marketRate', e.marketRate);
 	if (e.description) ym.set('description', e.description);
 	if (e.categoryId) ym.set('categoryId', e.categoryId);
 	if (e.paymentMethodId) ym.set('paymentMethodId', e.paymentMethodId);

@@ -141,6 +141,13 @@ export type Expense = {
 	exchangeRate?: number;
 	/** Unix ms the rate was captured, for display ("rate from 2026-06-01"). */
 	rateFetchedAt?: number;
+	/** What the expense actually cost in the base currency, minor units: the amount the bank
+	 *  charged, or the amount at the market rate if the user didn't change it. Balances use
+	 *  it over `exchangeRate`, which is still written (derived from it) for older clients. */
+	chargedAmount?: number;
+	/** Base-currency units per 1 unit of `currency` on the market when the expense was
+	 *  entered. Reference only: compared with `chargedAmount` to show exchange fees. */
+	marketRate?: number;
 	description?: string;
 	categoryId?: string;
 	paymentMethodId?: string;
