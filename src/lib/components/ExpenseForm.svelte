@@ -486,6 +486,7 @@
 			splitMode,
 			splits: buildSplits(),
 			notes: notes.trim() || undefined,
+			isSettlement: seed?.isSettlement,
 			createdAt: seed?.createdAt ?? Date.now(),
 			createdBy: seed?.createdBy ?? currentMemberId ?? payers[0]?.memberId ?? ''
 		};
