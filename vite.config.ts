@@ -17,6 +17,9 @@ export default defineConfig({
 		SvelteKitPWA({
 			registerType: 'prompt',
 			injectRegister: false,
+			// offline navigations must get the static shell (200.html), not the prerendered
+			// landing page, or a reload on /p/<room> renders the landing page
+			kit: { adapterFallback: '200.html', spa: true },
 			manifest: {
 				name: 'Kostos',
 				short_name: 'Kostos',
