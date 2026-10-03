@@ -129,7 +129,11 @@
 	let categoryId = $state<string | undefined>(seed?.categoryId);
 	let paymentMethodId = $state<string | undefined>(seed?.paymentMethodId);
 	let tripId = $state<string | undefined>(
-		untrack(() => seed?.tripId ?? suggestTripIdForDate(project.trips, Date.now()) ?? undefined)
+		untrack(() =>
+			mode === 'edit'
+				? seed?.tripId
+				: (suggestTripIdForDate(project.trips, Date.now()) ?? undefined)
+		)
 	);
 	// Track whether the user has manually chosen a trip; once they do, stop auto-overriding.
 	let tripIdTouched = $state(false);
@@ -148,13 +152,15 @@
 
 	$effect(() => {
 		// Guess the category from the description, debounced so it lands once typing settles
-		// rather than flickering per keystroke. We never fight a manual choice, and on edits
-		// we leave an already-set category alone.
+		// rather than flickering per keystroke. We never fight a manual choice. On edits we
+		// leave an existing category alone and only guess once the description changes, so
+		// an untouched save stays a no-op.
 		const text = title;
 		const model = categoryModel;
 		const valid = categoryIds;
 		if (untrack(() => categoryTouched)) return;
-		if (mode === 'edit' && seed?.categoryId !== undefined) return;
+		if (mode === 'edit' && (seed?.categoryId !== undefined || text === (seed?.description ?? '')))
+			return;
 		const timer = setTimeout(() => {
 			const guess = guessCategory(model, text, valid) ?? undefined;
 			untrack(() => {
@@ -180,9 +186,8 @@
 
 	$effect(() => {
 		// Auto-suggest a trip as the user picks dates, unless they've already chosen one.
-		// Edits keep their original tripId by way of the seed; new expenses follow the date.
-		if (tripIdTouched) return;
-		if (mode === 'edit' && seed?.tripId !== undefined) return;
+		// Edits keep whatever trip (or none) the expense already had.
+		if (tripIdTouched || mode === 'edit') return;
 		const ms = new Date(dateStr).getTime();
 		if (Number.isNaN(ms)) return;
 		const suggested = suggestTripIdForDate(project.trips, ms);
@@ -279,8 +284,9 @@
 	}
 
 	// plain (non-reactive) guard: only auto-resolve once per currency so a failed request
-	// never retries in a loop and hammers the API.
-	let lastAutoRateKey = '';
+	// never retries in a loop and hammers the API. Edits start "resolved" so opening one
+	// never swaps its stored rate for today's.
+	let lastAutoRateKey = untrack(() => (mode === 'edit' && seed?.exchangeRate ? seed.currency : ''));
 	$effect(() => {
 		const key = currencyCode;
 		if (!isForeign || !project.autoFetchRates) return;
@@ -447,6 +453,13 @@
 		paymentMethodId = m.id;
 	}
 
+	function rateTimestamp(): number | undefined {
+		if (seed && seed.currency === currencyCode && seed.exchangeRate === exchangeRate) {
+			return seed.rateFetchedAt;
+		}
+		return rateAsOf ?? Date.now();
+	}
+
 	async function handleSubmit(event?: Event) {
 		event?.preventDefault();
 		if (submitting || !canSave) return;
@@ -462,12 +475,14 @@
 			amount: amountCents,
 			currency: currencyCode,
 			exchangeRate: isForeign ? (exchangeRate ?? undefined) : undefined,
-			rateFetchedAt: isForeign ? Date.now() : undefined,
+			rateFetchedAt: isForeign ? rateTimestamp() : undefined,
 			description: title.trim(),
 			categoryId,
 			paymentMethodId,
 			tripId: tripId || undefined,
-			date: new Date(dateStr).getTime() || Date.now(),
+			// keep the stored timestamp unless the day was changed; the input only holds a day
+			date:
+				seed && dateStr === seedDateStr() ? seed.date : new Date(dateStr).getTime() || Date.now(),
 			splitMode,
 			splits: buildSplits(),
 			notes: notes.trim() || undefined,
