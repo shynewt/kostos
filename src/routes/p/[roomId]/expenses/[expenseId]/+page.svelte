@@ -5,8 +5,8 @@
 	import ActivityList from '$lib/components/ActivityList.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
-	import { CURRENCY_PRESETS } from '$lib/currencies';
-	import { expenseBaseAmount } from '$lib/currency-convert';
+	import { currencySymbolFor } from '$lib/currencies';
+	import { expenseBaseAmount, formatRate } from '$lib/currency-convert';
 	import { formatAmount, formatSigned } from '$lib/money';
 	import { getCurrentMember } from '$lib/storage';
 	import { removeExpense } from '$lib/sync/doc';
@@ -38,7 +38,7 @@
 	const nativeCurrency = $derived(expense?.currency ?? currency);
 	const nativeSymbol = $derived(
 		isForeign
-			? (CURRENCY_PRESETS.find((p) => p.code === nativeCurrency)?.sym ?? nativeCurrency)
+			? currencySymbolFor(nativeCurrency)
 			: currencySymbol
 	);
 	const baseAmount = $derived(expense ? expenseBaseAmount(expense, currency) : 0);
@@ -150,7 +150,7 @@
 				{#if isForeign}
 					<div class="dim mono hero-fx">
 						≈ {formatAmount(baseAmount, currencySymbol, currency)}
-						{#if expense.exchangeRate}· 1 {nativeCurrency} = {expense.exchangeRate} {currency}{/if}
+						{#if expense.exchangeRate}· 1 {nativeCurrency} = {formatRate(expense.exchangeRate)} {currency}{/if}
 					</div>
 				{/if}
 				<div class="row gap-8 hero-stickers">

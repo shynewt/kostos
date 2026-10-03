@@ -29,6 +29,14 @@ export function expenseBaseAmount(expense: Expense, baseCurrency: string | undef
 	return convertCents(expense.amount, expense.currency, baseCurrency, expense.exchangeRate);
 }
 
+/** Total spending in the base currency. Settlements move money between members rather
+ *  than spend it, so they're left out, matching the stats screen. */
+export function spentInBase(expenses: Expense[], baseCurrency: string | undefined): number {
+	let total = 0;
+	for (const e of expenses) if (!e.isSettlement) total += expenseBaseAmount(e, baseCurrency);
+	return total;
+}
+
 /** A copy of the expense expressed in the base currency: its total converted via the
  *  stored rate, with payments (and amount-mode splits) rescaled so the parts still sum to
  *  that total. Returns the original untouched when it is already in base. */
@@ -85,4 +93,24 @@ export function scaleToTotal(parts: number[], newTotal: number): number[] {
 		k++;
 	}
 	return floored;
+}
+
+/** The effective rate implied by what the bank actually charged: `charged` (minor units of
+ *  `toCurrency`) for `amount` (minor units of `fromCurrency`). Kept at full precision so
+ *  convertCents(amount, ..., rate) lands back on `charged` exactly. */
+export function rateFromAmounts(
+	amount: number,
+	fromCurrency: string,
+	charged: number,
+	toCurrency: string
+): number | null {
+	if (amount <= 0 || charged <= 0) return null;
+	const fromMajor = amount / 10 ** currencyDecimals(fromCurrency);
+	const toMajor = charged / 10 ** currencyDecimals(toCurrency);
+	return toMajor / fromMajor;
+}
+
+/** Short display form of a rate, as shown in the rate input. */
+export function formatRate(rate: number): string {
+	return String(Number(rate.toFixed(6)));
 }

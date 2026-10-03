@@ -26,6 +26,8 @@
 		onUpdateAmount: (id: string, value: string) => void;
 		onAutoFillRest: () => void;
 		onFillSplitRow: (id: string) => void;
+		/** "Saved as …" per member whose typed amount gets rounded on save */
+		roundingNotes?: Record<string, string>;
 	};
 
 	let {
@@ -48,7 +50,8 @@
 		onStepShare,
 		onUpdateAmount,
 		onAutoFillRest,
-		onFillSplitRow
+		onFillSplitRow,
+		roundingNotes = {}
 	}: Props = $props();
 
 	const involvedList = $derived(members.filter((m) => involved.has(m.id)));
@@ -167,6 +170,9 @@
 					</div>
 				{/if}
 			</div>
+			{#if isIn && roundingNotes[m.id]}
+				<p class="dim mono rounding-note">{roundingNotes[m.id]}</p>
+			{/if}
 		{/each}
 	</div>
 
@@ -293,6 +299,12 @@
 
 	.member-list {
 		gap: 12px;
+	}
+
+	.rounding-note {
+		margin: 2px 0 0;
+		font-size: 11px;
+		text-align: right;
 	}
 
 	.member-row {

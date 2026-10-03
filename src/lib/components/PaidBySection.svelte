@@ -21,6 +21,8 @@
 		onAddPayer: () => void;
 		onRemovePayer: (id: string) => void;
 		onFillPayer: (id: string) => void;
+		/** "Saved as …" per payer row whose typed amount gets rounded on save */
+		roundingNotes?: Record<string, string>;
 	};
 
 	let {
@@ -36,7 +38,8 @@
 		onUpdatePayer,
 		onAddPayer,
 		onRemovePayer,
-		onFillPayer
+		onFillPayer,
+		roundingNotes = {}
 	}: Props = $props();
 
 	let openRow = $state<string | null>(null);
@@ -159,6 +162,9 @@
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
 						</button>
 					</div>
+					{#if roundingNotes[p.id]}
+						<p class="dim mono rounding-note">{roundingNotes[p.id]}</p>
+					{/if}
 					{#if openRow === p.id}
 						<ul class="payer-list">
 							{#each members as m (m.id)}
@@ -329,6 +335,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
+	}
+
+	.rounding-note {
+		margin: 2px 0 0;
+		font-size: 11px;
+		text-align: right;
 	}
 
 	.payer-row-multi {

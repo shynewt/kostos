@@ -11,11 +11,24 @@
 	import NotesField from './NotesField.svelte';
 	import TripPickerField from './TripPickerField.svelte';
 	import { expenseShares, splitEvenly } from '$lib/balance';
-	import { CURRENCY_PRESETS, currencyDecimals, type CurrencyPreset } from '$lib/currencies';
-	import { expenseBaseAmount } from '$lib/currency-convert';
+	import {
+		currencyDecimals,
+		currencySymbolFor,
+		isPrecisionCapped,
+		type CurrencyPreset
+	} from '$lib/currencies';
+	import {
+		applyFetchedRate,
+		createRequestGate,
+		editCharged,
+		editRate,
+		EMPTY_RATE_DRAFT,
+		parseMoney,
+		rateFields,
+		seedRateDraft
+	} from '$lib/expense-draft';
 	import { resolveRate } from '$lib/fx-cache';
 	import { formatAmount, toInputValue } from '$lib/money';
-	import { evalToCents } from '$lib/math';
 	import { suggestTripIdForDate } from '$lib/trips';
 	import { buildCategoryModel, guessCategory } from '$lib/category-guess';
 	import type {
@@ -175,13 +188,10 @@
 	});
 
 	$effect(() => {
-		const raw = amountInput.trim();
-		if (raw === '') {
-			amountCents = 0;
-			return;
-		}
-		const evaluated = evalToCents(raw, decimals);
-		if (evaluated !== null && evaluated >= 0) amountCents = evaluated;
+		// keep the last good value so the display doesn't flicker mid-expression; validity
+		// comes from amountParsed, i.e. what's typed right now
+		if (amountParsed.empty) amountCents = 0;
+		else if (!amountParsed.invalid) amountCents = amountParsed.cents;
 	});
 
 	$effect(() => {
@@ -198,12 +208,18 @@
 
 	let currencyCode = $state(untrack(() => seed?.currency ?? project.currency));
 	let currencyOpen = $state(false);
-	let rateInput = $state(seed?.exchangeRate != null ? String(seed.exchangeRate) : '');
+	let rateDraft = $state(untrack(() => seedRateDraft(seed, project.currency)));
 	let rateTouched = $state(false);
 	let rateFetching = $state(false);
 	let rateError = $state(false);
 	let rateAsOf = $state<number | null>(seed?.rateFetchedAt ?? null);
 	let rateStale = $state(false);
+	const rateRequests = createRequestGate();
+	// market rate fetched this session, so a charged amount can show the bank's markup
+	let marketRate = $state<number | null>(null);
+
+	const baseDecimals = currencyDecimals(untrack(() => project.currency));
+	const baseAmountStr = (cents: number) => (cents / 10 ** baseDecimals).toFixed(baseDecimals);
 
 	const rateAsOfLabel = $derived(
 		rateAsOf ? new Date(rateAsOf).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : ''
@@ -211,48 +227,59 @@
 
 	function symbolForCode(code: string): string {
 		if (code === project.currency) return project.currencySymbol;
-		return CURRENCY_PRESETS.find((p) => p.code === code)?.sym ?? code;
+		return currencySymbolFor(code);
 	}
 
 	const currency = $derived(currencyCode);
 	const currencySymbol = $derived(symbolForCode(currencyCode));
 	const decimals = $derived(currencyDecimals(currencyCode));
+	const amountParsed = $derived(parseMoney(amountInput, decimals));
 	const isForeign = $derived(currencyCode !== project.currency);
 
 	// render a minor-units value as an editable string in the active currency's precision
 	function amountStr(cents: number): string {
 		return (cents / 10 ** decimals).toFixed(decimals);
 	}
-	const exchangeRate = $derived.by(() => {
-		const v = parseFloat(rateInput);
-		return Number.isFinite(v) && v > 0 ? v : null;
+	const rateCtx = $derived({
+		amountCents,
+		currency: currencyCode,
+		baseCurrency: project.currency,
+		baseDecimals
 	});
-	const baseAmountPreview = $derived(
-		isForeign && exchangeRate
-			? expenseBaseAmount(
-					{
-						id: 'preview',
-						payments: [],
-						amount: amountCents,
-						currency: currencyCode,
-						exchangeRate,
-						date: 0,
-						splitMode: 'even',
-						splits: [],
-						createdAt: 0,
-						createdBy: ''
-					},
-					project.currency
-				)
-			: 0
+	const fields = $derived(rateFields(rateDraft, rateCtx));
+	const exchangeRate = $derived(fields.rateValue);
+	const markupPercent = $derived(
+		rateDraft.source === 'charged' && marketRate && exchangeRate
+			? (exchangeRate / marketRate - 1) * 100
+			: null
 	);
 
+	function onRateInput(value: string) {
+		// what the user types wins over any fetch still in flight
+		rateRequests.invalidate();
+		rateFetching = false;
+		rateDraft = editRate(rateDraft, value);
+		rateTouched = true;
+		rateAsOf = null;
+		rateStale = false;
+	}
+
+	function onChargedInput(value: string) {
+		rateDraft = editCharged(rateDraft, value);
+		rateTouched = true;
+		rateAsOf = null;
+		rateStale = false;
+	}
+
 	function resetRate() {
-		rateInput = '';
+		rateRequests.invalidate();
+		rateFetching = false;
+		rateDraft = EMPTY_RATE_DRAFT;
 		rateTouched = false;
 		rateError = false;
 		rateAsOf = null;
 		rateStale = false;
+		marketRate = null;
 	}
 
 	function pickCurrency(p: CurrencyPreset) {
@@ -265,20 +292,28 @@
 		resetRate();
 	}
 
-	// cache-first; `force` skips the freshness window for the explicit "Fetch rate" button
+	// cache-first; `force` skips the freshness window for the explicit "Fetch rate" button.
+	// With a charged amount pinned, fetching only records the market rate for the markup hint.
 	async function loadRate(force = false) {
 		if (!isForeign) return;
 		rateError = false;
 		rateFetching = true;
+		const request = rateRequests.begin();
 		const resolved = await resolveRate(currencyCode, project.currency, force);
+		// a currency switch, a typed rate or a newer fetch happened while this was in flight
+		if (!rateRequests.isCurrent(request)) return;
 		rateFetching = false;
 		if (!resolved) {
 			rateError = true;
-			rateAsOf = null;
-			rateStale = false;
+			if (rateDraft.source === 'rate') {
+				rateAsOf = null;
+				rateStale = false;
+			}
 			return;
 		}
-		rateInput = String(Number(resolved.rate.toFixed(6)));
+		marketRate = resolved.rate;
+		if (rateDraft.source === 'charged') return;
+		rateDraft = applyFetchedRate(rateDraft, resolved.rate);
 		rateAsOf = resolved.at;
 		rateStale = resolved.source === 'stale';
 	}
@@ -298,7 +333,8 @@
 
 	const involvedList = $derived(members.filter((m) => involved.has(m.id)));
 
-	const payerCents = $derived(payers.map((p) => evalToCents(p.amount, decimals) ?? 0));
+	const payerInputs = $derived(payers.map((p) => parseMoney(p.amount, decimals)));
+	const payerCents = $derived(payerInputs.map((p) => p.cents));
 	const paidTotal = $derived(payerCents.reduce((sum, c) => sum + c, 0));
 	const paidShort = $derived(amountCents - paidTotal);
 	const isMultiPayer = $derived(payers.length > 1);
@@ -308,13 +344,31 @@
 			(!isMultiPayer || (paidTotal === amountCents && payerCents.every((c) => c > 0)))
 	);
 
-	const rateValid = $derived(!isForeign || exchangeRate !== null);
-	const canSave = $derived(
-		amountCents > 0 &&
-			title.trim().length > 0 &&
-			paymentsValid &&
-			involvedList.length > 0 &&
-			rateValid
+	const splitInputs = $derived(
+		Object.fromEntries(involvedList.map((m) => [m.id, parseMoney(amounts[m.id] ?? '', decimals)]))
+	);
+	const splitCents = (memberId: string) => splitInputs[memberId]?.cents ?? 0;
+
+	// "Saved as" notes for rows whose input is finer than the currency stores; a balanced
+	// total can still hide two rows rounding in opposite directions
+	const splitRounding = $derived(
+		splitMode === 'amount'
+			? Object.fromEntries(
+					Object.entries(splitInputs)
+						.filter(([, input]) => input.rounded)
+						.map(([id, input]) => [id, `Saved as ${amountStr(input.cents)}`])
+				)
+			: {}
+	);
+	const payerRounding = $derived(
+		isMultiPayer
+			? Object.fromEntries(
+					payers
+						.map((p, i) => [p.id, payerInputs[i]] as const)
+						.filter(([, input]) => input.rounded)
+						.map(([id, input]) => [id, `Saved as ${amountStr(input.cents)}`])
+				)
+			: {}
 	);
 
 	function buildSplits(): ExpenseSplit[] {
@@ -324,7 +378,7 @@
 		}
 		return involvedList.map((m) => ({
 			memberId: m.id,
-			amount: evalToCents(amounts[m.id] ?? '', decimals) ?? 0
+			amount: splitCents(m.id)
 		}));
 	}
 
@@ -349,17 +403,75 @@
 	);
 	const assignedAmount = $derived.by(() => {
 		if (splitMode !== 'amount') return amountCents;
-		return involvedList.reduce((sum, m) => sum + (evalToCents(amounts[m.id] ?? '', decimals) ?? 0), 0);
+		return involvedList.reduce((sum, m) => sum + splitCents(m.id), 0);
 	});
 	const remaining = $derived(amountCents - assignedAmount);
 	const totalShares = $derived(involvedList.reduce((sum, m) => sum + (shares[m.id] ?? 0), 0));
 	const emptyInvolvedCount = $derived(
 		splitMode === 'amount'
-			? involvedList.filter((m) => (evalToCents(amounts[m.id] ?? '', decimals) ?? 0) === 0).length
+			? involvedList.filter((m) => splitCents(m.id) === 0).length
 			: 0
 	);
 	const canAutoFill = $derived(
 		splitMode === 'amount' && amountCents > 0 && remaining > 0 && emptyInvolvedCount > 0
+	);
+
+	const rateValid = $derived(!isForeign || exchangeRate !== null);
+
+	const amountInvalid = $derived(amountParsed.invalid);
+	const splitInvalid = $derived(
+		splitMode === 'amount' && Object.values(splitInputs).some((input) => input.invalid)
+	);
+	const payerInvalid = $derived(isMultiPayer && payerInputs.some((input) => input.invalid));
+
+	// the first thing stopping a save that the user can't see from the empty fields alone
+	const saveProblem = $derived.by<string | null>(() => {
+		if (amountInvalid) return "The amount isn't a valid number or expression.";
+		if (amountCents <= 0) return null;
+		if (payerInvalid) return "One of the paid-by amounts isn't a valid number.";
+		if (!paymentsValid && !(isMultiPayer && paidTotal !== amountCents))
+			return 'Every payer needs a person and an amount.';
+		if (isMultiPayer && paidTotal !== amountCents) return "Paid-by amounts don't add up to the total.";
+		if (involvedList.length === 0) return 'Pick at least one person to split with.';
+		if (splitInvalid) return "One of the split amounts isn't a valid number.";
+		if (splitMode === 'amount' && remaining !== 0) return "Split amounts don't add up to the total.";
+		if (splitMode === 'shares' && totalShares <= 0) return 'Give at least one person a share.';
+		return null;
+	});
+
+	// Everything a save problem can come from. Any edit yields a new snapshot, which restarts
+	// the wait below, so "12+" or a just-added payer row doesn't flash an error mid-typing.
+	const problemSnapshot = $derived({
+		problem: saveProblem,
+		inputs: [
+			amountInput,
+			splitMode,
+			[...involved].join(','),
+			...payers.map((p) => `${p.memberId}=${p.amount}`),
+			...Object.entries(amounts).map(([id, value]) => `${id}=${value}`),
+			...Object.entries(shares).map(([id, value]) => `${id}:${value}`)
+		].join('|')
+	});
+	let shownProblem = $state<string | null>(null);
+	$effect(() => {
+		const { problem } = problemSnapshot;
+		shownProblem = null;
+		if (problem === null) return;
+		const timer = setTimeout(() => (shownProblem = problem), 800);
+		return () => clearTimeout(timer);
+	});
+
+	const canSave = $derived(
+		!amountInvalid &&
+			amountCents > 0 &&
+			title.trim().length > 0 &&
+			paymentsValid &&
+			!payerInvalid &&
+			involvedList.length > 0 &&
+			!splitInvalid &&
+			(splitMode !== 'amount' || remaining === 0) &&
+			(splitMode !== 'shares' || totalShares > 0) &&
+			rateValid
 	);
 
 	function setPayerRow(id: string, updates: Partial<PaymentRow>) {
@@ -396,9 +508,7 @@
 	}
 
 	function fillPayerRow(id: string) {
-		const sumOthers = payers
-			.filter((p) => p.id !== id)
-			.reduce((sum, p) => sum + (evalToCents(p.amount, decimals) ?? 0), 0);
+		const sumOthers = payers.reduce((sum, p, i) => (p.id === id ? sum : sum + payerCents[i]), 0);
 		const target = amountCents - sumOthers;
 		if (target < 0) return;
 		setPayerRow(id, { amount: amountStr(target) });
@@ -407,7 +517,7 @@
 	function fillSplitRow(memberId: string) {
 		const sumOthers = involvedList
 			.filter((m) => m.id !== memberId)
-			.reduce((sum, m) => sum + (evalToCents(amounts[m.id] ?? '', decimals) ?? 0), 0);
+			.reduce((sum, m) => sum + splitCents(m.id), 0);
 		const target = amountCents - sumOthers;
 		if (target < 0) return;
 		amounts = { ...amounts, [memberId]: amountStr(target) };
@@ -415,7 +525,7 @@
 
 	function autoFillRest() {
 		if (splitMode !== 'amount') return;
-		const empties = involvedList.filter((m) => (evalToCents(amounts[m.id] ?? '', decimals) ?? 0) === 0);
+		const empties = involvedList.filter((m) => splitCents(m.id) === 0);
 		if (empties.length === 0 || remaining <= 0) return;
 		const portions = splitEvenly(remaining, empties.length);
 		const next = { ...amounts };
@@ -524,7 +634,14 @@
 			symbol={currencySymbol}
 			{currency}
 			{isExpression}
+			invalid={amountInvalid && shownProblem !== null}
 		/>
+		{#if amountParsed.rounded}
+			<p class="dim mono rounding-note">
+				Saved as {amountStr(amountCents)} {currencyCode}.{#if isPrecisionCapped(currencyCode)}{' '}Kostos
+					keeps {currencyCode} to 2 decimals.{/if}
+			</p>
+		{/if}
 
 		{#if currencyOpen}
 			<div class="card field-card currency-card">
@@ -570,30 +687,47 @@
 					<span class="rate-eq mono">1 {currencyCode} =</span>
 					<input
 						class="input rate-input mono"
-						bind:value={rateInput}
-						oninput={() => {
-							rateTouched = true;
-							rateAsOf = null;
-							rateStale = false;
-						}}
+						value={fields.rate}
+						oninput={(e) => onRateInput(e.currentTarget.value)}
 						inputmode="decimal"
 						placeholder="0.000000"
 						aria-label="Exchange rate to {project.currency}"
 					/>
 					<span class="rate-base mono">{project.currency}</span>
 				</div>
-				{#if exchangeRate}
+				<div class="row gap-8 rate-row">
+					<span class="rate-eq mono">Charged</span>
+					<input
+						class="input rate-input mono"
+						value={fields.charged}
+						oninput={(e) => onChargedInput(e.currentTarget.value)}
+						inputmode="decimal"
+						placeholder={baseAmountStr(0)}
+						aria-label="Amount charged in {project.currency}"
+					/>
+					<span class="rate-base mono">{project.currency}</span>
+				</div>
+				{#if fields.chargedParsed?.rounded}
 					<p class="dim mono rate-note">
-						{formatAmount(amountCents, currencySymbol, currencyCode)} ≈ {formatAmount(
-							baseAmountPreview,
-							project.currencySymbol,
-							project.currency
-						)}{#if rateStale && rateAsOfLabel} · offline, rate from {rateAsOfLabel}{/if}
+						Saved as {baseAmountStr(fields.baseCents)} {project.currency}.
+					</p>
+				{:else if markupPercent !== null && Math.abs(markupPercent) >= 0.05}
+					<p class="dim mono rate-note">
+						{Math.abs(markupPercent).toFixed(1)}% {markupPercent > 0 ? 'above' : 'below'} market rate
+					</p>
+				{:else if exchangeRate}
+					<p class="dim mono rate-note">
+						{#if rateDraft.source === 'charged'}
+							From what your bank charged
+						{:else}
+							Bank charged a different amount? Edit it above.{#if rateStale && rateAsOfLabel}
+								· offline, rate from {rateAsOfLabel}{/if}
+						{/if}
 					</p>
 				{:else if rateError}
-					<p class="dim rate-note">Couldn't fetch a rate. Enter it manually.</p>
+					<p class="dim rate-note">Couldn't fetch a rate. Enter it or the charged amount.</p>
 				{:else}
-					<p class="dim rate-note">Set the rate to convert this into {project.currency}.</p>
+					<p class="dim rate-note">Set the rate or the amount charged in {project.currency}.</p>
 				{/if}
 			</div>
 		{/if}
@@ -643,6 +777,7 @@
 
 		<PaidBySection
 			{payers}
+			roundingNotes={payerRounding}
 			{members}
 			{amountCents}
 			{paidTotal}
@@ -659,6 +794,7 @@
 
 		<SplitSection
 			{members}
+			roundingNotes={splitRounding}
 			{amountCents}
 			symbol={currencySymbol}
 			{currency}
@@ -682,6 +818,10 @@
 
 		<NotesField bind:value={notes} />
 
+		{#if shownProblem}
+			<p class="save-problem" aria-live="polite">{shownProblem}</p>
+		{/if}
+
 		<button
 			type="submit"
 			class="btn btn-primary btn-block submit-btn"
@@ -693,6 +833,20 @@
 </div>
 
 <style>
+	.rounding-note {
+		margin: -4px 0 10px;
+		font-size: 11px;
+		text-align: center;
+	}
+
+	.save-problem {
+		margin: 0 0 10px;
+		font-size: 12px;
+		font-family: var(--font-mono);
+		line-height: 1.5;
+		color: var(--owe);
+	}
+
 	.save-btn {
 		padding: 8px 14px;
 		font-size: 13px;
@@ -766,10 +920,15 @@
 		align-items: center;
 	}
 
+	.rate-row + .rate-row {
+		margin-top: 8px;
+	}
+
 	.rate-eq {
 		font-size: 13px;
 		color: var(--ink-2);
 		white-space: nowrap;
+		min-width: 64px;
 	}
 
 	.rate-input {

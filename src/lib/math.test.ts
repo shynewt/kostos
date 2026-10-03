@@ -3,6 +3,7 @@ import {
 	evalExpression,
 	evalToCents,
 	isAllowedMathChar,
+	dropsPrecision,
 	stripDisallowedMathChars,
 	toMinorUnits
 } from './math';
@@ -118,5 +119,19 @@ describe('evalToCents', () => {
 
 	it('returns null for invalid input', () => {
 		expect(evalToCents('foo')).toBeNull();
+	});
+});
+
+describe('dropsPrecision', () => {
+	it('flags values finer than the stored scale', () => {
+		expect(dropsPrecision(1.234, 2)).toBe(true);
+		expect(dropsPrecision(10 / 3, 2)).toBe(true);
+		expect(dropsPrecision(12.5, 0)).toBe(true);
+	});
+
+	it('ignores exact values and float noise', () => {
+		expect(dropsPrecision(1.23, 2)).toBe(false);
+		expect(dropsPrecision(0.1 + 0.2, 2)).toBe(false);
+		expect(dropsPrecision(2000, 0)).toBe(false);
 	});
 });

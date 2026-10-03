@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { convertCents, expenseBaseAmount, expenseInBase, scaleToTotal } from './currency-convert';
+import {
+	convertCents,
+	expenseBaseAmount,
+	expenseInBase,
+	rateFromAmounts,
+	spentInBase,
+	scaleToTotal
+} from './currency-convert';
 import type { Expense } from './types';
 
 function expense(partial: Partial<Expense> & Pick<Expense, 'amount' | 'splits'>): Expense {
@@ -114,5 +121,38 @@ describe('expenseInBase', () => {
 		expect(base.amount).toBe(1000);
 		const total = base.splits.reduce((s, sp) => s + (sp.amount ?? 0), 0);
 		expect(total).toBe(1000);
+	});
+});
+
+describe('rateFromAmounts', () => {
+	it('converts back to exactly the charged amount', () => {
+		const cases: [number, string, number, string][] = [
+			[10000, 'USD', 9387, 'EUR'],
+			[123456, 'JPY', 77713, 'EUR'],
+			[4999, 'CVE', 47, 'EUR'],
+			[1, 'GBP', 999999, 'JPY'],
+			[987654321, 'KRW', 66001234, 'USD']
+		];
+		for (const [amount, from, charged, to] of cases) {
+			const rate = rateFromAmounts(amount, from, charged, to);
+			expect(rate).not.toBeNull();
+			expect(convertCents(amount, from, to, rate!)).toBe(charged);
+		}
+	});
+
+	it('returns null for empty amounts', () => {
+		expect(rateFromAmounts(0, 'USD', 100, 'EUR')).toBeNull();
+		expect(rateFromAmounts(100, 'USD', 0, 'EUR')).toBeNull();
+	});
+});
+
+describe('spentInBase', () => {
+	it('converts foreign expenses and skips settlements', () => {
+		const list = [
+			expense({ amount: 1000, currency: 'EUR', splits: [] }),
+			expense({ amount: 2000, currency: 'JPY', exchangeRate: 0.006, splits: [] }),
+			{ ...expense({ amount: 500, currency: 'EUR', splits: [] }), isSettlement: true }
+		];
+		expect(spentInBase(list, 'EUR')).toBe(1000 + 1200);
 	});
 });

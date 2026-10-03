@@ -55,3 +55,10 @@ export function evalToCents(input: string, decimals = 2): number | null {
 	if (result === null) return null;
 	return toMinorUnits(result, decimals);
 }
+
+/** Does storing this value at `decimals` places drop precision (1.234 at 2, 10/3)? Float
+ *  noise like 0.1 + 0.2 doesn't count. */
+export function dropsPrecision(value: number, decimals = 2): boolean {
+	const scaled = value * 10 ** decimals;
+	return Math.abs(scaled - Math.round(scaled)) > 1e-6;
+}

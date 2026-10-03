@@ -8,8 +8,9 @@
 		symbol: string;
 		currency: string;
 		isExpression: boolean;
+		invalid?: boolean;
 	};
-	let { value = $bindable(), cents, symbol, currency, isExpression }: Props = $props();
+	let { value = $bindable(), cents, symbol, currency, isExpression, invalid = false }: Props = $props();
 
 	const decimals = $derived(currencyDecimals(currency));
 	const display = $derived((cents / 10 ** decimals).toFixed(decimals));
@@ -32,6 +33,7 @@
 			inputmode="decimal"
 			autocomplete="off"
 			aria-label="Amount, accepts math expressions"
+			aria-invalid={invalid}
 		/>
 		{#if isExpression}
 			<span class="amount-input-hint mono" aria-hidden="true">fx</span>
@@ -120,6 +122,10 @@
 	.is-expression .amount-input {
 		border-color: var(--accent);
 		padding-right: 38px;
+	}
+
+	.amount-input[aria-invalid='true'] {
+		border-color: var(--owe);
 	}
 
 	.amount-input-hint {
