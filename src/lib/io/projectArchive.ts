@@ -9,6 +9,7 @@ import type {
 	SplitMode,
 	Trip
 } from '$lib/types';
+import { currencyDecimals } from '$lib/currencies';
 
 /* Serialized project state for backup and restore.
  *
@@ -165,7 +166,7 @@ export function toCSV(project: Project, members: Member[], expenses: Expense[]):
 			[
 				toISODate(e.date),
 				csvEscape(e.description ?? ''),
-				formatAmount(e.amount),
+				formatAmount(e.amount, e.currency),
 				csvEscape(e.currency),
 				csvEscape(e.categoryId ? categoryName(e.categoryId) : ''),
 				csvEscape(e.paymentMethodId ? methodName(e.paymentMethodId) : ''),
@@ -188,7 +189,7 @@ function nameLookup<T extends { id: string; name: string }>(items: T[]): (id: st
 }
 
 function formatPayers(e: Expense, name: (id: string) => string): string {
-	return e.payments.map((p) => `${name(p.memberId)}:${formatAmount(p.amount)}`).join('|');
+	return e.payments.map((p) => `${name(p.memberId)}:${formatAmount(p.amount, e.currency)}`).join('|');
 }
 
 function formatSplits(e: Expense, name: (id: string) => string): string {
@@ -196,14 +197,18 @@ function formatSplits(e: Expense, name: (id: string) => string): string {
 	if (e.splitMode === 'shares') {
 		return e.splits.map((s) => `${name(s.memberId)}:${s.shares ?? 0}`).join('|');
 	}
-	return e.splits.map((s) => `${name(s.memberId)}:${formatAmount(s.amount ?? 0)}`).join('|');
+	return e.splits
+		.map((s) => `${name(s.memberId)}:${formatAmount(s.amount ?? 0, e.currency)}`)
+		.join('|');
 }
 
-function formatAmount(cents: number): string {
-	const sign = cents < 0 ? '-' : '';
-	const abs = Math.abs(cents);
-	const whole = Math.floor(abs / 100);
-	const frac = (abs % 100).toString().padStart(2, '0');
+function formatAmount(minor: number, currency: string): string {
+	const decimals = currencyDecimals(currency);
+	const sign = minor < 0 ? '-' : '';
+	const abs = Math.abs(minor);
+	const whole = Math.floor(abs / 10 ** decimals);
+	if (decimals === 0) return `${sign}${whole}`;
+	const frac = (abs % 10 ** decimals).toString().padStart(decimals, '0');
 	return `${sign}${whole}.${frac}`;
 }
 
@@ -211,8 +216,10 @@ function toISODate(ms: number): string {
 	return new Date(ms).toISOString().slice(0, 10);
 }
 
-function csvEscape(value: string): string {
-	if (value === '') return '';
+function csvEscape(raw: string): string {
+	if (raw === '') return '';
+	// spreadsheets run cells starting with these as formulas; a leading quote keeps it text
+	const value = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
 	if (/[",\n\r]/.test(value)) {
 		return `"${value.replace(/"/g, '""')}"`;
 	}

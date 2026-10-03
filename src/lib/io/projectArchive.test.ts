@@ -211,4 +211,23 @@ describe('toCSV', () => {
 		expect(csv).toContain(',90.00,');
 		expect(csv).toContain(',80.00,');
 	});
+
+	it('uses each currency\'s precision', () => {
+		const yen: Expense = {
+			...expenses[0],
+			id: 'yen',
+			amount: 2000,
+			currency: 'JPY',
+			payments: [{ memberId: expenses[0].payments[0].memberId, amount: 2000 }]
+		};
+		const row = toCSV(project, members, [yen]).split('\n')[1];
+		expect(row).toContain(',2000,JPY,');
+	});
+
+	it('neutralises cells a spreadsheet would run as formulas', () => {
+		const sneaky: Expense = { ...expenses[0], id: 'f', description: '=HYPERLINK("x")', notes: '+1' };
+		const row = toCSV(project, members, [sneaky]).split('\n')[1];
+		expect(row).toContain(`"'=HYPERLINK(""x"")"`);
+		expect(row).toContain(",'+1,");
+	});
 });
