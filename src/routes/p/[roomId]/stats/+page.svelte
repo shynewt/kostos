@@ -11,7 +11,7 @@
 	import TopExpensesCard from '$lib/components/TopExpensesCard.svelte';
 	import TripSheet from '$lib/components/TripSheet.svelte';
 	import TripStrip from '$lib/components/TripStrip.svelte';
-	import { expenseInBase } from '$lib/currency-convert';
+	import { exchangeFee, expenseInBase } from '$lib/currency-convert';
 	import { formatAmount } from '$lib/money';
 	import { getCurrentMember } from '$lib/storage';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
@@ -102,6 +102,22 @@
 	const periodBase = $derived(periodExpenses.map((e) => expenseInBase(e, currency)));
 
 	const totalSpent = $derived(periodBase.reduce((s, e) => s + e.amount, 0));
+
+	// only expenses that stored a market rate can say what exchange cost; older ones are
+	// left out rather than counted as free
+	const fees = $derived.by(() => {
+		let fee = 0;
+		let atMarket = 0;
+		let count = 0;
+		for (const e of periodExpenses) {
+			const f = exchangeFee(e, currency);
+			if (!f) continue;
+			fee += f.fee;
+			atMarket += f.atMarket;
+			count++;
+		}
+		return count > 0 ? { fee, count, percent: (fee / atMarket) * 100 } : null;
+	});
 	const perPerson = $derived(members.length > 0 ? Math.round(totalSpent / members.length) : 0);
 	const expenseCount = $derived(periodExpenses.length);
 	const avgExpense = $derived(expenseCount > 0 ? Math.round(totalSpent / expenseCount) : 0);
@@ -325,6 +341,21 @@
 				</div>
 			</div>
 
+			{#if fees}
+				<div class="stat fee-tile">
+					<div class="row between fee-top">
+						<div class="stat-label">Exchange fees</div>
+						<div class="num fee-value" class:over={fees.fee > 0} class:under={fees.fee < 0}>
+							{fees.fee < 0 ? '−' : ''}{formatAmount(Math.abs(fees.fee), currencySymbol, currency)}
+						</div>
+					</div>
+					<div class="stat-sub">
+						{Math.abs(fees.percent).toFixed(1)}% {fees.fee < 0 ? 'below' : 'over'} the market rate on {fees.count}
+						foreign {fees.count === 1 ? 'expense' : 'expenses'}
+					</div>
+				</div>
+			{/if}
+
 			<DailyBars
 				buckets={spendBuckets}
 				bucketSize={spendBucketSize}
@@ -425,6 +456,27 @@
 
 	.stat-sub {
 		margin-top: 6px;
+	}
+
+	.fee-tile {
+		margin-top: 8px;
+	}
+
+	.fee-top {
+		align-items: baseline;
+	}
+
+	.fee-value {
+		font-size: 16px;
+		font-weight: 600;
+	}
+
+	.fee-value.over {
+		color: var(--owe);
+	}
+
+	.fee-value.under {
+		color: var(--owed);
 	}
 
 	.mini-row {

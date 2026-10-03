@@ -6,7 +6,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
 	import { currencySymbolFor } from '$lib/currencies';
-	import { expenseBaseAmount, formatRate } from '$lib/currency-convert';
+	import { exchangeFee, expenseBaseAmount, formatRate } from '$lib/currency-convert';
 	import { formatAmount, formatSigned } from '$lib/money';
 	import { getCurrentMember } from '$lib/storage';
 	import { removeExpense } from '$lib/sync/doc';
@@ -42,6 +42,7 @@
 			: currencySymbol
 	);
 	const baseAmount = $derived(expense ? expenseBaseAmount(expense, currency) : 0);
+	const fee = $derived(expense ? exchangeFee(expense, currency) : null);
 
 	const category = $derived.by(() => {
 		if (!expense?.categoryId || !project) return null;
@@ -149,9 +150,17 @@
 				</div>
 				{#if isForeign}
 					<div class="dim mono hero-fx">
-						≈ {formatAmount(baseAmount, currencySymbol, currency)}
+						{expense.chargedAmount !== undefined ? '=' : '≈'} {formatAmount(baseAmount, currencySymbol, currency)}
 						{#if expense.exchangeRate}· 1 {nativeCurrency} = {formatRate(expense.exchangeRate)} {currency}{/if}
 					</div>
+					{#if fee && Math.abs(fee.percent) >= 0.05}
+						<div class="mono hero-fee" class:over={fee.fee > 0} class:under={fee.fee < 0}>
+							{fee.fee > 0 ? '+' : '−'}{formatAmount(Math.abs(fee.fee), currencySymbol, currency)}
+							({Math.abs(fee.percent).toFixed(1)}%) {fee.fee > 0 ? 'above' : 'below'} the market rate of {formatRate(
+								expense.marketRate!
+							)}
+						</div>
+					{/if}
 				{/if}
 				<div class="row gap-8 hero-stickers">
 					{#each expense.payments as p, idx (idx)}
@@ -313,6 +322,21 @@
 	.hero-fx {
 		font-size: 12px;
 		margin-top: 6px;
+	}
+
+	.hero-fee {
+		font-size: 11px;
+		line-height: 1.4;
+		margin-top: -2px;
+		color: var(--ink-2);
+	}
+
+	.hero-fee.over {
+		color: var(--owe);
+	}
+
+	.hero-fee.under {
+		color: var(--owed);
 	}
 
 	.hero-stickers {
