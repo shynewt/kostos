@@ -285,7 +285,7 @@
 	<ProjectAppBar {roomId} {project} />
 
 	<div class="scroll">
-		{#if room.checking}<BalanceSkeleton mode="stats" />{:else}
+		{#if room.blank}<BalanceSkeleton mode="stats" />{:else}
 		<div class="reveal">
 		<TripStrip
 			{trips}

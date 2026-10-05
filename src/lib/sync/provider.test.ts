@@ -104,10 +104,17 @@ describe('verified encrypted sync', () => {
 		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('history'));
 		expect(ws.sent).not.toContain(JSON.stringify({ type: 'complete' }));
 	});
-	it('detects a missing server revision', async () => {
-		const ws = await start(); await ready(ws);
-		ws.control({ type: 'revision', revision: 5 });
-		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('history'));
+	it('is not stopped forever by changes that refer to data no device still has', async () => {
+		const origin = new Y.Doc(); const list = origin.getArray('expenses');
+		list.push(['lost on the old server']);
+		const lost = Y.encodeStateAsUpdate(origin);
+		const before = Y.encodeStateVector(origin);
+		list.delete(0, 1);
+		Y.applyUpdate(doc, Y.encodeStateAsUpdate(origin, before));
+		expect(doc.store.pendingDs ?? doc.store.pendingStructs).toBeTruthy();
+		expect(lost.length).toBeGreaterThan(0);
+		const ws = await start(); await ready(ws); await acknowledge(ws);
+		await vi.waitFor(() => expect(provider.status).toBe('synced'));
 	});
 	it('reconnects immediately on returning to the foreground', async () => {
 		const ws = await start(); await ready(ws); await acknowledge(ws);
@@ -130,10 +137,20 @@ describe('verified encrypted sync', () => {
 		events.dispatchEvent(new Event('offline'));
 		expect(provider.status).toBe('offline'); expect(provider.snapshot.checking).toBe(false);
 	});
-	it('times out a connection that never opens', async () => {
+	it('treats a server it cannot reach as offline, and keeps saying so while retrying', async () => {
 		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
-		await Promise.resolve(); await vi.advanceTimersByTimeAsync(12_001);
-		expect(provider.status).toBe('error');
+		await vi.advanceTimersByTimeAsync(6_001);
+		expect(provider.snapshot).toMatchObject({ phase: 'offline', checking: false, problem: null });
+		const seen: string[] = []; provider.onStatusChange((s) => seen.push(s.phase));
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(Socket.instances.length).toBeGreaterThan(2);
+		expect(new Set(seen)).toEqual(new Set(['offline']));
+	});
+	it('says offline when a connection is refused, not paused', async () => {
+		provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
+		await vi.waitFor(() => expect(Socket.instances).toHaveLength(1));
+		Socket.instances[0].onerror?.(); Socket.instances[0].close();
+		expect(provider.snapshot).toMatchObject({ phase: 'offline', problem: null });
 	});
 	it('keeps waiting while a long history is still arriving', async () => {
 		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
@@ -145,16 +162,67 @@ describe('verified encrypted sync', () => {
 		expect(provider.status).not.toBe('error');
 		expect(Socket.instances).toHaveLength(1);
 	});
-	it('blames the server version only when it never answers at all', async () => {
+	it('reports a timeout, not an outdated server, when an open connection goes silent', async () => {
 		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
 		await vi.advanceTimersByTimeAsync(0); Socket.instances[0].open();
 		await vi.advanceTimersByTimeAsync(12_001);
-		expect(provider.snapshot.problem).toBe('protocol');
-		const key = await deriveKey(secret);
-		const entry = await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(new Y.Doc())));
-		await vi.advanceTimersByTimeAsync(40_000);
-		const ws = Socket.instances.at(-1)!; ws.open(); ws.binary(entry);
-		await vi.advanceTimersByTimeAsync(12_001);
 		expect(provider.snapshot.problem).toBe('timeout');
+	});
+	it('does not re-upload what the server already has', async () => {
+		const ws = await start();
+		const other = new Y.Doc(); other.getArray('expenses').push(['from the group']);
+		const key = await deriveKey(secret);
+		ws.binary(await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(other))));
+		await vi.waitFor(() => expect(doc.getArray('expenses').length).toBe(1));
+		const persistence = { state: { pendingChanges: 0, lastSyncedAt: 1 }, changeVersion: 0, flush: async () => {}, confirm: async () => {}, invalidate: () => {} };
+		(provider as unknown as { persistence: unknown }).persistence = persistence;
+		ws.control({ type: 'ready', protocol: 3, revision: 1, durable: true, complete: true });
+		await new Promise((r) => setTimeout(r, 30));
+		expect(ws.sent.filter((v) => v instanceof Uint8Array && v[4] === 1)).toHaveLength(0);
+	});
+	it('uploads only the part the server is missing', async () => {
+		const ws = await start();
+		const other = new Y.Doc(); other.getArray('expenses').push(['from the group'.repeat(500)]);
+		const key = await deriveKey(secret);
+		const shared = Y.encodeStateAsUpdate(other);
+		ws.binary(await encryptPayload(key, frame(MSG_UPDATE, shared)));
+		await vi.waitFor(() => expect(doc.getArray('expenses').length).toBe(1));
+		doc.getArray('expenses').push(['only on this phone'.repeat(50)]);
+		ws.control({ type: 'ready', protocol: 3, revision: 1, durable: true, complete: true });
+		await vi.waitFor(() => expect(ws.sent.filter((v) => v instanceof Uint8Array && v[4] === 1).length).toBeGreaterThan(0));
+		const packet = ws.sent.find((v): v is Uint8Array => v instanceof Uint8Array && v[4] === 1)!;
+		const body = parse(await decryptPayload(key, packet.slice(5))).body;
+		const check = new Y.Doc(); Y.applyUpdate(check, shared); Y.applyUpdate(check, body);
+		expect(check.getArray('expenses').toArray()).toEqual(['from the group'.repeat(500), 'only on this phone'.repeat(50)]);
+		expect(body.length).toBeLessThan(shared.length / 3);
+	});
+	it('recovers from a numbering gap by reconnecting quietly instead of pausing', async () => {
+		const ws = await start(); await ready(ws);
+		ws.control({ type: 'revision', revision: 5 });
+		await vi.waitFor(() => expect(Socket.instances).toHaveLength(2));
+		expect(provider.status).not.toBe('error');
+	});
+	it('replaces a bloated history with one snapshot once up to date', async () => {
+		const ws = await start();
+		const key = await deriveKey(secret);
+		const other = new Y.Doc(); const list = other.getArray('expenses');
+		for (let i = 0; i < 60; i++) {
+			const before = Y.encodeStateVector(other); list.push(['x'.repeat(5000)]);
+			ws.binary(await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(other, before))));
+		}
+		await vi.waitFor(() => expect(doc.getArray('expenses').length).toBe(60));
+		const bloat = await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(other)));
+		for (let i = 0; i < 4; i++) ws.binary(bloat);
+		(provider as unknown as { persistence: unknown }).persistence = { state: { pendingChanges: 0, lastSyncedAt: 1 }, changeVersion: 0, flush: async () => {}, confirm: async () => {}, invalidate: () => {} };
+		ws.control({ type: 'ready', protocol: 3, revision: 64, durable: true, complete: true });
+		await vi.waitFor(() => expect(ws.sent.some((v) => typeof v === 'string' && v.includes('barrier'))).toBe(true));
+		const barrier = JSON.parse(ws.sent.filter((v): v is string => typeof v === 'string').at(-1)!);
+		ws.control({ type: 'caught-up', id: barrier.id, revision: 64 });
+		await vi.waitFor(() => expect(provider.status).toBe('synced'));
+		await vi.waitFor(() => expect(ws.sent.some((v) => v instanceof Uint8Array && v[4] === 2)).toBe(true));
+		const compact = ws.sent.find((v): v is Uint8Array => v instanceof Uint8Array && v[4] === 2)!;
+		expect(new DataView(compact.buffer, compact.byteOffset).getUint32(5)).toBe(64);
+		const snapshot = new Y.Doc(); Y.applyUpdate(snapshot, parse(await decryptPayload(key, compact.slice(9))).body);
+		expect(snapshot.getArray('expenses').length).toBe(60);
 	});
 });

@@ -14,6 +14,11 @@ export type ConnectionStatus = SyncStatus['phase'];
 const MAX_MESSAGE_BYTES = 1_048_576;
 const TRANSPORT_MAGIC = new Uint8Array([75, 79, 83, 51]); // KOS3
 const TIMEOUT_MS = 12_000;
+/** A socket that hasn't opened by now means the server is out of reach: treat it as offline. */
+const OPEN_TIMEOUT_MS = 6_000;
+/** History worth replacing with a single snapshot once this phone is up to date. */
+const COMPACT_MIN_ENTRIES = 50;
+const COMPACT_MIN_BYTES = 256 * 1024;
 
 export class EncryptedSyncProvider {
 	private ws: WebSocket | null = null;
@@ -23,6 +28,7 @@ export class EncryptedSyncProvider {
 	private state: SyncStatus = { phase: 'loading', checking: true, problem: null, lastSyncedAt: null, unverifiedSince: Date.now(), pendingChanges: 0 };
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private deadline: ReturnType<typeof setTimeout> | null = null;
+	private openTimer: ReturnType<typeof setTimeout> | null = null;
 	private heartbeat: ReturnType<typeof setInterval> | null = null;
 	private pullTimer: ReturnType<typeof setTimeout> | null = null;
 	private reconnectDelay = 1000;
@@ -83,23 +89,31 @@ export class EncryptedSyncProvider {
 			return;
 		}
 		this.supported = this.replayed = this.durable = false;
-		this.frames = 0;
 		this.complete = true;
 		this.sessionProblem = null;
 		this.pending.clear();
 		this.sending = 0;
 		this.barrier = null;
+		this.replay = [];
+		this.replayBytes = 0;
 		this.sendQueue = this.receiveQueue = Promise.resolve();
-		this.setState({ phase: 'connecting', checking: true, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
+		// While the server is out of reach, retries stay quiet: the phone keeps saying "Offline".
+		if (this.state.phase === 'offline') this.setState({ problem: null });
+		else this.setState({ phase: 'connecting', checking: true, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		let ws: WebSocket;
 		try { ws = new WebSocket(`${this.url}/${encodeURIComponent(this.roomId)}`); }
-		catch { this.fail('network'); return; }
+		catch { this.unreachable(); return; }
 		this.ws = ws;
 		ws.binaryType = 'arraybuffer';
-		this.armDeadline(ws);
+		let opened = false;
+		this.openTimer = setTimeout(() => { if (this.isCurrent(ws) && !opened) this.unreachable(); }, OPEN_TIMEOUT_MS);
 		ws.onopen = () => {
 			if (!this.isCurrent(ws)) return;
-			this.setState({ phase: 'syncing' });
+			opened = true;
+			if (this.openTimer) clearTimeout(this.openTimer);
+			this.openTimer = null;
+			this.setState({ phase: 'syncing', checking: true, problem: null });
+			this.armDeadline(ws);
 			this.heartbeat = setInterval(() => {
 				if (!this.isCurrent(ws) || document.visibilityState === 'hidden') return;
 				this.requestBarrier();
@@ -107,7 +121,6 @@ export class EncryptedSyncProvider {
 		};
 		ws.onmessage = (event) => {
 			// A long history is slow, not broken: only silence counts as a timeout.
-			this.frames++;
 			if (this.state.phase !== 'synced') { this.clearDeadline(); this.armDeadline(ws); }
 			this.receiveQueue = this.receiveQueue.then(async () => {
 				if (!this.isCurrent(ws)) return;
@@ -116,8 +129,9 @@ export class EncryptedSyncProvider {
 					const plain = await decryptPayload(await this.key, new Uint8Array(event.data as ArrayBuffer));
 					if (!this.isCurrent(ws)) return;
 					const message = parse(plain);
-					if (message.kind === 'step1') this.scheduleReply();
+					if (message.kind === 'step1') this.scheduleReply(message.body);
 					else {
+						if (!this.replayed) { this.replay.push(message.body); this.replayBytes += (event.data as ArrayBuffer).byteLength; }
 						if (this.state.phase === 'synced') this.setState({ phase: 'syncing', unverifiedSince: Date.now() });
 						Y.applyUpdate(this.doc, message.body, REMOTE_ORIGIN);
 					}
@@ -128,15 +142,50 @@ export class EncryptedSyncProvider {
 		};
 		ws.onclose = () => {
 			if (!this.isCurrent(ws)) return;
-			this.ws = null;
-			this.clearTimers();
-			if (navigator.onLine === false) this.setState({ phase: 'offline', checking: false, problem: null });
-			else {
-				this.setState({ phase: 'error', checking: false, problem: this.state.problem ?? 'network', unverifiedSince: this.state.unverifiedSince ?? Date.now() });
-				this.scheduleReconnect();
-			}
+			if (!opened) { this.unreachable(); return; }
+			// The server dropped an open connection (a deploy, a restart): reconnect quietly.
+			this.recover('network');
 		};
-		ws.onerror = () => { if (this.isCurrent(ws)) this.fail('network'); };
+		ws.onerror = () => { if (this.isCurrent(ws) && !opened) this.unreachable(); };
+	}
+
+	/** No answer from the server at all. From the user's side that is simply being offline:
+	 *  their data stays on screen, the status says so, and the phone keeps trying on its own. */
+	private unreachable(): void {
+		if (this.destroyed) return;
+		const ws = this.ws;
+		this.ws = null;
+		this.clearTimers();
+		try { ws?.close(); } catch { /* Already closed. */ }
+		this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
+		this.scheduleReconnect();
+	}
+
+	/** A transient inconsistency (a dropped socket, a gap in revision numbers) is fixed by a
+	 *  fresh replay. Only if that keeps failing is it worth showing the user. */
+	private recover(problem: SyncProblem): void {
+		if (this.recoveries >= 3) { this.fail(problem); return; }
+		this.recoveries++;
+		const ws = this.ws;
+		this.ws = null;
+		this.clearTimers();
+		try { ws?.close(); } catch { /* Already closed. */ }
+		this.connect();
+	}
+
+	/** Whether this phone holds anything a peer with the given state vector lacks. */
+	private hasNewFor(vector: Uint8Array): boolean {
+		const theirs = Y.decodeStateVector(vector);
+		for (const [client, clock] of Y.decodeStateVector(Y.encodeStateVector(this.doc))) {
+			if ((theirs.get(client) ?? 0) < clock) return true;
+		}
+		return false;
+	}
+
+	/** Local edits or deletes the server hasn't confirmed. Deletes don't show in a state vector. */
+	private unconfirmed(): boolean {
+		const local = this.persistence?.state;
+		return !local || local.pendingChanges > 0 || local.lastSyncedAt === null;
 	}
 
 	private async receiveControl(ws: WebSocket, data: string): Promise<void> {
@@ -151,16 +200,21 @@ export class EncryptedSyncProvider {
 			this.complete = message.complete === true;
 			if (!this.complete && this.fresh) this.persistence?.markPartial();
 			this.revision = message.revision!;
-			// Includes old local edits and deletes, even if their state vector did
-			// not advance. Also publishes a brand-new group when its creator is alone.
+			// Upload only what the server lacks. Re-sending the whole group on every
+			// connection is what made histories balloon (encryption defeats dedupe).
+			let serverVector: Uint8Array = Y.encodeStateVector(new Map());
+			try { if (this.replay.length) serverVector = Y.encodeStateVectorFromUpdate(Y.mergeUpdates(this.replay)); }
+			catch { /* Fall back to a full upload. */ }
+			this.replayCount = this.replay.length;
+			this.replay = [];
 			if (this.sessionProblem) return;
-			this.send(MSG_UPDATE, Y.encodeStateAsUpdate(this.doc));
+			if (this.hasNewFor(serverVector) || this.unconfirmed()) this.send(MSG_UPDATE, Y.encodeStateAsUpdate(this.doc, serverVector));
 			this.send(MSG_STEP1, Y.encodeStateVector(this.doc));
 			return;
 		}
 		if (message.type === 'error') { this.fail(message.reason === 'size' ? 'size' : 'storage'); return; }
 		if (message.type === 'ack' || message.type === 'revision') {
-			if (!Number.isSafeInteger(message.revision) || message.revision! > this.revision + 1) { this.fail('history'); return; }
+			if (!Number.isSafeInteger(message.revision) || message.revision! > this.revision + 1) { this.recover('history'); return; }
 			this.revision = Math.max(this.revision, message.revision!);
 			if (message.hash) this.pending.delete(message.hash);
 			this.requestBarrier();
@@ -169,10 +223,11 @@ export class EncryptedSyncProvider {
 		if (message.type === 'caught-up' && this.barrier && message.id === this.barrier.id) {
 			const version = this.barrier.version;
 			this.barrier = null;
-			if (message.revision !== this.revision) { this.fail('history'); return; }
+			if (message.revision !== this.revision) { this.recover('history'); return; }
 			if (this.sessionProblem) return;
 			if (!this.durable) { this.fail('storage', false); return; }
-			if (this.doc.store.pendingStructs || this.doc.store.pendingDs) { this.fail('history', false); return; }
+			// Changes that refer to data lost before this version (an old server dropped some)
+			// can never be completed by any device, so they must not block sync forever.
 			if (!this.complete) {
 				if (!this.seeded) { this.fail('history', false); return; }
 				// Everything this phone holds has been uploaded and acknowledged, so the server log is whole again.
@@ -188,7 +243,9 @@ export class EncryptedSyncProvider {
 			if (!this.isCurrent(ws) || this.pending.size || this.sending || version !== (this.persistence?.changeVersion ?? 0)) return;
 			this.clearDeadline();
 			this.reconnectDelay = 1000;
+			this.recoveries = 0;
 			this.setState({ phase: 'synced', checking: false, problem: null, lastSyncedAt: at, unverifiedSince: null, pendingChanges: 0 });
+			this.compact(ws);
 		}
 	}
 
@@ -236,12 +293,33 @@ export class EncryptedSyncProvider {
 		this.armDeadline(ws);
 	}
 
-	private scheduleReply(): void {
+	/** A peer just connected and told us what it has. Only answer if we hold something it lacks. */
+	private scheduleReply(vector: Uint8Array): void {
 		if (this.pullTimer) return;
 		this.pullTimer = setTimeout(() => {
 			this.pullTimer = null;
-			this.send(MSG_UPDATE, Y.encodeStateAsUpdate(this.doc));
+			if (this.hasNewFor(vector)) this.send(MSG_UPDATE, Y.encodeStateAsUpdate(this.doc, vector));
 		}, 250);
+	}
+
+	/** Once up to date, swap a long replay for one snapshot of everything up to `revision`.
+	 *  Runs at most once per session; the server keeps the replaced entries archived. */
+	private compact(ws: WebSocket): void {
+		if (this.compacted || this.replayCount < COMPACT_MIN_ENTRIES || this.replayBytes < COMPACT_MIN_BYTES) return;
+		this.compacted = true;
+		const through = this.revision;
+		const replayBytes = this.replayBytes;
+		const snapshot = Y.encodeStateAsUpdate(this.doc);
+		void this.key.then((key) => encryptPayload(key, frame(MSG_UPDATE, snapshot))).then((encrypted) => {
+			if (!this.isCurrent(ws) || ws.readyState !== WebSocket.OPEN) return;
+			if (encrypted.length + 9 > MAX_MESSAGE_BYTES || encrypted.length * 2 > replayBytes) return;
+			const packet = new Uint8Array(9 + encrypted.length);
+			packet.set(TRANSPORT_MAGIC);
+			packet[4] = 2;
+			new DataView(packet.buffer).setUint32(5, through);
+			packet.set(encrypted, 9);
+			ws.send(packet);
+		}).catch(() => { /* Compaction is an optimisation; the history stays valid without it. */ });
 	}
 
 	private fail(problem: SyncProblem, reconnect = true): void {
@@ -257,7 +335,11 @@ export class EncryptedSyncProvider {
 		} else this.clearDeadline();
 	}
 
-	private frames = 0;
+	private recoveries = 0;
+	private replay: Uint8Array[] = [];
+	private replayBytes = 0;
+	private replayCount = 0;
+	private compacted = false;
 	/** This phone held data of its own before connecting, so it can vouch for a trimmed server history. */
 	private seeded = false;
 	private fresh = false;
@@ -266,12 +348,14 @@ export class EncryptedSyncProvider {
 		if (this.deadline) return;
 		this.deadline = setTimeout(() => {
 			this.deadline = null;
-			if (this.isCurrent(ws)) this.fail(this.supported || this.frames > 0 ? 'timeout' : 'protocol');
+			if (this.isCurrent(ws)) this.fail('timeout');
 		}, TIMEOUT_MS);
 	}
 	private clearDeadline(): void { if (this.deadline) clearTimeout(this.deadline); this.deadline = null; }
 	private clearTimers(): void {
 		this.clearDeadline();
+		if (this.openTimer) clearTimeout(this.openTimer);
+		this.openTimer = null;
 		if (this.heartbeat) clearInterval(this.heartbeat);
 		if (this.pullTimer) clearTimeout(this.pullTimer);
 		this.heartbeat = this.pullTimer = null;

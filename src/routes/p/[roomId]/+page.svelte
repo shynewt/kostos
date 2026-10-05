@@ -79,7 +79,7 @@
 	<ProjectAppBar {roomId} {project} />
 
 	<div class="scroll">
-		{#if room.checking}<BalanceSkeleton />{:else}
+		{#if room.blank}<BalanceSkeleton />{:else}
 		<div class="reveal">
 		{#if showGraph}
 			<div class="graph-wrap">

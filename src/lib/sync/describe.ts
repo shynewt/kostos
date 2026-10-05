@@ -87,10 +87,10 @@ export function describeSync(
 			return {
 				...base, tone: 'offline', state: 'offline', attention: true,
 				label: pending ? `Offline · ${pending} waiting` : 'Offline',
-				headline: 'You’re offline',
+				headline: 'Offline',
 				body: pending
-					? 'Your changes are saved on this phone and will send when you’re back online.'
-					: 'You can keep working. New expenses from others appear when you reconnect.',
+					? 'This phone can’t reach the group right now. Your changes are saved here and send automatically once it reconnects.'
+					: 'This phone can’t reach the group right now. You can keep working; new expenses from others appear once it reconnects.',
 				retry: true
 			};
 		case 'error':

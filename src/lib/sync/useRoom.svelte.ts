@@ -44,6 +44,8 @@ export class RoomState {
 	conflicts = $state<ReturnType<typeof readExpenseConflicts>>([]);
 	private firstCheckDone = $state(false);
 	checking = $derived(!this.firstCheckDone && this.sync.checking && ['loading', 'connecting', 'syncing'].includes(this.sync.phase));
+	/** Nothing on this phone yet (a fresh join), so a placeholder beats showing an empty group. */
+	blank = $derived(this.checking && this.project === null);
 
 	// Lookup maps + display helpers that every route ends up rebuilding. Keeping them on
 	// the room itself means each component just consumes them; no per-route boilerplate.

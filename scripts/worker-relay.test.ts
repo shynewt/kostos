@@ -90,4 +90,18 @@ describe('Cloudflare Durable Object sync', () => {
 		const other = await connect('CAPPED');
 		expect(other.controls.at(-1)).toMatchObject({ type: 'ready', complete: true });
 	});
+	it('replaces a long history with a snapshot, keeping revision numbers and later entries', async () => {
+		const a = await connect('COMPACT');
+		for (let i = 0; i < 5; i++) { const p = Buffer.alloc(45); p.set([75, 79, 83, 51, 1]); p.writeUInt32BE(i, 8); a.ws.send(p); }
+		await until(() => a.controls.some((m) => m.type === 'ack' && m.revision === 5));
+		const snap = Buffer.alloc(60); snap.set([75, 79, 83, 51, 2]); snap.writeUInt32BE(5, 5); snap.write('snapshot', 20);
+		a.ws.send(snap);
+		await until(() => a.controls.some((m) => m.type === 'compacted'));
+		const later = Buffer.alloc(45); later.set([75, 79, 83, 51, 1]); later.writeUInt32BE(99, 8); a.ws.send(later);
+		await until(() => a.controls.some((m) => m.type === 'ack' && m.revision === 6));
+		const b = await connect('COMPACT');
+		expect(b.binary).toHaveLength(2);
+		expect(b.binary[0]).toEqual(snap.subarray(9));
+		expect(b.controls.at(-1)).toMatchObject({ type: 'ready', revision: 6 });
+	});
 });

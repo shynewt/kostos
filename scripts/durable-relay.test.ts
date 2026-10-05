@@ -84,4 +84,15 @@ describe('durable encrypted relay', () => {
 		expect(a.controls.some((m) => m.type === 'ack')).toBe(false);
 		expect(b.binary).toHaveLength(0);
 	});
+	it('ignores snapshot requests without storing or closing', async () => {
+		const url = await start(); const a = await connect(url);
+		await until(() => a.controls.some((m) => m.type === 'ready'));
+		a.ws.send(packet(1));
+		await until(() => a.controls.some((m) => m.type === 'ack'));
+		const snap = Buffer.alloc(60); snap.set([75, 79, 83, 51, 2]); snap.writeUInt32BE(1, 5); a.ws.send(snap);
+		a.ws.send(JSON.stringify({ type: 'barrier', id: 'x' }));
+		await until(() => a.controls.some((m) => m.type === 'caught-up'));
+		expect(a.controls.at(-1)).toMatchObject({ revision: 1 });
+		expect(a.ws.readyState).toBe(WebSocket.OPEN);
+	});
 });

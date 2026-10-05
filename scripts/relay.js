@@ -92,6 +92,8 @@ export function createRelay(directory) {
 				let decoded;
 				try { decoded = unwrapPacket(packet); }
 				catch { control(ws, { type: 'error', reason: 'size' }); ws.close(1009, 'Invalid message size'); return; }
+				// The disk log numbers revisions by position, so it can't splice in a snapshot. Ignore it.
+				if (decoded.compact !== undefined) return;
 				const payload = Buffer.from(decoded.payload);
 				if (!decoded.durable) {
 					for (const peer of activeRoom.sockets) {

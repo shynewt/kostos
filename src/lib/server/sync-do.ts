@@ -19,6 +19,8 @@ export class SyncRoom extends DurableObject {
 		this.initialized = ctx.blockConcurrencyWhile(async () => {
 			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, hash TEXT UNIQUE NOT NULL, payload BLOB NOT NULL)');
 			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)');
+			// Entries replaced by a snapshot. Never replayed, kept so a bad snapshot is recoverable.
+			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS archive (id INTEGER PRIMARY KEY, seq INTEGER NOT NULL, hash TEXT NOT NULL, payload BLOB NOT NULL, archived_at INTEGER NOT NULL)');
 			const migrated = ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'migrated'").toArray();
 			if (migrated.length) return;
 			// Keep the legacy KV entry untouched for recovery. A full capped log
@@ -82,7 +84,11 @@ export class SyncRoom extends DurableObject {
 				let decoded;
 				try { decoded = unwrapPacket(new Uint8Array(message)); }
 				catch { this.control(ws, { type: 'error', reason: 'size' }); ws.close(1009, 'Invalid message size'); return; }
-				const { payload, durable } = decoded;
+				const { payload, durable, compact } = decoded;
+				if (compact !== undefined) {
+					this.compact(ws, compact, payload);
+					return;
+				}
 				if (!durable) {
 					this.broadcast(ws, payload);
 					return;
@@ -101,6 +107,21 @@ export class SyncRoom extends DurableObject {
 				try { this.control(ws, { type: 'error', reason: 'storage' }); ws.close(1011, 'Could not persist sync data'); } catch { /* Closed peer. */ }
 			}
 		});
+	}
+
+	/** Replace entries up to `through` with one snapshot at the same seq, so revision numbers and
+	 *  everything after `through` stay as they are. Late or redundant requests are ignored. */
+	private compact(ws: WebSocket, through: number, payload: Uint8Array): void {
+		if (through < 1 || through > this.revision()) return;
+		const covered = this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM messages WHERE seq <= ?', through).one().n;
+		if (covered < 2) return;
+		const hash = `snapshot:${through}:${Date.now()}`;
+		this.ctx.storage.transactionSync(() => {
+			this.ctx.storage.sql.exec('INSERT INTO archive (seq, hash, payload, archived_at) SELECT seq, hash, payload, ? FROM messages WHERE seq <= ?', Date.now(), through);
+			this.ctx.storage.sql.exec('DELETE FROM messages WHERE seq <= ?', through);
+			this.ctx.storage.sql.exec('INSERT INTO messages (seq, hash, payload) VALUES (?, ?, ?)', through, hash, payload);
+		});
+		this.control(ws, { type: 'compacted', revision: through });
 	}
 
 	private broadcast(sender: WebSocket, payload: Uint8Array, revision?: number): void {

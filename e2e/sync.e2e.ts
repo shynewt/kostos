@@ -116,9 +116,10 @@ describe('mobile sync and freshness', () => {
 			socket.onMessage((message) => { if (!blockOutgoing) relay.send(message); });
 			relay.onMessage((message) => { if (holdIncoming) incoming.push(() => socket.send(message)); else socket.send(message); });
 		});
-		await page.reload(); await page.waitForSelector('[aria-busy="true"]');
+		await page.reload(); await page.waitForSelector('.banner[data-kind="busy"]');
+		expect(await page.locator('[aria-busy="true"]').count()).toBe(0);
 		await screenshot(page, '03-checking');
-		expect(await page.locator('.balance-amount').count()).toBe(0);
+		expect(await page.locator('.balance-amount').count()).toBe(1);
 		holdIncoming = false; for (const deliver of incoming.splice(0)) deliver(); await synced(page);
 		// Block WebSocket delivery while HTTP remains available, then persist an
 		// expense, reload and verify that it is still awaiting confirmation.
@@ -151,6 +152,26 @@ describe('mobile sync and freshness', () => {
 		expect((line?.x ?? 0) + (line?.width ?? 0)).toBeLessThanOrEqual(320 - 22 - 36 * 2 - 6);
 		expect(await light.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 		await screenshot(light, '13-narrow-phone');
+	});
+	it('says Offline, with data visible, when the phone claims to be online but nothing is reachable', async () => {
+		const page = await phone(); const ref = await seed(page);
+		await page.context().addInitScript(() => Object.defineProperty(Navigator.prototype, 'onLine', { get: () => true }));
+		await page.context().setOffline(true);
+		await page.reload().catch(() => {});
+		await page.goto(`${BASE}/p/${ref.roomId}`).catch(() => {});
+		await page.waitForSelector('[data-sync-state="offline"]', { state: 'attached', timeout: 15_000 });
+		expect(await page.locator('.balance-amount').count()).toBe(1);
+		const seen = await page.evaluate(async () => {
+			const states = new Set<string>();
+			const end = Date.now() + 8_000;
+			while (Date.now() < end) { states.add(document.querySelector('[data-sync-state]')?.getAttribute('data-sync-state') ?? ''); await new Promise((r) => setTimeout(r, 100)); }
+			return [...states];
+		});
+		expect(seen).toEqual(['offline']);
+		expect(await page.locator('.banner[data-kind="warn"]').count()).toBe(0);
+		await page.context().setOffline(false);
+		await page.evaluate(() => window.dispatchEvent(new Event('online')));
+		await synced(page);
 	});
 	it('syncs expenses in both directions and rejoins after the original sender closes', async () => {
 		const a = await phone(); const ref = await seed(a); const b = await phone();

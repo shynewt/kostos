@@ -5,7 +5,8 @@
 	import type { RoomState } from '$lib/sync/useRoom.svelte';
 	import SyncIcon from './SyncIcon.svelte';
 
-	/** Only appears when there is something to act on: a sync that stays broken, a missing
+	/** Appears while this phone is still fetching the latest changes (the data on screen may be
+	 *  slightly behind), or when there is something to act on: a sync that stays broken, a missing
 	 *  invite, or an expense edited in two places. Healthy and offline states stay in the app bar. */
 	let { conflicts = false }: { conflicts?: boolean } = $props();
 
@@ -23,12 +24,27 @@
 		return () => clearTimeout(timer);
 	});
 
+	// Data shows straight away; only say we're updating it if that takes more than a moment.
+	const updating = $derived(view?.tone === 'busy' && room?.sync.checking === true);
+	let showUpdating = $state(false);
+	$effect(() => {
+		if (!updating) { showUpdating = false; return; }
+		const timer = setTimeout(() => (showUpdating = true), 700);
+		return () => clearTimeout(timer);
+	});
+
 	const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 	const motion = { duration: reduced ? 0 : 200 };
 	const pendingReview = $derived(conflicts && room ? room.conflicts : []);
 </script>
 
 {#if room}
+	{#if showUpdating && !(visible && message)}
+		<div class="banner" data-kind="busy" role="status" transition:slide={motion}>
+			<span class="icon busy"><SyncIcon tone="busy" /></span>
+			<span class="message">Getting the latest changes…</span>
+		</div>
+	{/if}
 	{#if visible && message}
 		<div class="banner" data-kind="warn" role="status" transition:slide={motion}>
 			<span class="icon"><SyncIcon tone="warn" /></span>
@@ -55,6 +71,8 @@
 	}
 	.icon { width: 18px; height: 18px; padding: 4px; box-sizing: border-box; border-radius: 50%; flex-shrink: 0; background: var(--warn); color: #1a1100; }
 	.message { flex: 1; min-width: 0; }
+	.banner[data-kind='busy'] { padding-block: 8px; background: color-mix(in oklab, var(--ink) 6%, transparent); color: var(--ink-2); font-size: 12.5px; }
+	.icon.busy { width: 14px; height: 14px; padding: 0; margin: 0 2px; background: none; color: var(--accent); }
 	.action {
 		flex-shrink: 0; border: 0; background: transparent; color: var(--ink); font: inherit; font-weight: 600;
 		padding: 6px 8px; border-radius: 999px; cursor: pointer; transition: background-color 140ms;
