@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { slide } from 'svelte/transition';
 	import type { Settlement } from '$lib/balance';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { formatAmount } from '$lib/money';
@@ -21,6 +22,15 @@
 
 	// the transfer being confirmed in the bottom sheet, if any
 	let pending = $state<Settlement | null>(null);
+	let recording = $state(false);
+	let saveError = $state(false);
+	let submittedExpense: Expense | null = null;
+
+	function selectTransfer(transfer: Settlement) {
+		pending = transfer;
+		submittedExpense = null;
+		saveError = false;
+	}
 
 	// yours first, then everyone else's
 	const sortedPlan = $derived(
@@ -41,15 +51,16 @@
 		return m.id === currentMemberId ? 'You' : m.name;
 	}
 
-	function confirmPending() {
+	async function confirmPending() {
 		const t = pending;
+		if (recording) return;
 		if (!t || !project) {
 			pending = null;
 			return;
 		}
 		const fromName = membersById.get(t.from)?.name ?? '—';
 		const toName = membersById.get(t.to)?.name ?? '—';
-		const expense: Expense = {
+		const expense: Expense = submittedExpense ?? {
 			id: generateId(),
 			payments: [{ memberId: t.from, amount: t.amount }],
 			amount: t.amount,
@@ -62,8 +73,15 @@
 			createdAt: Date.now(),
 			createdBy: currentMemberId ?? t.from
 		};
-		addExpense(handle, expense);
-		pending = null;
+		submittedExpense = expense;
+		recording = true;
+		saveError = false;
+		try {
+			addExpense(handle, expense);
+			await handle.persistence?.flush();
+			pending = null;
+		} catch { saveError = true; }
+		finally { recording = false; }
 	}
 
 	function onBackdropKeydown(event: KeyboardEvent) {
@@ -80,7 +98,7 @@
 			class="line"
 			class:involves-you={youFrom || youTo}
 			type="button"
-			onclick={() => (pending = t)}
+			onclick={() => selectTransfer(t)}
 		>
 			<span class="line-avatars">
 				<Avatar member={membersById.get(t.from)} size="md" />
@@ -123,10 +141,11 @@
 			<span class="sheet-name">{label(pending.to)}</span>
 		</div>
 		<div class="num sheet-amount">{formatAmount(pending.amount, symbol, currency)}</div>
+		{#if saveError}<p class="sheet-error" role="alert" transition:slide={{ duration: 160 }}>Couldn’t save on this phone. Nothing was recorded, so you can try again.</p>{/if}
 		<div class="row gap-8 sheet-actions">
-			<button class="btn sheet-cancel" type="button" onclick={() => (pending = null)}>Cancel</button>
-			<button class="btn btn-primary sheet-confirm" type="button" onclick={confirmPending}>
-				Mark paid
+			<button class="btn sheet-cancel" type="button" disabled={recording} onclick={() => (pending = null)}>Cancel</button>
+			<button class="btn btn-primary sheet-confirm" type="button" disabled={recording} onclick={confirmPending}>
+				{recording ? 'Saving…' : saveError ? 'Try again' : 'Mark paid'}
 			</button>
 		</div>
 		<p class="dim sheet-hint">
@@ -278,6 +297,17 @@
 		flex: 1;
 		padding: 12px;
 		font-size: 14px;
+	}
+
+	.sheet-error {
+		width: 100%;
+		margin: -6px 0 14px;
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklab, var(--warn) 14%, transparent);
+		font-size: 13px;
+		line-height: 1.45;
+		text-align: left;
 	}
 
 	.sheet-hint {

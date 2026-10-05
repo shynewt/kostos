@@ -48,49 +48,54 @@
 	async function onRestore() {
 		if (!archive || !youMemberId || restoring) return;
 		restoring = true;
+		parseError = null;
+		try {
+			const roomId = generateRoomId();
+			const secret = generateSecret();
+			const a = archive;
 
-		const roomId = generateRoomId();
-		const secret = generateSecret();
-		const a = archive;
+			const project: Project = {
+				id: roomId,
+				name: a.project.name,
+				description: a.project.description,
+				emoji: a.project.emoji,
+				color: a.project.color,
+				currency: a.project.currency,
+				currencySymbol: a.project.currencySymbol,
+				defaultSplit: a.project.defaultSplit,
+				autoFetchRates: a.project.autoFetchRates,
+				paymentMethodsEnabled: a.project.paymentMethodsEnabled,
+				categories: a.project.categories,
+				paymentMethods: a.project.paymentMethods,
+				trips: a.project.trips ?? [],
+				createdAt: a.project.createdAt
+			};
 
-		const project: Project = {
-			id: roomId,
-			name: a.project.name,
-			description: a.project.description,
-			emoji: a.project.emoji,
-			color: a.project.color,
-			currency: a.project.currency,
-			currencySymbol: a.project.currencySymbol,
-			defaultSplit: a.project.defaultSplit,
-			autoFetchRates: a.project.autoFetchRates,
-			paymentMethodsEnabled: a.project.paymentMethodsEnabled,
-			categories: a.project.categories,
-			paymentMethods: a.project.paymentMethods,
-			trips: a.project.trips ?? [],
-			createdAt: a.project.createdAt
-		};
+			const handle = openRoom(roomId, secret);
+			await handle.ready;
+			initProject(handle, project, a.members);
 
-		const handle = openRoom(roomId, secret);
-		await handle.ready;
-		initProject(handle, project, a.members);
+			// Seed expenses inside a single transaction so the IndexedDB write is one shot
+			// and Yjs only fires observers once.
+			handle.doc.transact(() => {
+				for (const e of a.expenses) addExpense(handle, e);
+			});
 
-		// Seed expenses inside a single transaction so the IndexedDB write is one shot
-		// and Yjs only fires observers once.
-		handle.doc.transact(() => {
-			for (const e of a.expenses) addExpense(handle, e);
-		});
+			addProject({
+				roomId,
+				secret,
+				name: project.name,
+				emoji: project.emoji,
+				color: project.color,
+				lastActiveAt: Date.now()
+			});
+			setCurrentMember(roomId, youMemberId);
 
-		addProject({
-			roomId,
-			secret,
-			name: project.name,
-			emoji: project.emoji,
-			color: project.color,
-			lastActiveAt: Date.now()
-		});
-		setCurrentMember(roomId, youMemberId);
-
-		await goto(`/p/${roomId}`);
+			await handle.persistence?.flush();
+			await goto(`/p/${roomId}`);
+		} catch (error) {
+			parseError = error instanceof Error ? error.message : 'Could not save the group on this device';
+		} finally { restoring = false; }
 	}
 
 	function exportDateRange(a: ProjectArchive): string {

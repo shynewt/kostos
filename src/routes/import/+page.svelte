@@ -82,7 +82,8 @@
 				lastActiveAt: Date.now()
 			});
 
-			await goto(`/p/${roomId}`);
+			await handle.persistence?.flush();
+		await goto(`/p/${roomId}`);
 		} catch (err) {
 			busy = false;
 			const message = err instanceof Error ? err.message : String(err);

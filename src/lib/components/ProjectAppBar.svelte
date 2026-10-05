@@ -1,39 +1,17 @@
 <script lang="ts">
+	import SyncBanner from './SyncBanner.svelte';
+	import SyncStatus from './SyncStatus.svelte';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import { findProject } from '$lib/storage';
-	import type { RoomHandle } from '$lib/sync/doc';
-	import type { ConnectionStatus } from '$lib/sync/provider';
 	import type { Project } from '$lib/types';
 	import QrCode from './QrCode.svelte';
 
 	type Props = {
 		roomId: string;
 		project: Project | null;
-		handle?: RoomHandle;
 	};
 
-	let { roomId, project, handle }: Props = $props();
-
-	let syncStatus = $state<ConnectionStatus>('idle');
-	$effect(() => {
-		const off = handle?.syncProvider?.onStatusChange((s) => (syncStatus = s));
-		return () => off?.();
-	});
-
-	const syncLabel = $derived.by(() => {
-		switch (syncStatus) {
-			case 'connected':
-				return 'Synced';
-			case 'connecting':
-				return 'Connecting…';
-			case 'reconnecting':
-				return 'Reconnecting…';
-			case 'offline':
-				return 'Offline';
-			default:
-				return 'Local only';
-		}
-	});
+	let { roomId, project }: Props = $props();
 
 	let showShare = $state(false);
 	let copied = $state(false);
@@ -58,35 +36,25 @@
 </script>
 
 <header class="app-bar">
-	<a class="project-link row gap-8" href="/" aria-label="Switch group" title="Switch group">
-		<span
-			class="project-tile"
-			style={project
-				? `background: ${tileBackground(project.color)}; color: ${PROJECT_COLOR_VALUES[project.color]};`
-				: ''}
-		>
-			{project?.emoji ?? '🏖'}
-		</span>
-		<span class="project-label col">
-			<span class="app-bar-title project-name">
-				{project?.name ?? 'Loading'}
-				<svg
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.6"
-					class="switch-chevron"
-					aria-hidden="true"
-				>
-					<path d="M6 9l6 6 6-6" />
-				</svg>
+	<div class="project-head">
+		<a class="project-tile-link" href="/" tabindex="-1" aria-hidden="true">
+			<span
+				class="project-tile"
+				style={project
+					? `background: ${tileBackground(project.color)}; color: ${PROJECT_COLOR_VALUES[project.color]};`
+					: ''}
+			>
+				{project?.emoji ?? '🏖'}
 			</span>
-			<span class="dim mono project-token">
-				<span class="sync-dot" data-state={syncStatus} aria-hidden="true"></span>
-				<span class="sync-text" title={syncLabel}>{roomId}</span>
-			</span>
-		</span>
-	</a>
+		</a>
+		<a class="app-bar-title project-name" href="/" aria-label="Switch group" title="Switch group">
+			{project?.name ?? 'Loading'}
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="switch-chevron" aria-hidden="true">
+				<path d="M6 9l6 6 6-6" />
+			</svg>
+		</a>
+		<div class="project-status"><SyncStatus /></div>
+	</div>
 	<div class="row gap-6" style="flex: 0; justify-content: flex-end;">
 		<button
 			class="icon-btn"
@@ -109,6 +77,7 @@
 		</a>
 	</div>
 </header>
+<SyncBanner conflicts />
 
 {#if showShare}
 	<section class="card share-card">
@@ -139,11 +108,20 @@
 {/if}
 
 <style>
-	.project-link {
+	.project-head {
 		flex: 1;
+		min-width: 0;
+		display: grid;
+		grid-template-columns: auto minmax(0, 1fr);
+		grid-template-rows: auto auto;
+		column-gap: 10px;
 		align-items: center;
+	}
+
+	.project-tile-link {
+		grid-row: 1 / span 2;
+		display: block;
 		text-decoration: none;
-		color: inherit;
 	}
 
 	.project-tile {
@@ -156,62 +134,34 @@
 		flex-shrink: 0;
 	}
 
-	.project-label {
-		gap: 0;
-		justify-content: center;
-	}
-
 	.project-name {
 		font-family: var(--font-sans);
 		font-size: 14px;
 		text-transform: none;
 		letter-spacing: 0;
 		color: var(--ink);
+		text-decoration: none;
 		display: inline-flex;
 		align-items: center;
+		align-self: end;
+		justify-self: start;
 		gap: 4px;
+		max-width: 100%;
+		min-width: 0;
 	}
 
 	.switch-chevron {
 		width: 12px;
 		height: 12px;
 		color: var(--ink-3);
-	}
-
-	.project-token {
-		font-size: 10px;
-		letter-spacing: 0.04em;
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-	}
-
-	.sync-dot {
-		width: 6px;
-		height: 6px;
-		border-radius: 999px;
-		background: var(--ink-3);
 		flex-shrink: 0;
 	}
 
-	.sync-dot[data-state='connected'] {
-		background: var(--accent);
-		box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 25%, transparent);
-	}
-
-	.sync-dot[data-state='connecting'],
-	.sync-dot[data-state='reconnecting'] {
-		background: var(--warn);
-		animation: sync-pulse 1.4s ease-in-out infinite;
-	}
-
-	.sync-dot[data-state='offline'] {
-		background: var(--owe);
-	}
-
-	@keyframes sync-pulse {
-		0%, 100% { opacity: 0.4; }
-		50% { opacity: 1; }
+	.project-status {
+		display: flex;
+		min-width: 0;
+		align-self: start;
+		margin-top: 1px;
 	}
 
 	.share-card {

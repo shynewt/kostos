@@ -22,6 +22,7 @@
 	const expenses = $derived(room.expenses);
 
 	const currentMemberId = $derived.by(() => getCurrentMember(roomId));
+	const conflictIds = $derived(new Set(room.conflicts.map((c) => c.id)));
 	const currencySymbol = $derived(room.currencySymbol);
 	const currency = $derived(room.currency);
 	const membersById = $derived(room.membersById);
@@ -164,7 +165,7 @@
 </svelte:head>
 
 <div class="screen" data-page="expenses-list">
-	<ProjectAppBar {roomId} {project} handle={room.handle} />
+	<ProjectAppBar {roomId} {project} />
 
 	<div class="search-bar">
 		<span class="search-icon" aria-hidden="true">
@@ -262,6 +263,7 @@
 							totalMembers={members.length}
 							showDate={false}
 							{query}
+							conflict={conflictIds.has(e.id)}
 						/>
 					{/each}
 				</div>

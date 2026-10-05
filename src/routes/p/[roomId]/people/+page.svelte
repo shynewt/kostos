@@ -166,7 +166,7 @@
 </svelte:head>
 
 <div class="screen" data-page="people">
-	<ProjectAppBar {roomId} {project} handle={room.handle} />
+	<ProjectAppBar {roomId} {project} />
 
 	<div class="scroll">
 		<div class="section-head" style="margin-top: 4px;">

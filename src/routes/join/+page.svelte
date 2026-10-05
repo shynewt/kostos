@@ -9,12 +9,13 @@
 	import {
 		addMember,
 		generateId,
-		openRoom,
-		readMembers,
-		readProject
+		openRoom
 	} from '$lib/sync/doc';
 	import type { Member, Project } from '$lib/types';
-	import { onMount } from 'svelte';
+	import { setContext } from 'svelte';
+	import SyncBanner from '$lib/components/SyncBanner.svelte';
+	import SyncStatus from '$lib/components/SyncStatus.svelte';
+	import { useRoom } from '$lib/sync/useRoom.svelte';
 
 	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'invalid';
 
@@ -27,59 +28,41 @@
 	let pickedId = $state<string | null>(null);
 	let newName = $state('');
 	let joining = $state(false);
+	let joinError = $state<string | null>(null);
 
-	onMount(() => {
-		if (!roomId || !secret) {
-			status = 'invalid';
-			return;
-		}
-		const handle = openRoom(roomId, secret);
-		status = 'syncing';
-
-		const sync = () => {
-			project = readProject(handle);
-			members = readMembers(handle);
-			if (project) {
-				status = 'ready';
-				if (!pickedId && members.length > 0) pickedId = members[0].id;
-			}
-		};
-		sync();
-		handle.project.observeDeep(sync);
-		handle.members.observeDeep(sync);
-
-		// Fall back to empty state if we never receive any state. Five seconds is enough for
-		// a healthy WebSocket round-trip; users on slow networks can hit "Try again".
-		const timeoutHandle = setTimeout(() => {
-			if (status === 'syncing' && !project) status = 'empty';
-		}, 5000);
-
-		return () => {
-			clearTimeout(timeoutHandle);
-			handle.project.unobserveDeep(sync);
-			handle.members.unobserveDeep(sync);
-		};
+	const room = $derived(roomId && secret ? useRoom(roomId, secret) : null);
+	setContext('kostos-room', { get room() { return room; } });
+	$effect(() => room?.observe());
+	$effect(() => {
+		if (!room) { status = 'invalid'; return; }
+		project = room.project;
+		members = room.members;
+		if (project && !room.checking) {
+			status = 'ready';
+			if (!pickedId && members.length) pickedId = members[0].id;
+		} else if (['error', 'offline', 'synced'].includes(room.sync.phase)) status = 'empty';
+		else status = 'syncing';
 	});
-
-	function retry() {
-		status = 'syncing';
-		// Re-run the mount-time observer by reloading; cheaper than threading state
-		window.location.reload();
-	}
+	function retry() { room?.handle.syncProvider?.retry(); }
 
 	async function joinAsExisting() {
 		if (!project || !pickedId || joining) return;
 		joining = true;
-		addProject({
-			roomId,
-			secret,
-			name: project.name,
-			emoji: project.emoji,
-			color: project.color,
-			lastActiveAt: Date.now()
-		});
-		setCurrentMember(roomId, pickedId);
-		await goto(`/p/${roomId}`);
+		joinError = null;
+		try {
+			addProject({
+				roomId,
+				secret,
+				name: project.name,
+				emoji: project.emoji,
+				color: project.color,
+				lastActiveAt: Date.now()
+			});
+			setCurrentMember(roomId, pickedId);
+			await goto(`/p/${roomId}`);
+		} catch (error) {
+			joinError = error instanceof Error ? error.message : 'Could not save the group on this device';
+		} finally { joining = false; }
 	}
 
 	async function joinAsNew(event?: Event) {
@@ -88,25 +71,31 @@
 		const name = newName.trim();
 		if (!name) return;
 		joining = true;
-		const handle = openRoom(roomId, secret);
-		const member: Member = {
-			id: generateId(),
-			name,
-			color: pickMemberColor(members),
-			emoji: pickMemberEmoji(members),
-			createdAt: Date.now()
-		};
-		addMember(handle, member);
-		addProject({
-			roomId,
-			secret,
-			name: project.name,
-			emoji: project.emoji,
-			color: project.color,
-			lastActiveAt: Date.now()
-		});
-		setCurrentMember(roomId, member.id);
-		await goto(`/p/${roomId}`);
+		joinError = null;
+		try {
+			const handle = openRoom(roomId, secret);
+			const member: Member = {
+				id: generateId(),
+				name,
+				color: pickMemberColor(members),
+				emoji: pickMemberEmoji(members),
+				createdAt: Date.now()
+			};
+			addMember(handle, member);
+			await handle.persistence?.flush();
+			addProject({
+				roomId,
+				secret,
+				name: project.name,
+				emoji: project.emoji,
+				color: project.color,
+				lastActiveAt: Date.now()
+			});
+			setCurrentMember(roomId, member.id);
+			await goto(`/p/${roomId}`);
+		} catch (error) {
+			joinError = error instanceof Error ? error.message : 'Could not save the group on this device';
+		} finally { joining = false; }
 	}
 </script>
 
@@ -121,9 +110,10 @@
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
 			</a>
 		</div>
-		<div class="app-bar-title">Joining</div>
+		<div class="row" style="flex-shrink: 0;"><div class="app-bar-title">Joining</div><SyncStatus variant="dot" /></div>
 		<div class="row gap-6" style="flex: 1;"></div>
 	</header>
+	<SyncBanner />
 
 	<div class="scroll">
 		{#if status === 'invalid'}
@@ -142,8 +132,7 @@
 		{:else if status === 'empty'}
 			<EmptyCard>
 				<p>
-					No project state arrived for <strong>{roomId}</strong>. The creator might be offline, or the
-					token might be wrong.
+					Group data isn’t available for <strong>{roomId}</strong> yet. Check your connection and use the full invite link shared by your group.
 				</p>
 				<div class="row gap-8 retry-row">
 					<a href="/" class="btn">Cancel</a>
@@ -215,6 +204,7 @@
 				</div>
 			</form>
 
+			{#if joinError}<p role="alert">{joinError}</p>{/if}
 			<button
 				type="button"
 				class="btn btn-primary btn-block continue-btn"

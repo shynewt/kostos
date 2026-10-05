@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { slide } from 'svelte/transition';
 	import AmountField from './AmountField.svelte';
 	import CurrencyPicker from './CurrencyPicker.svelte';
 	import EmojiPickerField from './EmojiPickerField.svelte';
@@ -158,7 +159,10 @@
 	// The category we last auto-filled; lets us tell a guess apart from a manual pick,
 	// and only move the selection while it's still our own guess.
 	let guessedCategoryId = $state<string | undefined>(undefined);
+	const reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 	let submitting = $state(false);
+	let saveFailure = $state<string | null>(null);
+	let submittedId: string | null = null;
 
 	const categoryModel = $derived(buildCategoryModel(expenses.filter((e) => e.id !== seed?.id)));
 	const categoryIds = $derived(new Set(project.categories.map((c) => c.id)));
@@ -546,6 +550,7 @@
 		event?.preventDefault();
 		if (submitting || !canSave) return;
 		submitting = true;
+		saveFailure = null;
 
 		const finalPayments = isMultiPayer
 			? payers.map((p, i) => ({ memberId: p.memberId, amount: payerCents[i] }))
@@ -553,7 +558,7 @@
 
 		const conversion = isForeign ? fxForSave(fx, fxCtx, Date.now()) : null;
 		const expense: Expense = {
-			id: seed?.id ?? generateId(),
+			id: seed?.id ?? (submittedId ??= generateId()),
 			payments: finalPayments,
 			amount: amountCents,
 			currency: currencyCode,
@@ -578,6 +583,8 @@
 
 		try {
 			await onSave(expense);
+		} catch {
+			saveFailure = 'Couldn’t save on this phone. Your entries are still here, so you can try again.';
 		} finally {
 			submitting = false;
 		}
@@ -597,12 +604,15 @@
 				disabled={!canSave || submitting}
 				onclick={handleSubmit}
 			>
-				{saveLabel}
+				{submitting ? 'Saving…' : saveFailure ? 'Try again' : saveLabel}
 			</button>
 		{/snippet}
 	</ScreenAppBar>
 
 	<form class="scroll" onsubmit={handleSubmit}>
+		{#if saveFailure}
+			<p class="save-failure" role="alert" transition:slide={{ duration: reducedMotion ? 0 : 180 }}>{saveFailure}</p>
+		{/if}
 		<AmountField
 			bind:value={amountInput}
 			cents={amountCents}
@@ -808,7 +818,7 @@
 			class="btn btn-primary btn-block submit-btn"
 			disabled={!canSave || submitting}
 		>
-			{submitting ? 'Saving…' : `${saveLabel} expense`}
+			{submitting ? 'Saving…' : saveFailure ? 'Try again' : `${saveLabel} expense`}
 		</button>
 	</form>
 </div>
@@ -826,6 +836,19 @@
 		font-family: var(--font-mono);
 		line-height: 1.5;
 		color: var(--owe);
+	}
+
+	.save-failure {
+		position: sticky;
+		top: 0;
+		z-index: 3;
+		margin: 4px 0 12px;
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklab, var(--warn) 14%, var(--bg));
+		color: var(--ink);
+		font-size: 13px;
+		line-height: 1.45;
 	}
 
 	.save-btn {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BalanceSkeleton from '$lib/components/BalanceSkeleton.svelte';
 	import { page } from '$app/state';
 	import { computeBalances, planSettlements } from '$lib/balance';
 	import ActivityList from '$lib/components/ActivityList.svelte';
@@ -38,7 +39,8 @@
 		updateProjectMetadata(roomId, {
 			net: yourBalance,
 			netCurrency: currency,
-			netSymbol: currencySymbol
+			netSymbol: currencySymbol,
+			lastSyncedAt: room.sync.lastSyncedAt
 		});
 	});
 
@@ -74,9 +76,11 @@
 </svelte:head>
 
 <div class="screen" data-page="dashboard">
-	<ProjectAppBar {roomId} {project} handle={room.handle} />
+	<ProjectAppBar {roomId} {project} />
 
 	<div class="scroll">
+		{#if room.checking}<BalanceSkeleton />{:else}
+		<div class="reveal">
 		{#if showGraph}
 			<div class="graph-wrap">
 				<SettlementGraph {members} {plan} {currentMemberId} symbol={currencySymbol} {currency} />
@@ -135,6 +139,8 @@
 				<a class="mono see-all" href="/p/{roomId}/activity">See all</a>
 			</div>
 			<ActivityList events={recentActivity} {membersById} {currentMemberId} {roomId} />
+		{/if}
+		</div>
 		{/if}
 	</div>
 

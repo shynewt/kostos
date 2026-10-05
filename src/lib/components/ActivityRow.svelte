@@ -72,6 +72,8 @@
 				return `added “${label}” · ${money(event.amount, event.currency)}`;
 			case 'expense.edit':
 				return editMessage(label);
+			case 'expense.resolve':
+				return `reviewed the edits to “${label}” · ${money(event.amount, event.currency)}`;
 			case 'expense.remove':
 				return `deleted “${label}”`;
 			case 'settle.add': {

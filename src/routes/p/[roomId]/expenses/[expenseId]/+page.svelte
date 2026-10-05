@@ -1,6 +1,8 @@
 <script lang="ts">
+	import ExpenseConflict from '$lib/components/ExpenseConflict.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { slide } from 'svelte/transition';
 	import { expenseShares } from '$lib/balance';
 	import ActivityList from '$lib/components/ActivityList.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
@@ -22,6 +24,8 @@
 	const members = $derived(room.members);
 	const expenses = $derived(room.expenses);
 	let confirmingDelete = $state(false);
+	let deleting = $state(false);
+	let deleteError = $state(false);
 
 	const currentMemberId = $derived.by(() => getCurrentMember(roomId));
 	const currencySymbol = $derived(room.currencySymbol);
@@ -99,14 +103,17 @@
 		return `even · ${pct}%`;
 	}
 
-	function onDelete() {
-		if (!expense) return;
-		if (!confirmingDelete) {
-			confirmingDelete = true;
-			return;
-		}
-		removeExpense(handle, expense.id);
-		goto(`/p/${roomId}/expenses`);
+	async function onDelete() {
+		if (deleting || (!expense && !deleteError)) return;
+		if (!confirmingDelete) { confirmingDelete = true; return; }
+		deleting = true;
+		deleteError = false;
+		try {
+			if (expense) removeExpense(handle, expense.id);
+			await handle.persistence?.flush();
+			await goto(`/p/${roomId}/expenses`);
+		} catch { deleteError = true; }
+		finally { deleting = false; }
 	}
 
 	function onEdit() {
@@ -131,12 +138,15 @@
 	{#if !expense}
 		<div class="scroll empty-detail">
 			<div class="card">
-				<p class="muted">Expense not found. It may have been deleted on another device.</p>
+				{#if deleting}<p class="muted">Saving the deletion…</p>
+				{:else if deleteError}<p class="muted" role="alert">Couldn’t delete this on your phone. Keep the app open and try again.</p><button class="btn btn-block" type="button" onclick={onDelete}>Try again</button>
+				{:else}<p class="muted">Expense not found. It may have been deleted on another device.</p>{/if}
 				<a href="/p/{roomId}/expenses" class="btn btn-block back-btn">Back to expenses</a>
 			</div>
 		</div>
 	{:else}
 		<div class="scroll">
+			<ExpenseConflict {room} {expenseId} />
 			<section class="hero">
 				<div class="row gap-12 hero-top">
 					<span class="cat-tile hero-icon">{category?.emoji ?? '📦'}</span>
@@ -256,6 +266,9 @@
 				{/if}
 			</div>
 
+			{#if deleteError}
+				<p class="delete-error" role="alert" transition:slide={{ duration: 160 }}>Couldn’t delete this on your phone. The expense is still here, so you can try again.</p>
+			{/if}
 			<div class="row gap-8 action-row">
 				<button class="btn action-btn" type="button" onclick={onEdit}>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
@@ -268,7 +281,7 @@
 					onclick={onDelete}
 				>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" /></svg>
-					<span>{confirmingDelete ? 'Tap again to delete' : 'Delete'}</span>
+					<span>{deleting ? 'Deleting…' : deleteError ? 'Try again' : confirmingDelete ? 'Tap again to delete' : 'Delete'}</span>
 				</button>
 			</div>
 		</div>
@@ -276,6 +289,15 @@
 </div>
 
 <style>
+	.delete-error {
+		margin: 0 0 10px;
+		padding: 10px 12px;
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklab, var(--warn) 14%, transparent);
+		font-size: 13px;
+		line-height: 1.45;
+	}
+
 	.empty-detail {
 		padding-top: 24px;
 	}

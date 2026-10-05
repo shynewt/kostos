@@ -4,7 +4,7 @@
 	import ExpenseForm from '$lib/components/ExpenseForm.svelte';
 	import LoadingScreen from '$lib/components/LoadingScreen.svelte';
 	import { getCurrentMember } from '$lib/storage';
-	import { addCategory, addExpense, addPaymentMethod, generateId } from '$lib/sync/doc';
+	import { addCategory, addExpense, addPaymentMethod, generateId, updateExpense } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 	import type { Category, Expense, PaymentMethodItem } from '$lib/types';
 
@@ -19,7 +19,9 @@
 	const currentMemberId = $derived.by(() => getCurrentMember(roomId));
 
 	async function onSave(expense: Expense) {
-		addExpense(handle, expense);
+		if (room.expenses.some((e) => e.id === expense.id)) updateExpense(handle, expense);
+		else addExpense(handle, expense);
+		await handle.persistence?.flush();
 		// replace so back doesn't return to the now-submitted add form
 		await goto(`/p/${roomId}`, { replaceState: true });
 	}

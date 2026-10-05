@@ -26,6 +26,7 @@
 		showDate?: boolean;
 		showInvolvedCount?: boolean;
 		query?: string;
+		conflict?: boolean;
 	};
 
 	let {
@@ -41,7 +42,8 @@
 		totalMembers,
 		showDate = true,
 		showInvolvedCount = true,
-		query = ''
+		query = '',
+		conflict = false
 	}: Props = $props();
 
 	const category = $derived(
@@ -119,6 +121,9 @@
 			<span class="row-title">
 				<Highlight text={expense.description || 'Expense'} {query} />
 			</span>
+			{#if conflict}
+				<span class="review-dot" role="img" aria-label="Edited on two phones. Needs review"></span>
+			{/if}
 			{#if expense.isSettlement}
 				<span class="sticker mode-sticker settle-sticker">SETTLEMENT</span>
 			{:else if expense.splitMode === 'shares'}
@@ -211,6 +216,14 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.review-dot {
+		width: 7px;
+		height: 7px;
+		border-radius: 999px;
+		flex-shrink: 0;
+		background: var(--warn);
 	}
 
 	.mode-sticker {

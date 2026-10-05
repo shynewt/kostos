@@ -21,6 +21,7 @@
 
 	const roomId = generateRoomId();
 	const secret = generateSecret();
+	const creatorId = generateId();
 
 	let emoji = $state('🏠');
 	let color = $state<ProjectColor>('lime');
@@ -31,6 +32,7 @@
 	let yourName = $state('');
 	let others = $state<DraftMember[]>([{ id: generateId(), name: '' }]);
 	let submitting = $state(false);
+	let createError = $state<string | null>(null);
 
 	const filledOthers = $derived(others.filter((m) => m.name.trim().length > 0));
 	const canCreate = $derived(name.trim().length > 0 && yourName.trim().length > 0);
@@ -76,59 +78,64 @@
 		event?.preventDefault();
 		if (submitting || !canCreate) return;
 		submitting = true;
-
-		const made: Member[] = [];
-		const creator: Member = {
-			id: generateId(),
-			name: yourName.trim(),
-			color: pickMemberColor(made),
-			emoji: pickMemberEmoji(made),
-			createdAt: Date.now()
-		};
-		made.push(creator);
-		const otherMembers: Member[] = [];
-		for (const n of others.map((m) => m.name.trim()).filter((n) => n.length > 0)) {
-			const m: Member = {
-				id: generateId(),
-				name: n,
+		createError = null;
+		try {
+			const made: Member[] = [];
+			const creator: Member = {
+				id: creatorId,
+				name: yourName.trim(),
 				color: pickMemberColor(made),
 				emoji: pickMemberEmoji(made),
 				createdAt: Date.now()
 			};
-			made.push(m);
-			otherMembers.push(m);
-		}
+			made.push(creator);
+			const otherMembers: Member[] = [];
+			for (const n of others.map((m) => m.name.trim()).filter((n) => n.length > 0)) {
+				const m: Member = {
+					id: generateId(),
+					name: n,
+					color: pickMemberColor(made),
+					emoji: pickMemberEmoji(made),
+					createdAt: Date.now()
+				};
+				made.push(m);
+				otherMembers.push(m);
+			}
 
-		const project: Project = {
-			id: roomId,
-			name: name.trim(),
-			description: description.trim() || undefined,
-			emoji,
-			color,
-			currency: currencyCode,
-			currencySymbol: currencySym,
-			defaultSplit: 'even',
-			categories: DEFAULT_CATEGORIES,
-			paymentMethods: DEFAULT_PAYMENT_METHODS,
-			trips: [],
-			createdAt: Date.now()
-		};
+			const project: Project = {
+				id: roomId,
+				name: name.trim(),
+				description: description.trim() || undefined,
+				emoji,
+				color,
+				currency: currencyCode,
+				currencySymbol: currencySym,
+				defaultSplit: 'even',
+				categories: DEFAULT_CATEGORIES,
+				paymentMethods: DEFAULT_PAYMENT_METHODS,
+				trips: [],
+				createdAt: Date.now()
+			};
 
-		const handle = openRoom(roomId);
-		await handle.ready;
-		initProject(handle, project, [creator, ...otherMembers]);
+			const handle = openRoom(roomId, secret);
+			await handle.ready;
+			initProject(handle, project, [creator, ...otherMembers]);
 
-		addProject({
-			roomId,
-			secret,
-			name: project.name,
-			emoji: project.emoji,
-			color: project.color,
-			lastActiveAt: Date.now()
-		});
-		setCurrentMember(roomId, creator.id);
+			addProject({
+				roomId,
+				secret,
+				name: project.name,
+				emoji: project.emoji,
+				color: project.color,
+				lastActiveAt: Date.now()
+			});
+			setCurrentMember(roomId, creator.id);
 
-		await goto(`/p/${roomId}`);
+			await handle.persistence?.flush();
+			await goto(`/p/${roomId}`);
+		} catch (error) {
+			createError = error instanceof Error ? error.message : 'Could not save the group on this device';
+		} finally { submitting = false; }
 	}
 </script>
 
@@ -270,6 +277,7 @@
 			<p class="dim token-hint">Generated locally; can be regenerated later.</p>
 		</div>
 
+		{#if createError}<p role="alert" class="dim">{createError}</p>{/if}
 		<button
 			type="submit"
 			class="btn btn-primary btn-block submit-btn"

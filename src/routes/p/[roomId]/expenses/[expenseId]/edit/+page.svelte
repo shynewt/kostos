@@ -8,6 +8,7 @@
 		addCategory,
 		addPaymentMethod,
 		generateId,
+		expenseVersions,
 		updateExpense
 	} from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
@@ -23,12 +24,13 @@
 	const members = $derived(room.members);
 
 	let initial = $state<Expense | null>(null);
+	let initialVersions: string[] = [];
 	let notFound = $state(false);
 
 	$effect(() => {
 		const expense = room.expenses.find((e) => e.id === expenseId);
 		if (expense) {
-			if (!initial) initial = expense;
+			if (!initial) { initial = expense; initialVersions = expenseVersions(handle, expenseId).map((v) => v.id); }
 		} else if (project) {
 			notFound = true;
 		}
@@ -37,7 +39,8 @@
 	const currentMemberId = $derived.by(() => getCurrentMember(roomId));
 
 	async function onSave(expense: Expense) {
-		updateExpense(handle, expense);
+		updateExpense(handle, expense, initialVersions);
+		await handle.persistence?.flush();
 		// replace so back from the detail doesn't land on the edit form again
 		await goto(`/p/${roomId}/expenses/${expense.id}`, { replaceState: true });
 	}

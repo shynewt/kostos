@@ -1,4 +1,5 @@
 <script lang="ts">
+	import BalanceSkeleton from '$lib/components/BalanceSkeleton.svelte';
 	import { page } from '$app/state';
 	import CategoryBreakdown from '$lib/components/CategoryBreakdown.svelte';
 	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
@@ -281,9 +282,11 @@
 </svelte:head>
 
 <div class="screen" data-page="stats">
-	<ProjectAppBar {roomId} {project} handle={room.handle} />
+	<ProjectAppBar {roomId} {project} />
 
 	<div class="scroll">
+		{#if room.checking}<BalanceSkeleton mode="stats" />{:else}
+		<div class="reveal">
 		<TripStrip
 			{trips}
 			{selectedTripId}
@@ -429,6 +432,8 @@
 					</div>
 				</div>
 			{/if}
+		{/if}
+		</div>
 		{/if}
 	</div>
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import SyncStatus from './SyncStatus.svelte';
+	import SyncBanner from './SyncBanner.svelte';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import type { Project } from '$lib/types';
 	import type { Snippet } from 'svelte';
@@ -34,16 +36,26 @@
 			</span>
 		{/if}
 	</div>
-	<div class="app-bar-title">{title}</div>
+	<div class="title-wrap">
+		<div class="app-bar-title">{title}</div>
+		<SyncStatus variant="dot" />
+	</div>
 	<div class="row gap-6 right-side">
 		{#if right}{@render right()}{/if}
 	</div>
 </header>
+<SyncBanner />
 
 <style>
 	.left-side {
 		flex: 1;
 		align-items: center;
+	}
+
+	.title-wrap {
+		display: flex;
+		align-items: center;
+		flex-shrink: 0;
 	}
 
 	.right-side {

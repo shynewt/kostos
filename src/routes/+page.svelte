@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { relativeTime } from '$lib/sync/status';
 	import { version } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { enterDemo } from '$lib/demo';
@@ -226,6 +227,7 @@
 										</span>
 										<span class="dim mono pb-label">{p.net > 0 ? 'owed to you' : 'you owe'}</span>
 									{/if}
+									<span class="dim mono pb-label">Saved · {p.lastSyncedAt ? relativeTime(p.lastSyncedAt, Date.now()) : 'not synced yet'}</span>
 								</span>
 							{/if}
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="project-chevron">
