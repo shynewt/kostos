@@ -82,4 +82,12 @@ describe('Cloudflare Durable Object sync', () => {
 		const capped = await connect('CAPPED'); expect(capped.binary).toHaveLength(1000);
 		expect(capped.controls.at(-1)?.complete).toBe(false);
 	});
+	it('lets a device holding the data declare a trimmed history complete, for everyone, permanently', async () => {
+		const repairer = await connect('CAPPED');
+		repairer.ws.send(JSON.stringify({ type: 'complete' }));
+		repairer.ws.send(JSON.stringify({ type: 'barrier', id: 'after' }));
+		await until(() => repairer.controls.some((m) => m.type === 'caught-up'));
+		const other = await connect('CAPPED');
+		expect(other.controls.at(-1)).toMatchObject({ type: 'ready', complete: true });
+	});
 });

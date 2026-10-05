@@ -69,6 +69,11 @@ export class SyncRoom extends DurableObject {
 					let control;
 					try { control = JSON.parse(message); } catch { return; }
 					if (!control || typeof control !== 'object') return;
+					if (control.type === 'complete') {
+						// A device that holds the data vouches for a history the old server trimmed.
+						this.ctx.storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', 1) ON CONFLICT(key) DO UPDATE SET value = 1");
+						return;
+					}
 					if (control.type === 'barrier' && typeof control.id === 'string' && control.id.length <= 80) {
 						this.control(ws, { type: 'caught-up', id: control.id, revision: this.revision() });
 					}

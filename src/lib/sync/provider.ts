@@ -52,6 +52,9 @@ export class EncryptedSyncProvider {
 			window.addEventListener('pageshow', this.handlePageShow);
 		}
 		void Promise.all([persistence?.ready ?? Promise.resolve(), this.key]).then(() => {
+			const hasData = doc.store.clients.size > 0;
+			this.seeded = hasData && !persistence?.state.partial;
+			this.fresh = !hasData;
 			this.setState({ lastSyncedAt: persistence?.state.lastSyncedAt ?? null, unverifiedSince: persistence?.state.unverifiedSince ?? Date.now() });
 			this.connect();
 		}).catch(() => this.fail(persistence?.state.phase === 'error' ? 'storage' : 'decrypt', false));
@@ -80,6 +83,7 @@ export class EncryptedSyncProvider {
 			return;
 		}
 		this.supported = this.replayed = this.durable = false;
+		this.frames = 0;
 		this.complete = true;
 		this.sessionProblem = null;
 		this.pending.clear();
@@ -102,6 +106,9 @@ export class EncryptedSyncProvider {
 			}, 20_000);
 		};
 		ws.onmessage = (event) => {
+			// A long history is slow, not broken: only silence counts as a timeout.
+			this.frames++;
+			if (this.state.phase !== 'synced') { this.clearDeadline(); this.armDeadline(ws); }
 			this.receiveQueue = this.receiveQueue.then(async () => {
 				if (!this.isCurrent(ws)) return;
 				if (typeof event.data === 'string') await this.receiveControl(ws, event.data);
@@ -142,6 +149,7 @@ export class EncryptedSyncProvider {
 			this.supported = this.replayed = true;
 			this.durable = message.durable === true;
 			this.complete = message.complete === true;
+			if (!this.complete && this.fresh) this.persistence?.markPartial();
 			this.revision = message.revision!;
 			// Includes old local edits and deletes, even if their state vector did
 			// not advance. Also publishes a brand-new group when its creator is alone.
@@ -164,7 +172,15 @@ export class EncryptedSyncProvider {
 			if (message.revision !== this.revision) { this.fail('history'); return; }
 			if (this.sessionProblem) return;
 			if (!this.durable) { this.fail('storage', false); return; }
-			if (!this.complete || this.doc.store.pendingStructs || this.doc.store.pendingDs) { this.fail('history', false); return; }
+			if (this.doc.store.pendingStructs || this.doc.store.pendingDs) { this.fail('history', false); return; }
+			if (!this.complete) {
+				if (!this.seeded) { this.fail('history', false); return; }
+				// Everything this phone holds has been uploaded and acknowledged, so the server log is whole again.
+				this.complete = true;
+				ws.send(JSON.stringify({ type: 'complete' }));
+				this.requestBarrier();
+				return;
+			}
 			if (this.pending.size || this.sending || version !== (this.persistence?.changeVersion ?? 0)) { this.requestBarrier(); return; }
 			const at = Date.now();
 			try { await this.persistence?.confirm(version, at); }
@@ -241,11 +257,16 @@ export class EncryptedSyncProvider {
 		} else this.clearDeadline();
 	}
 
+	private frames = 0;
+	/** This phone held data of its own before connecting, so it can vouch for a trimmed server history. */
+	private seeded = false;
+	private fresh = false;
+
 	private armDeadline(ws: WebSocket): void {
 		if (this.deadline) return;
 		this.deadline = setTimeout(() => {
 			this.deadline = null;
-			if (this.isCurrent(ws)) this.fail(this.supported ? 'timeout' : 'protocol');
+			if (this.isCurrent(ws)) this.fail(this.supported || this.frames > 0 ? 'timeout' : 'protocol');
 		}, TIMEOUT_MS);
 	}
 	private clearDeadline(): void { if (this.deadline) clearTimeout(this.deadline); this.deadline = null; }

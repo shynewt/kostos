@@ -91,6 +91,19 @@ describe('verified encrypted sync', () => {
 		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('history'));
 		expect(provider.snapshot.lastSyncedAt).toBeNull();
 	});
+	it('lets a phone that held the data repair a trimmed server history', async () => {
+		doc.getArray('expenses').push(['had-it-all']);
+		const ws = await start(); await ready(ws, { complete: false }); await acknowledge(ws);
+		await vi.waitFor(() => expect(ws.sent).toContain(JSON.stringify({ type: 'complete' })));
+		const barrier = JSON.parse(ws.sent.filter((v): v is string => typeof v === 'string' && v.includes('barrier')).at(-1)!);
+		ws.control({ type: 'caught-up', id: barrier.id, revision: 1 });
+		await vi.waitFor(() => expect(provider.status).toBe('synced'));
+	});
+	it('does not let a phone that only received a trimmed history vouch for it', async () => {
+		const ws = await start(); await ready(ws, { complete: false }); await acknowledge(ws);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('history'));
+		expect(ws.sent).not.toContain(JSON.stringify({ type: 'complete' }));
+	});
 	it('detects a missing server revision', async () => {
 		const ws = await start(); await ready(ws);
 		ws.control({ type: 'revision', revision: 5 });
@@ -121,5 +134,27 @@ describe('verified encrypted sync', () => {
 		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
 		await Promise.resolve(); await vi.advanceTimersByTimeAsync(12_001);
 		expect(provider.status).toBe('error');
+	});
+	it('keeps waiting while a long history is still arriving', async () => {
+		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
+		await vi.advanceTimersByTimeAsync(0);
+		const ws = Socket.instances[0]; ws.open();
+		const key = await deriveKey(secret);
+		const entry = await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(new Y.Doc())));
+		for (let i = 0; i < 5; i++) { await vi.advanceTimersByTimeAsync(8_000); ws.binary(entry); }
+		expect(provider.status).not.toBe('error');
+		expect(Socket.instances).toHaveLength(1);
+	});
+	it('blames the server version only when it never answers at all', async () => {
+		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
+		await vi.advanceTimersByTimeAsync(0); Socket.instances[0].open();
+		await vi.advanceTimersByTimeAsync(12_001);
+		expect(provider.snapshot.problem).toBe('protocol');
+		const key = await deriveKey(secret);
+		const entry = await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(new Y.Doc())));
+		await vi.advanceTimersByTimeAsync(40_000);
+		const ws = Socket.instances.at(-1)!; ws.open(); ws.binary(entry);
+		await vi.advanceTimersByTimeAsync(12_001);
+		expect(provider.snapshot.problem).toBe('timeout');
 	});
 });

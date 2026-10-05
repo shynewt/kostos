@@ -13,6 +13,8 @@ export type LocalState = {
 	pendingChanges: number;
 	lastSyncedAt: number | null;
 	unverifiedSince: number | null;
+	/** Everything here came from a server whose history was incomplete, so this phone cannot vouch for it. */
+	partial?: boolean;
 };
 
 function committed(tx: IDBTransaction): Promise<void> {
@@ -79,7 +81,8 @@ export class RoomPersistence {
 			this.notify({
 				pendingChanges: saved?.pendingChanges ?? 0,
 				lastSyncedAt: saved?.lastSyncedAt ?? null,
-				unverifiedSince: saved?.unverifiedSince ?? Date.now()
+				unverifiedSince: saved?.unverifiedSince ?? Date.now(),
+				partial: saved?.partial ?? false
 			});
 			Y.transact(this.doc, () => {
 				for (const update of updates.result as Uint8Array[]) Y.applyUpdate(this.doc, update, LOCAL_LOAD);
@@ -160,6 +163,18 @@ export class RoomPersistence {
 			}
 		})().finally(() => { this.recovery = null; });
 		return this.recovery;
+	}
+
+	markPartial(): void {
+		if (this.state.partial || this.destroyed) return;
+		this.notify({ partial: true });
+		const metadata = { ...this.state };
+		this.enqueue(async () => {
+			const tx = this.db!.transaction('custom', 'readwrite');
+			const done = committed(tx);
+			tx.objectStore('custom').put(metadata, 'sync-state');
+			await done;
+		});
 	}
 
 	invalidate(): void {

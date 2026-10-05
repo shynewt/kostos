@@ -17,7 +17,7 @@ import {
 	type RoomHandle
 } from './doc';
 import { LOCAL_STATUS, type SyncStatus } from './status';
-import type { LocalState } from './persistence';
+import { REMOTE_ORIGIN, type LocalState } from './persistence';
 
 import type {
 	ActivityEvent,
@@ -29,6 +29,10 @@ import type {
 	Trip
 } from '$lib/types';
 
+/** Rooms whose first freshness check has ended, however it ended. Later reconnects keep
+ *  showing the data already on screen instead of bringing the loading placeholder back. */
+const checked = new WeakSet<RoomHandle>();
+
 export class RoomState {
 	handle: RoomHandle;
 	project = $state<Project | null>(null);
@@ -38,7 +42,8 @@ export class RoomState {
 	sync = $state<SyncStatus>(LOCAL_STATUS);
 	local = $state<LocalState | null>(null);
 	conflicts = $state<ReturnType<typeof readExpenseConflicts>>([]);
-	checking = $derived(this.sync.checking && ['loading', 'connecting', 'syncing'].includes(this.sync.phase));
+	private firstCheckDone = $state(false);
+	checking = $derived(!this.firstCheckDone && this.sync.checking && ['loading', 'connecting', 'syncing'].includes(this.sync.phase));
 
 	// Lookup maps + display helpers that every route ends up rebuilding. Keeping them on
 	// the room itself means each component just consumes them; no per-route boilerplate.
@@ -61,10 +66,27 @@ export class RoomState {
 		this.handle = handle;
 		this.sync = handle.syncProvider?.snapshot ?? LOCAL_STATUS;
 		this.local = handle.persistence?.state ?? null;
+		this.noteStatus(this.sync);
 		this.refresh();
 	}
 
+	private noteStatus(status: SyncStatus) {
+		if (!status.checking) checked.add(this.handle);
+		this.firstCheckDone = checked.has(this.handle);
+	}
+
+	private burst: ReturnType<typeof setTimeout> | null = null;
+
+	/** Re-reading every expense after each message of a long history replay is what made big
+	 *  groups slow to load, so remote bursts are folded into one read. Local edits stay instant. */
+	private onTransaction = (transaction: { origin: unknown }) => {
+		if (transaction.origin !== REMOTE_ORIGIN) { this.refresh(); return; }
+		if (this.burst) return;
+		this.burst = setTimeout(() => { this.burst = null; this.refresh(); }, 200);
+	};
+
 	private refresh = () => {
+		if (this.burst) { clearTimeout(this.burst); this.burst = null; }
 		this.project = readProject(this.handle);
 		this.members = readMembers(this.handle);
 		this.expenses = readExpenses(this.handle);
@@ -75,11 +97,12 @@ export class RoomState {
 	/** Attach Yjs observers + return a teardown function suitable for $effect cleanup. */
 	observe(): () => void {
 		this.refresh();
-		this.handle.doc.on('afterTransaction', this.refresh);
-		const offSync = this.handle.syncProvider?.onStatusChange((status) => { this.sync = status; });
+		this.handle.doc.on('afterTransaction', this.onTransaction);
+		const offSync = this.handle.syncProvider?.onStatusChange((status) => { this.sync = status; this.noteStatus(status); });
 		const offLocal = this.handle.persistence?.onChange((state) => { this.local = state; });
 		return () => {
-			this.handle.doc.off('afterTransaction', this.refresh);
+			this.handle.doc.off('afterTransaction', this.onTransaction);
+			if (this.burst) { clearTimeout(this.burst); this.burst = null; }
 			offSync?.();
 			offLocal?.();
 		};
