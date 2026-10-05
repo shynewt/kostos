@@ -11,10 +11,14 @@ import {
 	openRoom,
 	readActivity,
 	readExpenses,
+	readExpenseConflicts,
 	readMembers,
 	readProject,
 	type RoomHandle
 } from './doc';
+import { LOCAL_STATUS, type SyncStatus } from './status';
+import type { LocalState } from './persistence';
+
 import type {
 	ActivityEvent,
 	Category,
@@ -31,6 +35,10 @@ export class RoomState {
 	members = $state<Member[]>([]);
 	expenses = $state<Expense[]>([]);
 	activity = $state<ActivityEvent[]>([]);
+	sync = $state<SyncStatus>(LOCAL_STATUS);
+	local = $state<LocalState | null>(null);
+	conflicts = $state<ReturnType<typeof readExpenseConflicts>>([]);
+	checking = $derived(this.sync.checking && ['loading', 'connecting', 'syncing'].includes(this.sync.phase));
 
 	// Lookup maps + display helpers that every route ends up rebuilding. Keeping them on
 	// the room itself means each component just consumes them; no per-route boilerplate.
@@ -51,6 +59,8 @@ export class RoomState {
 
 	constructor(handle: RoomHandle) {
 		this.handle = handle;
+		this.sync = handle.syncProvider?.snapshot ?? LOCAL_STATUS;
+		this.local = handle.persistence?.state ?? null;
 		this.refresh();
 	}
 
@@ -59,23 +69,23 @@ export class RoomState {
 		this.members = readMembers(this.handle);
 		this.expenses = readExpenses(this.handle);
 		this.activity = readActivity(this.handle);
+		this.conflicts = readExpenseConflicts(this.handle);
 	};
 
 	/** Attach Yjs observers + return a teardown function suitable for $effect cleanup. */
 	observe(): () => void {
-		this.handle.project.observeDeep(this.refresh);
-		this.handle.members.observeDeep(this.refresh);
-		this.handle.expenses.observeDeep(this.refresh);
-		this.handle.activity.observeDeep(this.refresh);
+		this.refresh();
+		this.handle.doc.on('afterTransaction', this.refresh);
+		const offSync = this.handle.syncProvider?.onStatusChange((status) => { this.sync = status; });
+		const offLocal = this.handle.persistence?.onChange((state) => { this.local = state; });
 		return () => {
-			this.handle.project.unobserveDeep(this.refresh);
-			this.handle.members.unobserveDeep(this.refresh);
-			this.handle.expenses.unobserveDeep(this.refresh);
-			this.handle.activity.unobserveDeep(this.refresh);
+			this.handle.doc.off('afterTransaction', this.refresh);
+			offSync?.();
+			offLocal?.();
 		};
 	}
 }
 
-export function useRoom(roomId: string): RoomState {
-	return new RoomState(openRoom(roomId));
+export function useRoom(roomId: string, secret?: string): RoomState {
+	return new RoomState(openRoom(roomId, secret));
 }

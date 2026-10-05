@@ -1,5 +1,5 @@
 import * as Y from 'yjs';
-import { IndexeddbPersistence } from 'y-indexeddb';
+import { RoomPersistence } from './persistence';
 import { browser } from '$app/environment';
 import { findProject, getCurrentMember } from '$lib/storage';
 import {
@@ -36,11 +36,13 @@ export type RoomHandle = {
 	activity: Y.Array<Y.Map<unknown>>;
 	ready: Promise<void>;
 	syncProvider?: EncryptedSyncProvider;
+	persistence?: RoomPersistence;
 };
 
 type CacheEntry = {
 	handle: RoomHandle;
-	persistence?: IndexeddbPersistence;
+	persistence?: RoomPersistence;
+	secret?: string;
 };
 
 const cache = new Map<string, CacheEntry>();
@@ -48,13 +50,12 @@ const cache = new Map<string, CacheEntry>();
 export function openRoom(roomId: string, secret?: string): RoomHandle {
 	const cached = cache.get(roomId);
 	if (cached) {
-		// Attach sync lazily if the secret was unknown at first open
-		if (browser && !cached.handle.syncProvider) {
-			const effectiveSecret = secret ?? secretFromStorage(roomId);
-			if (effectiveSecret) {
-				cached.handle.syncProvider =
-					createSyncProvider(cached.handle.doc, syncUrl(), roomId, effectiveSecret) ?? undefined;
-			}
+		// A corrected invite must replace the provider using the previous key.
+		const effectiveSecret = secret ?? secretFromStorage(roomId);
+		if (browser && effectiveSecret && (!cached.handle.syncProvider || cached.secret !== effectiveSecret)) {
+			cached.handle.syncProvider?.destroy();
+			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), roomId, effectiveSecret, cached.persistence) ?? undefined;
+			cached.secret = effectiveSecret;
 		}
 		return cached.handle;
 	}
@@ -65,11 +66,11 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 	const expenses = doc.getArray<Y.Map<unknown>>('expenses');
 	const activity = doc.getArray<Y.Map<unknown>>('activity');
 
-	let persistence: IndexeddbPersistence | undefined;
+	let persistence: RoomPersistence | undefined;
 	let ready: Promise<void>;
 	if (browser) {
-		persistence = new IndexeddbPersistence(`kostos:${roomId}`, doc);
-		ready = persistence.whenSynced.then(() => undefined);
+		persistence = new RoomPersistence(`kostos:${roomId}`, doc);
+		ready = persistence.ready;
 	} else {
 		ready = Promise.resolve();
 	}
@@ -79,7 +80,7 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		const effectiveSecret = secret ?? secretFromStorage(roomId);
 		if (effectiveSecret) {
 			syncProvider =
-				createSyncProvider(doc, syncUrl(), roomId, effectiveSecret) ?? undefined;
+				createSyncProvider(doc, syncUrl(), roomId, effectiveSecret, persistence) ?? undefined;
 		}
 	}
 
@@ -91,9 +92,10 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		expenses,
 		activity,
 		ready,
-		syncProvider
+		syncProvider,
+		persistence
 	};
-	cache.set(roomId, { handle, persistence });
+	cache.set(roomId, { handle, persistence, secret: secret ?? secretFromStorage(roomId) });
 	return handle;
 }
 
@@ -429,8 +431,8 @@ export function updateTrip(
 export function assignExpensesToTrip(handle: RoomHandle, expenseIds: string[], tripId: string): void {
 	const ids = new Set(expenseIds);
 	handle.doc.transact(() => {
-		for (const entry of handle.expenses.toArray()) {
-			if (ids.has(entry.get('id') as string)) entry.set('tripId', tripId);
+		for (const expense of readExpenses(handle)) {
+			if (ids.has(expense.id)) writeExpenseVersion(handle, { ...expense, tripId });
 		}
 	});
 }
@@ -460,8 +462,77 @@ export function memberHistoryCount(handle: RoomHandle, memberId: string): number
 	return count;
 }
 
+export type ExpenseVersion = { id: string; expense: Expense; parents: string[]; at: number; by: string | null };
+
+function legacyVersion(entry: Y.Map<unknown>): ExpenseVersion {
+	const item = entry._item;
+	return {
+		id: `legacy:${item?.id.client}:${item?.id.clock}`,
+		expense: readExpenseEntry(entry), parents: [], at: entry.get('createdAt') as number, by: null
+	};
+}
+
+/** Retain all revision branches. One atomic expense snapshot wins deterministically;
+ * competing heads remain available for review, never counted as extra spending. */
+export function expenseVersions(handle: RoomHandle, id: string): ExpenseVersion[] {
+	return versionHeads(handle, id, handle.expenses.toArray().filter((entry) => entry.get('id') === id));
+}
+
+function versionHeads(handle: RoomHandle, id: string, entries: Y.Map<unknown>[]): ExpenseVersion[] {
+	const versions = new Map(handle.doc.getMap<ExpenseVersion>(`expense-revisions:${id}`));
+	for (const entry of entries) {
+		const key = `legacy:${entry._item?.id.client}:${entry._item?.id.clock}`;
+		if (!versions.has(key)) versions.set(key, legacyVersion(entry));
+	}
+	const parents = new Set([...versions.values()].flatMap((v) => v.parents));
+	return [...versions.values()].filter((v) => !parents.has(v.id)).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
+function groupedExpenses(handle: RoomHandle): Map<string, Y.Map<unknown>[]> {
+	const groups = new Map<string, Y.Map<unknown>[]>();
+	for (const entry of handle.expenses.toArray()) {
+		const id = entry.get('id') as string;
+		const group = groups.get(id);
+		if (group) group.push(entry); else groups.set(id, [entry]);
+	}
+	return groups;
+}
+
 export function readExpenses(handle: RoomHandle): Expense[] {
-	return handle.expenses.toArray().map(readExpenseEntry);
+	return [...groupedExpenses(handle)].flatMap(([id, entries]) => {
+		const heads = versionHeads(handle, id, entries);
+		return heads.length ? [structuredClone(heads[heads.length - 1].expense)] : [];
+	});
+}
+
+export function readExpenseConflicts(handle: RoomHandle): { id: string; versions: ExpenseVersion[] }[] {
+	return [...groupedExpenses(handle)].flatMap(([id, entries]) => {
+		const versions = versionHeads(handle, id, entries);
+		return versions.length > 1 ? [{ id, versions }] : [];
+	});
+}
+
+function writeExpenseVersion(handle: RoomHandle, expense: Expense, parents?: string[]): void {
+	const entries = handle.expenses.toArray().filter((entry) => entry.get('id') === expense.id);
+	const entry = entries[0];
+	if (!entry) return;
+	const heads = expenseVersions(handle, expense.id);
+	const revisions = handle.doc.getMap<ExpenseVersion>(`expense-revisions:${expense.id}`);
+	for (const head of heads) if (!revisions.has(head.id)) revisions.set(head.id, head);
+	const id = generateId();
+	revisions.set(id, { id, expense: JSON.parse(JSON.stringify(expense)), parents: parents ?? heads.map((v) => v.id), at: Date.now(), by: getCurrentMember(handle.roomId) });
+	// Mirror fields for pre-revision clients without deleting the stable record.
+	for (const key of [...entry.keys()]) if (!(key in expense)) entry.delete(key);
+	expenseMap(expense, entry);
+}
+
+export function resolveExpenseConflict(handle: RoomHandle, id: string, versionId: string): void {
+	const chosen = expenseVersions(handle, id).find((v) => v.id === versionId);
+	if (!chosen) return;
+	handle.doc.transact(() => {
+		updateExpense(handle, chosen.expense);
+		logActivity(handle, { kind: 'expense.resolve', expenseId: id, label: expenseLabel(handle, chosen.expense), amount: chosen.expense.amount, currency: chosen.expense.currency });
+	});
 }
 
 const ACTIVITY_CAP = 500;
@@ -525,6 +596,7 @@ function expenseLabel(handle: RoomHandle, expense: Expense): string {
 }
 
 export function addExpense(handle: RoomHandle, expense: Expense): void {
+	if (handle.expenses.toArray().some((e) => e.get('id') === expense.id)) return;
 	handle.doc.transact(() => {
 		handle.expenses.push([expenseMap(expense)]);
 		logActivity(
@@ -549,40 +621,24 @@ export function addExpense(handle: RoomHandle, expense: Expense): void {
 }
 
 export function removeExpense(handle: RoomHandle, id: string): void {
-	const items = handle.expenses;
-	for (let i = 0; i < items.length; i++) {
-		const entry = items.get(i);
-		if (entry.get('id') === id) {
-			const label = entry.get('isSettlement')
-				? (entry.get('description') as string | undefined) || 'settlement'
-				: expenseLabel(handle, readExpenseEntry(entry));
-			handle.doc.transact(() => {
-				items.delete(i, 1);
-				logActivity(handle, { kind: 'expense.remove', expenseId: id, label });
-			});
-			return;
+	const expense = readExpenses(handle).find((e) => e.id === id);
+	if (!expense) return;
+	handle.doc.transact(() => {
+		for (let i = handle.expenses.length - 1; i >= 0; i--) {
+			if (handle.expenses.get(i).get('id') === id) handle.expenses.delete(i, 1);
 		}
-	}
+		logActivity(handle, { kind: 'expense.remove', expenseId: id, label: expenseLabel(handle, expense) });
+	});
 }
 
-export function updateExpense(handle: RoomHandle, expense: Expense): void {
-	const items = handle.expenses;
-	for (let i = 0; i < items.length; i++) {
-		if (items.get(i).get('id') === expense.id) {
-			const prev = readExpenseEntry(items.get(i));
-			const changes = diffExpense(prev, expense);
-			const label = expenseLabel(handle, expense);
-			handle.doc.transact(() => {
-				items.delete(i, 1);
-				items.insert(i, [expenseMap(expense)]);
-				// one log entry per change keeps each line single and self-explanatory
-				for (const change of changes) {
-					logActivity(handle, { kind: 'expense.edit', expenseId: expense.id, label, change });
-				}
-			});
-			return;
-		}
-	}
+export function updateExpense(handle: RoomHandle, expense: Expense, parents?: string[]): void {
+	const prev = readExpenses(handle).find((e) => e.id === expense.id);
+	if (!prev) return;
+	const changes = diffExpense(prev, expense);
+	handle.doc.transact(() => {
+		writeExpenseVersion(handle, expense, parents);
+		for (const change of changes) logActivity(handle, { kind: 'expense.edit', expenseId: expense.id, label: expenseLabel(handle, expense), change });
+	});
 }
 
 function readExpenseEntry(entry: Y.Map<unknown>): Expense {
@@ -624,8 +680,7 @@ function readExpenseEntry(entry: Y.Map<unknown>): Expense {
 	};
 }
 
-function expenseMap(e: Expense): Y.Map<unknown> {
-	const ym = new Y.Map<unknown>();
+function expenseMap(e: Expense, ym = new Y.Map<unknown>()): Y.Map<unknown> {
 	ym.set('id', e.id);
 	const ypayments = new Y.Array<Y.Map<unknown>>();
 	for (const p of e.payments) {

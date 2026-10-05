@@ -3,6 +3,7 @@ export type DefaultSplit = 'even' | 'shares' | 'amount';
 export type ActivityKind =
 	| 'expense.add'
 	| 'expense.edit'
+	| 'expense.resolve'
 	| 'expense.remove'
 	| 'settle.add'
 	| 'member.add'

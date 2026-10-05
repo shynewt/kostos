@@ -37,6 +37,8 @@ export type ProjectRef = {
 	net?: number;
 	netCurrency?: string;
 	netSymbol?: string;
+	/** Last server-confirmed sync, distinct from the last time the group was opened. */
+	lastSyncedAt?: number | null;
 };
 
 function read(key: string): string | null {
@@ -132,8 +134,11 @@ export function findProject(roomId: string): ProjectRef | null {
 	return listProjects().find((p) => p.roomId === roomId) ?? null;
 }
 
-function writeProjects(projects: ProjectRef[]): void {
-	write(KEY.projects, JSON.stringify(projects));
+function writeProjects(projects: ProjectRef[], critical = false): void {
+	if (!critical) { write(KEY.projects, JSON.stringify(projects)); return; }
+	if (!browser) return;
+	try { localStorage.setItem(KEY.projects, JSON.stringify(projects)); }
+	catch { throw new Error('Could not save the group invite on this device'); }
 }
 
 export function addProject(ref: ProjectRef): void {
@@ -142,7 +147,7 @@ export function addProject(ref: ProjectRef): void {
 		...ref,
 		lastActiveAt: ref.lastActiveAt ?? Date.now()
 	};
-	writeProjects([updated, ...existing]);
+	writeProjects([updated, ...existing], true);
 }
 
 export function removeProject(roomId: string): void {
@@ -153,7 +158,7 @@ export function removeProject(roomId: string): void {
 
 export function updateProjectMetadata(
 	roomId: string,
-	patch: Partial<Pick<ProjectRef, 'name' | 'emoji' | 'color' | 'lastActiveAt' | 'net' | 'netCurrency' | 'netSymbol'>>
+	patch: Partial<Pick<ProjectRef, 'name' | 'emoji' | 'color' | 'lastActiveAt' | 'net' | 'netCurrency' | 'netSymbol' | 'lastSyncedAt'>>
 ): void {
 	const projects = parseProjectsRaw();
 	if (!projects) return;
