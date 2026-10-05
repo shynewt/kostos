@@ -207,16 +207,14 @@
 							</span>
 							<span class="col project-text">
 								<span class="project-name">{p.name}</span>
-								<span class="dim mono project-meta">
-									{p.roomId}{#if p.lastActiveAt}<span class="meta-sep">·</span>{relativeDay(
-											p.lastActiveAt
-										)}{/if}
+								<span class="dim project-meta">
+									{p.lastSyncedAt ? `Synced ${relativeTime(p.lastSyncedAt, Date.now())}` : 'Not synced yet'}{#if p.lastActiveAt}<span class="meta-sep">·</span>{relativeDay(p.lastActiveAt)}{/if}
 								</span>
 							</span>
 							{#if p.net !== undefined && p.netSymbol}
 								<span class="col project-balance">
 									{#if p.net === 0}
-										<span class="dim mono pb-label">settled up</span>
+										<span class="dim pb-label">settled up</span>
 									{:else}
 										<span
 											class="num pb-amount"
@@ -225,9 +223,8 @@
 										>
 											{formatAmount(Math.abs(p.net), p.netSymbol, p.netCurrency)}
 										</span>
-										<span class="dim mono pb-label">{p.net > 0 ? 'owed to you' : 'you owe'}</span>
+										<span class="dim pb-label">{p.net > 0 ? 'owed to you' : 'you owe'}</span>
 									{/if}
-									<span class="dim mono pb-label">Saved · {p.lastSyncedAt ? relativeTime(p.lastSyncedAt, Date.now()) : 'not synced yet'}</span>
 								</span>
 							{/if}
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="project-chevron">
@@ -538,31 +535,31 @@
 	}
 
 	.project-meta {
-		font-size: 11px;
-		display: inline-flex;
-		gap: 6px;
-		align-items: center;
+		font-size: 12px;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.meta-sep {
+		margin: 0 6px;
 		opacity: 0.5;
 	}
 
 	.project-balance {
 		align-items: flex-end;
-		gap: 1px;
+		gap: 2px;
 		flex-shrink: 0;
 		text-align: right;
 	}
 
 	.pb-amount {
-		font-size: 13px;
+		font-size: 14px;
 		font-weight: 600;
 	}
 
 	.pb-label {
-		font-size: 10px;
-		letter-spacing: 0.02em;
+		font-size: 12px;
 	}
 
 	.project-chevron {
