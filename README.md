@@ -16,7 +16,8 @@ Kostos is a small web app for splitting bills with friends, housemates, or trip 
 - **No accounts.** Groups are identified by a secret token that doubles as the invite link. Share the token, anyone with it joins. The server never sees the key.
 - **End-to-end encrypted sync.** Every update is AES-GCM encrypted in the browser before reaching the sync relay. The relay stores opaque ciphertext.
 - **Offline-first PWA.** Built on Y.js + IndexedDB. Add expenses on a plane; they sync the moment you come back online.
-- **Conflict-free merging.** Two people editing the same expense from different devices? CRDTs reconcile without losing either edit.
+- **Concurrent expense edits.** Each expense is counted once. If devices edit it independently, Kostos preserves both versions and asks you to review which one to use.
+- **Clear sync status.** Balances wait for the initial online check. A compact status strip shows when expenses are current, saved only on this device, offline, or unable to sync; tap it for the last successful sync, when confirmation stopped, and the failure reason.
 - **Three split modes.** Evenly, by weighted shares, or by precise per-person amounts. Math expressions like `(120+5)/4` work inside any amount input, and a floating row of `+ − × ÷ ( )` keys docks above the on-screen keyboard so the operators aren't trapped behind a digit-only layout.
 - **Multi-payer expenses.** When two people split the bill at dinner, both can be recorded as payers with the actual amounts each fronted.
 - **Multi-currency.** Log an expense in any of 153 currencies, searchable by code or name with the most common ones on top. Kostos freezes the exchange rate onto it at creation, so the figure never drifts later, and converts everything back to the group's base currency for balances and stats. The day's rate is fetched by default (turn it off in Settings to type rates by hand) and cached per device, so adding a foreign expense works offline. Zero-decimal currencies like JPY are handled correctly.
@@ -82,7 +83,7 @@ The SQLite-backed DO works on the Workers Free plan; no Workers Paid required fo
 
 ```sh
 docker build -t kostos .
-docker run -p 8080:8080 kostos
+docker run -p 8080:8080 -v kostos-data:/data kostos
 ```
 
 Or without Docker:
@@ -93,13 +94,13 @@ npm run build
 node scripts/serve.js
 ```
 
-`scripts/serve.js` serves the static bundle and handles `/sync/<roomId>` WebSocket upgrades on the same port (default 8080). History is in-memory, capped at 1000 messages per room. For long-running deployments, point a reverse proxy at it and pin a persistent volume if you swap the relay for a SQLite-backed one.
+`scripts/serve.js` serves the static bundle and handles `/sync/<roomId>` WebSocket upgrades on the same port (default 8080). Encrypted history is appended to disk and flushed before a write is acknowledged. Set `KOSTOS_DATA_DIR` to a persistent directory (default `.kostos-data/serve`; Docker uses `/data`). Keep that directory or Docker volume across restarts and upgrades. A reverse proxy can provide HTTPS.
 
 ## Why v2
 
 Kostos v1 was a Next.js + SQLite app where the server held every group's data. It worked, but it tied users to whatever instance hosted it and made the privacy story awkward: the operator could read every project. v2 rewrites the foundation:
 
-- **No server-side database.** Sync happens through an encrypted relay that holds ciphertext only. Your group state lives on the devices that hold the token.
+- **No plaintext on the server.** The relay retains encrypted updates for offline devices to catch up. Only devices with the group token can decrypt them.
 - **PWA over webapp.** Installable on iOS and Android home screens, runs without the browser chrome, fully offline-capable.
 - **Live multi-device.** v1 needed manual refreshes between devices. v2 syncs in real time over WebSockets with Y.js CRDTs.
 - **Token-based, not session-based.** v1 used localStorage to remember "who you are" per browser. v2 makes the token the identity: same token on a new device = same group, instantly.
@@ -111,10 +112,11 @@ Kostos v1 was a Next.js + SQLite app where the server held every group's data. I
 
 ```sh
 npm install
+npm run sync # run in a separate terminal
 npm run dev
 ```
 
-Opens `http://localhost:5173/`. The dev server proxies `/sync/*` to `ws://localhost:1234`, where the legacy `npm run sync` script (a tiny `ws` relay) runs. Skip it for offline-only development; IndexedDB persistence keeps your group state local.
+Opens `http://localhost:5173/`. The dev server proxies `/sync/*` to `ws://localhost:1234`, where `npm run sync` runs the same durable relay as the self-host server. Its encrypted history lives in `.kostos-data/dev`. Skip it for offline-only development; IndexedDB persistence keeps your group state local.
 
 Scripts:
 
@@ -124,7 +126,8 @@ Scripts:
 | `npm run build` | Static build into `build/` (adapter-static, SPA fallback on `200.html`). |
 | `npm run preview` | Serve the built bundle locally. |
 | `npm run check` | Type-check via svelte-check. |
-| `npm test` | Vitest unit tests (balance engine, money formatting, v1 importer, math evaluator). |
+| `npm test` | Vitest unit and relay tests, including encrypted sync and Durable Object migration. |
+| `npm run test:e2e` | Browser tests against the production build; captures sync screenshots in `docs/screenshots/sync/`. Run `npm run build` first. |
 | `npm run sync` | Local Node `ws` relay on port 1234 for dev sync. |
 | `npm run cf:dev` | `wrangler dev` with local Durable Object emulation. |
 | `npm run cf:deploy` | Build + deploy to Cloudflare Workers. |
@@ -133,10 +136,20 @@ Scripts:
 ## Architecture
 
 - **SvelteKit 5** with runes (`$state`, `$derived`, `$effect`). Strict TypeScript.
-- **Y.js + y-indexeddb** for local-first CRDT state. Project data is a single `Y.Doc` per group.
+- **Y.js + IndexedDB** for local-first CRDT state. Project data is a single `Y.Doc` per group. Transaction-aware persistence uses the existing y-indexeddb database and stores, so installed apps keep their data.
 - **AES-GCM** key derived from the secret half of the project token, never sent to the server.
 - **Cloudflare Durable Object** for the sync relay in production, with `acceptWebSocket()` hibernation so idle rooms cost nothing.
 - **Self-host Node server** is a small `http` + `ws` relay that speaks the same wire protocol as the Worker.
+
+## Sync guarantees and upgrades
+
+A socket opening does not mean expenses are current. The client waits for encrypted replay, uploads its saved document, receives acknowledgements for committed writes, and checks an ordered server barrier before showing “Up to date”. This means the device matches the relay at the displayed time; another member's offline changes cannot appear until that member reconnects. Foregrounding the app reconnects and checks again. A saved document is uploaded on every connection, so sending and recovery do not depend on another member being online.
+
+Upgrade the relay with the app: the new client requires protocol 3 to confirm sync. Existing clients' encrypted binary updates are still accepted. Cloudflare migrates the previous KV history into SQLite without deleting the old value. If the old history reached its 1,000-message cap, Kostos reports incomplete history rather than claiming the room is current. Already-discarded data cannot be recovered from the server: keep existing devices, export a full backup from a device containing the expenses, and restore it into a new group if necessary. Restarting the old in-memory Node relay also cannot recover its former history; existing devices re-upload what they have.
+
+Both relays retain the full encrypted log. They do not prune history until a safe checkpoint protocol exists. Monitor disk/storage use for long-running deployments. Messages above 1 MiB fail explicitly and do not receive a successful acknowledgement.
+
+To run the mobile sync scenarios against local Cloudflare instead of Node, build the app, run `npm run cf:dev`, and set `KOSTOS_E2E_BASE_URL` to its URL when running `npm run test:e2e -- e2e/sync.e2e.ts`. Playwright must have Chromium installed; `PLAYWRIGHT_CHROMIUM_PATH` can select an existing executable.
 
 ## License
 

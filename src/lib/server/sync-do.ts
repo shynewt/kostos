@@ -1,101 +1,116 @@
 /// <reference types="@cloudflare/workers-types" />
-/* Kostos sync relay as a Durable Object.
- *
- * One DO instance per roomId. Hibernating WebSockets fan messages out to every
- * peer in the same room. A capped ciphertext history is replayed to new joiners
- * so they can rebuild state without needing a live peer.
- *
- * Payloads are AES-GCM ciphertext from the client; the relay never holds the key.
+/* One encrypted append-only log per group. The server never sees document
+ * plaintext. SQL rows avoid a growing single KV value and are never trimmed.
+ * Acknowledgements are sent only after a transactional write; replay and
+ * barriers are serialized with writes, including across WebSocket hibernation.
  */
-
 import { DurableObject } from 'cloudflare:workers';
+import { unwrapPacket, payloadHash } from '../sync/relay-protocol.js';
 
-const HISTORY_CAP = 1000;
-const HISTORY_KEY = 'history';
-
-type HistoryEntry = ArrayBuffer;
+type Entry = { seq: number; hash: string; payload: ArrayBuffer };
 
 export class SyncRoom extends DurableObject {
-	private history: HistoryEntry[] = [];
-	private hydrated = false;
+	private tail: Promise<unknown> = Promise.resolve();
+	private initialized: Promise<void>;
 
 	constructor(ctx: DurableObjectState, env: unknown) {
 		super(ctx, env as never);
-		// Runtime answers client "ping" with "pong" without waking the DO, so a
-		// hibernated room still keeps the heartbeat that lets clients detect a dead
-		// socket. The webSocketMessage handler is never invoked for these.
-		this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+		ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+		this.initialized = ctx.blockConcurrencyWhile(async () => {
+			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, hash TEXT UNIQUE NOT NULL, payload BLOB NOT NULL)');
+			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)');
+			const migrated = ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'migrated'").toArray();
+			if (migrated.length) return;
+			// Keep the legacy KV entry untouched for recovery. A full capped log
+			// cannot prove it includes all older data, so do not claim freshness.
+			const old = await ctx.storage.get<ArrayBuffer[]>('history') ?? [];
+			ctx.storage.transactionSync(() => {
+				for (let i = 0; i < old.length; i++) {
+					ctx.storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', `legacy:${i}`, old[i]);
+				}
+				ctx.storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', ?), ('migrated', 1)", old.length < 1000 ? 1 : 0);
+			});
+		});
 	}
 
+	private serialized<T>(work: () => Promise<T>): Promise<T> {
+		const result = this.tail.then(work);
+		this.tail = result.catch(() => {});
+		return result;
+	}
+	private revision(): number {
+		return this.ctx.storage.sql.exec<{ revision: number }>('SELECT COALESCE(MAX(seq), 0) AS revision FROM messages').one().revision;
+	}
+	private control(ws: WebSocket, message: object): void { ws.send(JSON.stringify(message)); }
+
 	async fetch(request: Request): Promise<Response> {
-		if (request.headers.get('Upgrade') !== 'websocket') {
-			return new Response('Expected WebSocket', { status: 426 });
-		}
-
-		await this.ensureHydrated();
-
-		const pair = new WebSocketPair();
-		const [client, server] = Object.values(pair);
-
-		this.ctx.acceptWebSocket(server);
-
-		for (const blob of this.history) {
+		if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
+		await this.initialized;
+		return this.serialized(async () => {
+			const pair = new WebSocketPair();
+			const [client, server] = Object.values(pair);
+			this.ctx.acceptWebSocket(server);
 			try {
-				server.send(blob);
+				for (const entry of this.ctx.storage.sql.exec<Entry>('SELECT seq, hash, payload FROM messages ORDER BY seq')) server.send(entry.payload);
+				const complete = this.ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'complete'").one().value === 1;
+				this.control(server, { type: 'ready', protocol: 3, revision: this.revision(), durable: true, complete });
 			} catch {
-				// peer closed before we finished replay; webSocketClose will handle it
-				break;
+				server.close(1011, 'Could not replay sync history');
 			}
-		}
-
-		return new Response(null, { status: 101, webSocket: client });
+			return new Response(null, { status: 101, webSocket: client });
+		});
 	}
 
 	async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
-		if (typeof message === 'string') return; // we only relay binary updates
-
-		await this.ensureHydrated();
-
-		// fan out first so a storage hiccup can never block live delivery
-		for (const peer of this.ctx.getWebSockets()) {
-			if (peer === ws) continue;
+		await this.initialized;
+		await this.serialized(async () => {
 			try {
-				peer.send(message);
+				if (typeof message === 'string') {
+					let control;
+					try { control = JSON.parse(message); } catch { return; }
+					if (!control || typeof control !== 'object') return;
+					if (control.type === 'barrier' && typeof control.id === 'string' && control.id.length <= 80) {
+						this.control(ws, { type: 'caught-up', id: control.id, revision: this.revision() });
+					}
+					return;
+				}
+				let decoded;
+				try { decoded = unwrapPacket(new Uint8Array(message)); }
+				catch { this.control(ws, { type: 'error', reason: 'size' }); ws.close(1009, 'Invalid message size'); return; }
+				const { payload, durable } = decoded;
+				if (!durable) {
+					this.broadcast(ws, payload);
+					return;
+				}
+				const hash = await payloadHash(payload);
+				let revision = this.ctx.storage.sql.exec<{ seq: number }>('SELECT seq FROM messages WHERE hash = ?', hash).toArray()[0]?.seq;
+				if (revision === undefined) {
+					revision = this.ctx.storage.transactionSync(() => {
+						this.ctx.storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', hash, payload);
+						return this.revision();
+					});
+					this.broadcast(ws, payload, revision);
+				}
+				this.control(ws, { type: 'ack', hash, revision });
 			} catch {
-				// best-effort fanout; failing peers will reconnect
+				try { this.control(ws, { type: 'error', reason: 'storage' }); ws.close(1011, 'Could not persist sync data'); } catch { /* Closed peer. */ }
 			}
-		}
-
-		this.history.push(message);
-		while (this.history.length > HISTORY_CAP) this.history.shift();
-		try {
-			await this.ctx.storage.put(HISTORY_KEY, this.history);
-		} catch {
-			// history persistence is best-effort; replay just rebuilds from peers
-		}
+		});
 	}
 
-	async webSocketClose(
-		ws: WebSocket,
-		code: number,
-		reason: string,
-		_wasClean: boolean
-	): Promise<void> {
-		try {
-			ws.close(code, reason);
-		} catch {
-			// already closed
+	private broadcast(sender: WebSocket, payload: Uint8Array, revision?: number): void {
+		for (const peer of this.ctx.getWebSockets()) {
+			if (peer === sender) continue;
+			try {
+				peer.send(payload);
+				if (revision !== undefined) this.control(peer, { type: 'revision', revision });
+			} catch { try { peer.close(1011, 'Reconnect to receive updates'); } catch { /* Closed peer. */ } }
 		}
 	}
-
-	async webSocketError(_ws: WebSocket, _error: unknown): Promise<void> {
-		// no-op; close handler runs after
+	async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
+		try { ws.close(code, reason); } catch { /* Already closed. */ }
 	}
-
-	private async ensureHydrated(): Promise<void> {
-		if (this.hydrated) return;
-		const stored = await this.ctx.storage.get<HistoryEntry[]>(HISTORY_KEY);
-		if (stored && Array.isArray(stored)) this.history = stored;
-		this.hydrated = true;
+	async webSocketError(ws: WebSocket): Promise<void> {
+		try { ws.close(1011, 'Reconnect to sync'); } catch { /* Already closed. */ }
 	}
 }

@@ -13,10 +13,12 @@ import { createServer } from 'node:http';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { createRelay } from './relay.js';
+import { MAX_MESSAGE_BYTES } from '../src/lib/sync/relay-protocol.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? '0.0.0.0';
-const HISTORY_CAP = Number(process.env.HISTORY_CAP ?? 1000);
+const attachRelay = createRelay(resolve(process.env.KOSTOS_DATA_DIR ?? '.kostos-data/serve'));
 const BUILD_DIR = resolve(fileURLToPath(new URL('../build', import.meta.url)));
 const FALLBACK = join(BUILD_DIR, '200.html');
 
@@ -39,17 +41,6 @@ const MIME = {
 	'.webmanifest': 'application/manifest+json',
 	'.map': 'application/json'
 };
-
-const rooms = new Map(); // roomId -> { sockets: Set<WebSocket>, history: Buffer[] }
-
-function getRoom(id) {
-	let room = rooms.get(id);
-	if (!room) {
-		room = { sockets: new Set(), history: [] };
-		rooms.set(id, room);
-	}
-	return room;
-}
 
 // malformed escapes like /%ZZ throw URIError; callers treat null as a bad request
 function safeDecode(value) {
@@ -121,7 +112,7 @@ const server = createServer((req, res) => {
 	serveStatic(req, res);
 });
 
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
 
 server.on('upgrade', (request, socket, head) => {
 	// an unhandled 'error' (bad frame, oversized payload) would take the whole process down
@@ -145,33 +136,7 @@ server.on('upgrade', (request, socket, head) => {
 		return;
 	}
 	wss.handleUpgrade(request, socket, head, (ws) => {
-		const room = getRoom(roomId);
-		room.sockets.add(ws);
-		ws.on('error', () => {
-			room.sockets.delete(ws);
-			ws.terminate();
-		});
-
-		for (const blob of room.history) {
-			if (ws.readyState === ws.OPEN) ws.send(blob);
-		}
-
-		ws.on('message', (data, isBinary) => {
-			if (!isBinary) {
-				// heartbeat, same contract as the dev relay and the Cloudflare auto-response
-				if (data.toString() === 'ping' && ws.readyState === ws.OPEN) ws.send('pong');
-				return;
-			}
-			const buf = data instanceof Buffer ? data : Buffer.from(data);
-			room.history.push(buf);
-			while (room.history.length > HISTORY_CAP) room.history.shift();
-			for (const peer of room.sockets) {
-				if (peer === ws) continue;
-				if (peer.readyState === peer.OPEN) peer.send(buf);
-			}
-		});
-
-		ws.on('close', () => room.sockets.delete(ws));
+		attachRelay(ws, roomId);
 	});
 });
 

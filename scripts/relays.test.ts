@@ -84,6 +84,7 @@ function pingPong(port: number): Promise<string> {
 		}, STEP_TIMEOUT_MS);
 		ws.on('open', () => ws.send('ping'));
 		ws.on('message', (data) => {
+			if (data.toString() !== 'pong') return;
 			clearTimeout(timer);
 			resolve(data.toString());
 			ws.close();
