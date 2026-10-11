@@ -46,6 +46,11 @@ Durable Object (`src/lib/server/sync-do.ts`):
 
 The new Worker has its own Durable Object namespace, so no legacy rows exist and the schema starts clean.
 
+Node relays (`scripts/relay.js`, `serve.js`, `sync-server.js`, used for self-hosting, dev and e2e):
+- Same rules, shared through `src/lib/sync/room-access.js`: strict 64-hex room ID, proof required in `Sec-WebSocket-Protocol`.
+- `relay.js` stores `sha256(proof)` in `<room hash>.auth` next to the room's log on the first connection and closes any socket that presents a different proof with code 1008.
+- `serve.js` drops upgrades with a malformed room ID or no proof; `sync-server.js` closes such sockets with 1008.
+
 ## Client
 
 - `src/lib/token.ts`: `generateSecret` makes 16 bytes. `parseToken` accepts the share link or a bare secret and returns the secret only. Room ID generation is removed.
