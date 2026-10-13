@@ -153,4 +153,4 @@ To run the mobile sync scenarios against local Cloudflare instead of Node, build
 
 ## License
 
-GPL-3.0, same as v1.
+AGPL-3.0-only. See [LICENSE](LICENSE). Anyone who runs a modified version as a network service must make their source available to its users.

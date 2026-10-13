@@ -2,6 +2,7 @@
 	"name": "kostos-v2",
 	"private": true,
 	"version": "2.2.1",
+	"license": "AGPL-3.0-only",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
