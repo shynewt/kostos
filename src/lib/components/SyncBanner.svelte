@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import { slide } from 'svelte/transition';
+	import { fly, slide } from 'svelte/transition';
 	import { describeSync } from '$lib/sync/describe';
 	import type { RoomState } from '$lib/sync/useRoom.svelte';
 	import SyncIcon from './SyncIcon.svelte';
@@ -40,7 +40,7 @@
 
 {#if room}
 	{#if showUpdating && !(visible && message)}
-		<div class="banner" data-kind="busy" role="status" transition:slide={motion}>
+		<div class="banner" data-kind="busy" role="status" transition:fly={{ ...motion, y: -12 }}>
 			<span class="icon busy"><SyncIcon tone="busy" /></span>
 			<span class="message">Getting the latest changes…</span>
 		</div>
@@ -71,7 +71,14 @@
 	}
 	.icon { width: 18px; height: 18px; padding: 4px; box-sizing: border-box; border-radius: 50%; flex-shrink: 0; background: var(--warn); color: #1a1100; }
 	.message { flex: 1; min-width: 0; }
-	.banner[data-kind='busy'] { padding-block: 8px; background: color-mix(in oklab, var(--ink) 6%, transparent); color: var(--ink-2); font-size: 12.5px; }
+	/* floats over the page like a toast so showing and hiding never shifts content */
+	.banner[data-kind='busy'] {
+		position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); left: 0; right: 0; z-index: 50;
+		width: max-content; max-width: calc(100% - 44px); margin: 0 auto; pointer-events: none;
+		box-shadow: 0 4px 16px rgb(0 0 0 / 0.18); backdrop-filter: blur(10px);
+		background: color-mix(in oklab, var(--bg, Canvas) 88%, var(--ink) 12%);
+		padding-block: 8px; color: var(--ink-2); font-size: 12.5px;
+	}
 	.icon.busy { width: 14px; height: 14px; padding: 0; margin: 0 2px; background: none; color: var(--accent); }
 	.action {
 		flex-shrink: 0; border: 0; background: transparent; color: var(--ink); font: inherit; font-weight: 600;
