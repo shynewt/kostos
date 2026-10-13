@@ -12,6 +12,7 @@
 	import TopExpensesCard from '$lib/components/TopExpensesCard.svelte';
 	import TripSheet from '$lib/components/TripSheet.svelte';
 	import TripStrip from '$lib/components/TripStrip.svelte';
+	import { expenseShares } from '$lib/balance';
 	import { exchangeFee, expenseInBase } from '$lib/currency-convert';
 	import { formatAmount } from '$lib/money';
 	import { getCurrentMember } from '$lib/storage';
@@ -119,7 +120,22 @@
 		}
 		return count > 0 ? { fee, count, percent: (fee / atMarket) * 100 } : null;
 	});
-	const perPerson = $derived(members.length > 0 ? Math.round(totalSpent / members.length) : 0);
+	// what each member actually consumed, honouring solo and uneven splits; one pass over the period
+	const shareByMember = $derived.by(() => {
+		const totals = new Map<string, number>();
+		for (const e of periodBase) {
+			for (const [memberId, cents] of expenseShares(e)) {
+				totals.set(memberId, (totals.get(memberId) ?? 0) + cents);
+			}
+		}
+		return totals;
+	});
+	const yourShare = $derived(
+		currentMemberId && membersById.has(currentMemberId) ? (shareByMember.get(currentMemberId) ?? 0) : null
+	);
+	const perPerson = $derived(
+		yourShare ?? (members.length > 0 ? Math.round(totalSpent / members.length) : 0)
+	);
 	const expenseCount = $derived(periodExpenses.length);
 	const avgExpense = $derived(expenseCount > 0 ? Math.round(totalSpent / expenseCount) : 0);
 	const daysWithActivity = $derived(
@@ -323,9 +339,9 @@
 					<div class="stat-sub">{periodLabel(period)}</div>
 				</div>
 				<div class="stat hero-tile">
-					<div class="stat-label">Per person</div>
+					<div class="stat-label">{yourShare === null ? 'Per person' : 'Your share'}</div>
 					<div class="stat-value mono">{formatAmount(perPerson, currencySymbol, currency)}</div>
-					<div class="stat-sub">across {members.length} {members.length === 1 ? 'member' : 'members'}</div>
+					<div class="stat-sub">{yourShare === null ? `across ${members.length} ${members.length === 1 ? 'member' : 'members'}` : 'of what was spent for you'}</div>
 				</div>
 			</div>
 
