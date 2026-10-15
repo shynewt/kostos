@@ -140,6 +140,22 @@ server.on('upgrade', (request, socket, head) => {
 	});
 });
 
+// Docker sends SIGTERM and kills after 10s; as PID 1 node ignores it without a handler.
+// Close clients, let accepted writes finish their fsync, then exit.
+let shuttingDown = false;
+function shutdown(signal) {
+	if (shuttingDown) process.exit(1);
+	shuttingDown = true;
+	console.log(`[kostos] ${signal} received, shutting down`);
+	setTimeout(() => process.exit(1), 8000).unref();
+	server.close();
+	server.closeIdleConnections();
+	for (const client of wss.clients) client.close(1001, 'Server restarting');
+	attachRelay.drain().then(() => process.exit(0));
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
 server.listen(PORT, HOST, () => {
 	console.log(`[kostos] static build: ${BUILD_DIR}`);
 	console.log(`[kostos] listening on http://${HOST}:${PORT}`);

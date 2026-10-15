@@ -39,6 +39,23 @@ function packet(seed: number, durable = true) {
 }
 
 describe('durable encrypted relay', () => {
+	it('drain waits for queued writes so a shutdown cannot cut one off', async () => {
+		directory = await mkdtemp(join(tmpdir(), 'kostos-relay-'));
+		server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+		const attach = createRelay(directory);
+		let received = 0;
+		server.on('connection', (ws) => { attach(ws, 'ROOM'); ws.on('message', (_data, binary) => { if (binary) received++; }); });
+		await new Promise<void>((resolve) => server.once('listening', resolve));
+		const sender = await connect(`ws://127.0.0.1:${(server.address() as { port: number }).port}`);
+		await until(() => sender.controls.some((m) => m.type === 'ready'));
+		for (let i = 0; i < 200; i++) sender.ws.send(packet(i));
+		await until(() => received === 200);
+		await attach.drain();
+		await stop();
+		const restarted = await start(directory); const receiver = await connect(restarted);
+		await until(() => receiver.controls.some((m) => m.type === 'ready'));
+		expect(receiver.binary).toHaveLength(200);
+	}, 30_000);
 	it('replays all 1005 updates after a restart, without a live sender', async () => {
 		const url = await start(); const sender = await connect(url);
 		await until(() => sender.controls.some((m) => m.type === 'ready'));

@@ -60,7 +60,7 @@ export function createRelay(directory) {
 		});
 	}
 	/** @param {import('ws').WebSocket} ws @param {string} id */
-	return function attach(ws, id) {
+	function attach(ws, id) {
 		let room = rooms.get(id);
 		if (!room) { room = makeRoom(id); rooms.set(id, room); }
 		const activeRoom = room;
@@ -121,5 +121,8 @@ export function createRelay(directory) {
 				control(ws, { type: 'ack', hash, revision });
 			});
 		});
-	};
+	}
+	// resolves once every room has finished the writes it already accepted
+	attach.drain = () => Promise.all([...rooms.values()].map((room) => room.tail));
+	return attach;
 }
