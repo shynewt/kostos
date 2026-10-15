@@ -147,6 +147,7 @@ export function readProject(handle: RoomHandle): Project | null {
 		currency: p.get('currency') as string,
 		currencySymbol: p.get('currencySymbol') as string,
 		defaultSplit: p.get('defaultSplit') as Project['defaultSplit'],
+		splitDefault: p.get('splitDefault') as Project['splitDefault'],
 		// default on for projects created before the flag existed
 		autoFetchRates: (p.get('autoFetchRates') as boolean | undefined) ?? true,
 		paymentMethodsEnabled: (p.get('paymentMethodsEnabled') as boolean | undefined) ?? true,
@@ -163,6 +164,7 @@ export function readMembers(handle: RoomHandle): Member[] {
 		name: m.get('name') as string,
 		color: (m.get('color') as string | undefined) || undefined,
 		emoji: (m.get('emoji') as string | undefined) || undefined,
+		splitWeight: m.get('splitWeight') as number | undefined,
 		createdAt: m.get('createdAt') as number
 	}));
 }
@@ -178,6 +180,7 @@ export function initProject(handle: RoomHandle, project: Project, members: Membe
 		handle.project.set('currency', project.currency);
 		handle.project.set('currencySymbol', project.currencySymbol);
 		handle.project.set('defaultSplit', project.defaultSplit);
+		if (project.splitDefault) handle.project.set('splitDefault', project.splitDefault);
 		if (project.autoFetchRates !== undefined) {
 			handle.project.set('autoFetchRates', project.autoFetchRates);
 		}
@@ -282,6 +285,7 @@ export function updateMember(handle: RoomHandle, id: string, updates: Partial<Om
 			if (updates.color !== undefined) entry.set('color', updates.color);
 			// empty string clears the emoji back to the name-initial glyph
 			if (updates.emoji !== undefined) entry.set('emoji', updates.emoji);
+			if (updates.splitWeight !== undefined) entry.set('splitWeight', updates.splitWeight);
 			if (updates.name !== undefined && updates.name !== prevName) {
 				logActivity(handle, {
 					kind: 'member.rename',
@@ -321,6 +325,7 @@ export function updateProject(
 			| 'currency'
 			| 'currencySymbol'
 			| 'defaultSplit'
+			| 'splitDefault'
 			| 'autoFetchRates'
 			| 'paymentMethodsEnabled'
 		>
@@ -724,6 +729,7 @@ function memberMap(m: Member): Y.Map<unknown> {
 	ym.set('name', m.name);
 	if (m.color) ym.set('color', m.color);
 	if (m.emoji) ym.set('emoji', m.emoji);
+	if (m.splitWeight !== undefined) ym.set('splitWeight', m.splitWeight);
 	ym.set('createdAt', m.createdAt);
 	return ym;
 }

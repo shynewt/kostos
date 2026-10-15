@@ -6,6 +6,7 @@ import type {
 	PaymentMethodItem,
 	Project,
 	ProjectColor,
+	SplitDefault,
 	SplitMode,
 	Trip
 } from '$lib/types';
@@ -32,6 +33,7 @@ export type ProjectArchive = {
 		currency: string;
 		currencySymbol: string;
 		defaultSplit: DefaultSplit;
+		splitDefault?: SplitDefault;
 		autoFetchRates?: boolean;
 		paymentMethodsEnabled?: boolean;
 		categories: Category[];
@@ -63,6 +65,7 @@ export function serializeProject(
 			currency: project.currency,
 			currencySymbol: project.currencySymbol,
 			defaultSplit: project.defaultSplit,
+			splitDefault: project.splitDefault,
 			autoFetchRates: project.autoFetchRates,
 			paymentMethodsEnabled: project.paymentMethodsEnabled,
 			categories: project.categories,

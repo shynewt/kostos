@@ -41,6 +41,7 @@ export async function enterDemo(): Promise<void> {
 			currency: a.project.currency,
 			currencySymbol: a.project.currencySymbol,
 			defaultSplit: a.project.defaultSplit,
+			splitDefault: a.project.splitDefault,
 			autoFetchRates: a.project.autoFetchRates,
 			paymentMethodsEnabled: a.project.paymentMethodsEnabled,
 			categories: a.project.categories,

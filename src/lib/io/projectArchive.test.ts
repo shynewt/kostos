@@ -109,6 +109,15 @@ describe('serializeProject + parseProjectArchive', () => {
 		expect(result.archive.expenses).toEqual(expenses);
 	});
 
+	it('keeps the default split mode and member weights', () => {
+		const weighted = members.map((m, i) => ({ ...m, splitWeight: i + 1 }));
+		const archive = serializeProject({ ...project, splitDefault: 'ratio' }, weighted, []);
+		const result = parseProjectArchive(JSON.stringify(archive));
+		if (!result.ok) throw new Error(result.error);
+		expect(result.archive.project.splitDefault).toBe('ratio');
+		expect(result.archive.members.map((m) => m.splitWeight)).toEqual([1, 2, 3]);
+	});
+
 	it('omits the project id', () => {
 		const archive = serializeProject(project, members, expenses);
 		expect(archive.project).not.toHaveProperty('id');

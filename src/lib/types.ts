@@ -1,5 +1,9 @@
 export type DefaultSplit = 'even' | 'shares' | 'amount';
 
+/** How a new expense's split is pre-filled: evenly, from each member's fixed weight, or by
+ *  copying the split of the creator's previous expense. */
+export type SplitDefault = 'even' | 'ratio' | 'last';
+
 export type ActivityKind =
 	| 'expense.add'
 	| 'expense.edit'
@@ -62,6 +66,8 @@ export type Project = {
 	currency: string;
 	currencySymbol: string;
 	defaultSplit: DefaultSplit;
+	/** Absent means 'even'. */
+	splitDefault?: SplitDefault;
 	/** When set (default true), the expense form fetches a live FX rate for foreign-currency
 	 *  expenses. Turn off to keep every rate manual and avoid the outbound network call. */
 	autoFetchRates?: boolean;
@@ -110,6 +116,9 @@ export type Member = {
 	color?: string;
 	/** Optional emoji avatar. When set it replaces the name-initial glyph. */
 	emoji?: string;
+	/** Share of a new expense this member takes when the group's split default is 'ratio'.
+	 *  Absent means 1. */
+	splitWeight?: number;
 	createdAt: number;
 };
 
