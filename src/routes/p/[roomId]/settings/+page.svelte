@@ -4,25 +4,16 @@
 	import { page } from '$app/state';
 	import { PROJECT_COLORS, PROJECT_COLOR_VALUES } from '$lib/colors';
 	import CurrencyPicker from '$lib/components/CurrencyPicker.svelte';
-	import EmojiListEditor from '$lib/components/EmojiListEditor.svelte';
-	import type { EditorItem } from '$lib/components/EmojiListEditor.svelte';
 	import EmojiTilePicker from '$lib/components/EmojiTilePicker.svelte';
 	import IdentityCard from '$lib/components/IdentityCard.svelte';
+	import SettingsNavRow from '$lib/components/SettingsNavRow.svelte';
+	import SplitDefaultCard from '$lib/components/SplitDefaultCard.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
 	import { getCurrentMember, removeProject, setCurrentMember } from '$lib/storage';
-	import {
-		addCategory,
-		addPaymentMethod,
-		generateId,
-		removeCategory,
-		removePaymentMethod,
-		updateCategory,
-		updatePaymentMethod,
-		updateProject
-	} from '$lib/sync/doc';
+	import { updateMember, updateProject } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 	import { serializeProject, toCSV } from '$lib/io/projectArchive';
-	import type { Category, PaymentMethodItem, ProjectColor } from '$lib/types';
+	import type { ProjectColor, SplitDefault } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
 	const room = $derived(useRoom(roomId));
@@ -73,35 +64,15 @@
 		updateProject(handle, { autoFetchRates: !(project.autoFetchRates ?? true) });
 	}
 
+	const paymentMethodsEnabled = $derived(project?.paymentMethodsEnabled ?? true);
 	function togglePaymentMethods() {
 		if (!project) return;
-		updateProject(handle, { paymentMethodsEnabled: !(project.paymentMethodsEnabled ?? true) });
+		updateProject(handle, { paymentMethodsEnabled: !paymentMethodsEnabled });
 	}
 
-	function onAddCategory(input: Omit<EditorItem, 'id'>) {
-		const cat: Category = { id: generateId(), name: input.name, emoji: input.emoji };
-		addCategory(handle, cat);
-	}
-
-	function onUpdateCategory(id: string, updates: Partial<Omit<EditorItem, 'id'>>) {
-		updateCategory(handle, id, updates);
-	}
-
-	function onRemoveCategory(id: string) {
-		removeCategory(handle, id);
-	}
-
-	function onAddMethod(input: Omit<EditorItem, 'id'>) {
-		const m: PaymentMethodItem = { id: generateId(), name: input.name, emoji: input.emoji };
-		addPaymentMethod(handle, m);
-	}
-
-	function onUpdateMethod(id: string, updates: Partial<Omit<EditorItem, 'id'>>) {
-		updatePaymentMethod(handle, id, updates);
-	}
-
-	function onRemoveMethod(id: string) {
-		removePaymentMethod(handle, id);
+	function setSplitDefault(splitDefault: SplitDefault) {
+		if (!project || (project.splitDefault ?? 'even') === splitDefault) return;
+		updateProject(handle, { splitDefault });
 	}
 
 	function signOut() {
@@ -242,8 +213,7 @@
 			</div>
 			{#if expenses.length > 0}
 				<p class="dim currency-locked" id="currency-locked-note">
-					Fixed once the group has expenses: their exchange rates convert into this currency, so
-					switching would misread every one of them.
+					Locked once the group has expenses, since their exchange rates depend on it.
 				</p>
 			{/if}
 			<button
@@ -255,8 +225,7 @@
 				<span class="col rate-toggle-text">
 					<span class="rate-toggle-title">Auto-fetch exchange rates</span>
 					<span class="dim rate-toggle-sub">
-						Look up a live rate for foreign-currency expenses. Off keeps every rate manual and
-						avoids the outbound request.
+						Fetch live rates for foreign-currency expenses. Off keeps rates manual and sends no request.
 					</span>
 				</span>
 				<span class="rate-switch" data-on={project.autoFetchRates ?? true}>
@@ -265,88 +234,63 @@
 			</button>
 
 			<div class="section-head">
-				<div class="eyebrow">Categories</div>
-				<span class="dim mono section-count">{project.categories.length}</span>
+				<div class="eyebrow">Default split</div>
 			</div>
-			<div class="card editor-card">
-				<EmojiListEditor
-					items={project.categories}
-					fallbackEmoji="📦"
-					onUpdate={onUpdateCategory}
-					onRemove={onRemoveCategory}
-					onAdd={onAddCategory}
-				/>
+			<SplitDefaultCard
+				mode={project.splitDefault ?? 'even'}
+				{members}
+				{currentMemberId}
+				onSetMode={setSplitDefault}
+				onSetWeight={(memberId, splitWeight) => updateMember(handle, memberId, { splitWeight })}
+			/>
+
+			<div class="section-head">
+				<div class="eyebrow">Manage</div>
+			</div>
+			<div class="col gap-8">
+				<SettingsNavRow href="/p/{roomId}/settings/categories" title="Categories" summary={String(project.categories.length)}>
+					{#snippet icon()}
+						<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" />
+						<circle cx="7.5" cy="7.5" r="1.5" />
+					{/snippet}
+				</SettingsNavRow>
+				<SettingsNavRow href="/p/{roomId}/settings/trips" title="Trips" summary={String(project.trips.length)}>
+					{#snippet icon()}
+						<path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z" />
+						<path d="M9 3v15M15 6v15" />
+					{/snippet}
+				</SettingsNavRow>
 			</div>
 
 			<div class="section-head">
 				<div class="eyebrow">Payment methods</div>
-				{#if project.paymentMethodsEnabled ?? true}
-					<span class="dim mono section-count">{project.paymentMethods.length}</span>
-				{/if}
 			</div>
 			<button
 				type="button"
 				class="card field-card rate-toggle"
 				onclick={togglePaymentMethods}
-				aria-pressed={project.paymentMethodsEnabled ?? true}
+				aria-pressed={paymentMethodsEnabled}
 			>
 				<span class="col rate-toggle-text">
 					<span class="rate-toggle-title">Track payment method</span>
 					<span class="dim rate-toggle-sub">
-						Ask how each expense was paid (cash, card). Off hides the field for everyone in
-						this group; existing tags are kept.
+						Ask how each expense was paid. Off hides the field; existing tags are kept.
 					</span>
 				</span>
-				<span class="rate-switch" data-on={project.paymentMethodsEnabled ?? true}>
+				<span class="rate-switch" data-on={paymentMethodsEnabled}>
 					<span class="rate-knob"></span>
 				</span>
 			</button>
-			{#if project.paymentMethodsEnabled ?? true}
-				<div class="card editor-card">
-					<EmojiListEditor
-						items={project.paymentMethods}
-						fallbackEmoji="💳"
-						onUpdate={onUpdateMethod}
-						onRemove={onRemoveMethod}
-						onAdd={onAddMethod}
-					/>
+			{#if paymentMethodsEnabled}
+				<div class="stacked-row">
+					<SettingsNavRow href="/p/{roomId}/settings/payment-methods" title="Payment methods" summary={String(project.paymentMethods.length)}>
+						{#snippet icon()}
+							<rect x="2" y="5" width="20" height="14" rx="2" />
+							<path d="M2 10h20" />
+						{/snippet}
+					</SettingsNavRow>
 				</div>
 			{/if}
-
-			<div class="section-head">
-				<div class="eyebrow">Members</div>
-				<span class="dim mono section-count">{members.length}</span>
-			</div>
-			<a class="card nav-row" href="/p/{roomId}/people">
-				<span class="nav-icon">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-						<circle cx="9" cy="7" r="4" />
-						<path d="M22 21v-2a4 4 0 0 0-3-3.87M17 3.13a4 4 0 0 1 0 7.75" />
-					</svg>
-				</span>
-				<span class="nav-title">Manage members</span>
-				<span class="nav-chevron" aria-hidden="true">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 6l6 6-6 6" /></svg>
-				</span>
-			</a>
-
-			<div class="section-head">
-				<div class="eyebrow">Trips</div>
-				<span class="dim mono section-count">{project.trips.length}</span>
-			</div>
-			<a class="card nav-row" href="/p/{roomId}/settings/trips">
-				<span class="nav-icon">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z" />
-						<path d="M9 3v15M15 6v15" />
-					</svg>
-				</span>
-				<span class="nav-title">Manage trips</span>
-				<span class="nav-chevron" aria-hidden="true">
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 6l6 6-6 6" /></svg>
-				</span>
-			</a>
 
 			<div class="section-head">
 				<div class="eyebrow">Data</div>
@@ -385,7 +329,7 @@
 				<span>Forget this project on this device</span>
 			</button>
 			<p class="dim sign-out-hint">
-				Your data stays in the group. Joining again with the token restores everything.
+				Your data stays in the group. Rejoin with the token to restore it.
 			</p>
 			<p class="dim version-line">Kostos v{version}</p>
 		</div>
@@ -527,55 +471,8 @@
 		color: var(--accent);
 	}
 
-	.editor-card {
-		padding: 10px 14px;
-	}
-
-	.rate-toggle + .editor-card {
+	.stacked-row {
 		margin-top: 8px;
-	}
-
-	.nav-row {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 14px;
-		text-decoration: none;
-		color: inherit;
-	}
-
-	.nav-row:active {
-		background: color-mix(in oklab, var(--accent) 12%, transparent);
-	}
-
-	.nav-icon {
-		display: inline-flex;
-		width: 28px;
-		height: 28px;
-		align-items: center;
-		justify-content: center;
-		color: var(--ink-2);
-		flex-shrink: 0;
-	}
-
-	.nav-icon svg {
-		width: 20px;
-		height: 20px;
-	}
-
-	.nav-title {
-		flex: 1;
-		font-size: 14px;
-		font-weight: 500;
-	}
-
-	.nav-chevron {
-		color: var(--ink-3);
-	}
-
-	.nav-chevron svg {
-		width: 18px;
-		height: 18px;
 	}
 
 	.data-card {
