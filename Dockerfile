@@ -3,6 +3,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# no git in the image, so the version shown in the app comes from this build arg
+ARG PUBLIC_APP_VERSION
+ENV PUBLIC_APP_VERSION=$PUBLIC_APP_VERSION
 RUN npm run build
 
 FROM node:22-alpine

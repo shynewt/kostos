@@ -83,7 +83,7 @@ The SQLite-backed DO works on the Workers Free plan; no Workers Paid required fo
 ### Docker / self-host
 
 ```sh
-docker build -t kostos .
+docker build -t kostos --build-arg PUBLIC_APP_VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')" .
 docker run -p 8080:8080 -v kostos-data:/data kostos
 ```
 

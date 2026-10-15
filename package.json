@@ -1,7 +1,7 @@
 {
 	"name": "kostos-v2",
 	"private": true,
-	"version": "2.2.1",
+	"version": "2.10.0",
 	"license": "AGPL-3.0-only",
 	"type": "module",
 	"scripts": {
