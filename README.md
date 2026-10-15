@@ -83,8 +83,15 @@ The SQLite-backed DO works on the Workers Free plan; no Workers Paid required fo
 ### Docker / self-host
 
 ```sh
+docker run -p 8080:8080 -v kostos-data:/data ghcr.io/shynewt/kostos:latest
+```
+
+Each release publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GitHub Container Registry, tagged with the full version (`2.10.1`), `2.10`, `2` and `latest`. Pin a version tag if you don't want upgrades to happen when you pull.
+
+To build the image yourself instead:
+
+```sh
 docker build -t kostos --build-arg PUBLIC_APP_VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')" .
-docker run -p 8080:8080 -v kostos-data:/data kostos
 ```
 
 Or without Docker:
