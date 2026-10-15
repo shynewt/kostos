@@ -33,6 +33,7 @@
 	} from '$lib/expense-draft';
 	import { resolveRate } from '$lib/fx-cache';
 	import { formatAmount, toInputValue } from '$lib/money';
+	import { defaultSplitSeed } from '$lib/split-default';
 	import { suggestTripIdForDate } from '$lib/trips';
 	import { buildCategoryModel, guessCategory } from '$lib/category-guess';
 	import type {
@@ -78,6 +79,10 @@
 	const saveLabel = untrack(() => (mode === 'edit' ? 'Update' : 'Save'));
 
 	const seed = untrack(() => initial);
+	// a new expense starts from the group's split default; editing keeps what was saved
+	const splitSource = untrack(
+		() => seed ?? defaultSplitSeed(project.splitDefault, members, expenses, currentMemberId)
+	);
 
 	function seedAmountInput(): string {
 		return seed ? toInputValue(seed.amount, seed.currency) : '';
@@ -109,15 +114,15 @@
 	}
 
 	function seedInvolved(): Set<string> {
-		if (seed) return new Set(seed.splits.map((s) => s.memberId));
+		if (splitSource) return new Set(splitSource.splits.map((s) => s.memberId));
 		return new Set(members.map((m) => m.id));
 	}
 
 	function seedShares(): Record<string, number> {
 		const out: Record<string, number> = {};
 		for (const m of members) out[m.id] = 1;
-		if (seed?.splitMode === 'shares') {
-			for (const s of seed.splits) out[s.memberId] = s.shares ?? 1;
+		if (splitSource?.splitMode === 'shares') {
+			for (const s of splitSource.splits) out[s.memberId] = s.shares ?? 1;
 		}
 		return out;
 	}
@@ -138,7 +143,7 @@
 	let title = $state(seed?.description ?? '');
 	let dateStr = $state(seedDateStr());
 	let payers = $state<PaymentRow[]>(seedPayers());
-	let splitMode = $state<SplitMode>(seed?.splitMode ?? 'even');
+	let splitMode = $state<SplitMode>(splitSource?.splitMode ?? 'even');
 	let involved = $state<Set<string>>(seedInvolved());
 	let shares = $state<Record<string, number>>(seedShares());
 	let amounts = $state<Record<string, string>>(seedAmounts());
