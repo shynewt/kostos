@@ -128,8 +128,7 @@
 
 	<div class="scroll import-scroll">
 		<p class="lede">
-			Drop a Kostos v1 export JSON here. We'll create a fresh v2 project with the same
-			members, categories, payment methods, and expenses, then open it.
+			Drop a Kostos v1 export (JSON) here. We'll create a v2 project with its members, categories, payment methods and expenses.
 		</p>
 
 		{#if !parsed}

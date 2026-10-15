@@ -17,7 +17,7 @@
 	<div class="intro-body">
 		<div class="intro-title">Got an event coming up?</div>
 		<p class="intro-text">
-			Create a trip to group expenses. Use trips for holidays, parties, or any event.
+			Group expenses by holiday, party, or any other event.
 		</p>
 		<a class="btn btn-primary intro-cta" href={manageHref}>Create your first trip</a>
 	</div>

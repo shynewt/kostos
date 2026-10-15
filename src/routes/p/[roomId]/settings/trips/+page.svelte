@@ -174,7 +174,7 @@
 
 	<div class="scroll">
 		<p class="dim intro">
-			Create a trip to group expenses. Use trips for holidays, parties, or any event.
+			Group expenses by holiday, party, or any other event.
 		</p>
 
 		{#if trips.length === 0}

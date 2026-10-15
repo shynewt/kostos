@@ -126,7 +126,7 @@
 				<div class="loading-pulse" aria-hidden="true"></div>
 				<p class="dim mono loading-label">Reaching the group…</p>
 				<p class="dim loading-hint">
-					Decrypting state with your secret token. The server never sees the contents.
+					Decrypting with your secret token. The server never sees the contents.
 				</p>
 			</div>
 		{:else if status === 'empty'}

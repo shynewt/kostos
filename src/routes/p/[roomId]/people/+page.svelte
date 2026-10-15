@@ -256,7 +256,7 @@
 									{history === 1 ? 'expense' : 'expenses'}{balance !== 0
 										? ` and has an open balance of ${formatSigned(balance, currencySymbol, currency)}`
 										: ''}.
-									Removing them keeps the history but new transactions can no longer reference them.
+									Removing them keeps the history, but they can't be added to new expenses.
 								</p>
 							{:else}
 								<p class="remove-warning">Remove <strong>{m.name}</strong> from the group?</p>
@@ -286,7 +286,7 @@
 					Add
 				</button>
 			</div>
-			<p class="dim add-hint">New members can claim a device later by joining the project link.</p>
+			<p class="dim add-hint">New members can claim a device later through the invite link.</p>
 		</form>
 	</div>
 

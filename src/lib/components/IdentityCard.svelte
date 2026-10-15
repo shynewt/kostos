@@ -19,7 +19,7 @@
 			<span class="identity-name">{current?.name ?? 'No member claimed'}</span>
 			<span class="dim mono identity-hint">
 				{current
-					? 'New expenses are recorded under this member on this device.'
+					? 'New expenses on this device are added as this member.'
 					: 'Pick a member to record expenses as.'}
 			</span>
 		</div>
