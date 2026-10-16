@@ -82,11 +82,35 @@ The SQLite-backed DO works on the Workers Free plan; no Workers Paid required fo
 
 ### Docker / self-host
 
-```sh
-docker run -p 8080:8080 -v kostos-data:/data ghcr.io/shynewt/kostos:latest
+Kostos has to be served over HTTPS, behind a reverse proxy. The app encrypts in the browser with WebCrypto, which browsers only allow on HTTPS or `localhost`, so a plain `http://` address on your network won't work.
+
+```yaml
+services:
+  kostos:
+    image: ghcr.io/shynewt/kostos:2
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - kostos-data:/data
+
+volumes:
+  kostos-data:
 ```
 
-Each release publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GitHub Container Registry, tagged with the full version (`2.10.1`), `2.10`, `2` and `latest`. Pin a version tag if you don't want upgrades to happen when you pull.
+Or with `docker run`:
+
+```sh
+docker run -d -p 8080:8080 -v kostos-data:/data --restart unless-stopped ghcr.io/shynewt/kostos:2
+```
+
+Each release publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GitHub Container Registry. `:2` follows every 2.x release. `:2.10` only gets patch releases and `:2.10.1` never changes.
+
+For HTTPS, [Caddy](https://caddyserver.com/docs/quick-starts/reverse-proxy) is the quickest way. It gets a certificate for your domain by itself and passes the sync WebSocket through:
+
+```sh
+caddy reverse-proxy --from kostos.example.com --to localhost:8080
+```
 
 To build the image yourself instead:
 
@@ -102,7 +126,7 @@ npm run build
 node scripts/serve.js
 ```
 
-`scripts/serve.js` serves the static bundle and handles `/sync/<roomId>` WebSocket upgrades on the same port (default 8080). Encrypted history is appended to disk and flushed before a write is acknowledged. Set `KOSTOS_DATA_DIR` to a persistent directory (default `.kostos-data/serve`; Docker uses `/data`). Keep that directory or Docker volume across restarts and upgrades. A reverse proxy can provide HTTPS.
+`scripts/serve.js` serves the static bundle and handles `/sync/<roomId>` WebSocket upgrades on the same port (default 8080). Encrypted history is appended to disk and flushed before a write is acknowledged. Set `KOSTOS_DATA_DIR` to a persistent directory (default `.kostos-data/serve`; Docker uses `/data`). Keep that directory or Docker volume across restarts and upgrades. Serve it behind an HTTPS reverse proxy.
 
 ## Why v2
 
