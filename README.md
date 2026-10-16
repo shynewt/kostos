@@ -82,7 +82,8 @@ The SQLite-backed DO works on the Workers Free plan; no Workers Paid required fo
 
 ### Docker / self-host
 
-Kostos has to be served over HTTPS, behind a reverse proxy. The app encrypts in the browser with WebCrypto, which browsers only allow on HTTPS or `localhost`, so a plain `http://` address on your network won't work.
+> [!IMPORTANT]
+> Kostos has to be served over HTTPS, behind a reverse proxy. The app encrypts in the browser with WebCrypto, which browsers only allow on HTTPS or `localhost`, so a plain `http://` address on your network won't work.
 
 ```yaml
 services:
