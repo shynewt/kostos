@@ -847,7 +847,6 @@
 		font-family: var(--font-mono);
 		letter-spacing: 0.08em;
 		padding-right: 48px;
-		text-transform: uppercase;
 	}
 
 	.qr-btn {
