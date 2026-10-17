@@ -221,7 +221,7 @@
 				</div>
 			{:else}
 				<p class="dim no-members">
-					This project has no members yet. Add yourself below.
+					This group has no members yet. Add yourself below.
 				</p>
 			{/if}
 

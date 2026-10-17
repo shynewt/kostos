@@ -72,8 +72,8 @@
 		<a
 			class="icon-btn"
 			href="/p/{roomId}/settings"
-			aria-label="Project settings"
-			title="Project settings"
+			aria-label="Group settings"
+			title="Group settings"
 		>
 			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
 				<circle cx="12" cy="12" r="2.6" />

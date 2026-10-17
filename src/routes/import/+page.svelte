@@ -109,7 +109,7 @@
 
 	<div class="scroll import-scroll">
 		<p class="lede">
-			Drop a Kostos v1 export (JSON) here. We'll create a v2 project with its members, categories, payment methods and expenses.
+			Drop a Kostos v1 export (JSON) here. We'll create a group with its members, categories, payment methods and expenses.
 		</p>
 
 		{#if !parsed}
@@ -204,7 +204,7 @@
 					onclick={confirmImport}
 					disabled={busy || parsed.stats.expenseCount === 0}
 				>
-					{busy ? 'Creating…' : 'Create v2 project'}
+					{busy ? 'Creating…' : 'Create group'}
 				</button>
 			</div>
 		{/if}

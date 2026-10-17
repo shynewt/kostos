@@ -294,7 +294,7 @@
 
 			<button class="btn btn-block sign-out-btn" type="button" onclick={signOut} disabled={signingOut}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 7V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2M4 12h11M11 8l-3 4 3 4" /></svg>
-				<span>Forget this project on this device</span>
+				<span>Forget this group on this device</span>
 			</button>
 			<p class="dim sign-out-hint">
 				{#if handle.legacy}
