@@ -1,7 +1,6 @@
 import * as Y from 'yjs';
 import { RoomPersistence } from './persistence';
 import { browser } from '$app/environment';
-import { isLegacySecret } from '$lib/legacy';
 import { findProject, getCurrentMember } from '$lib/storage';
 import {
 	DEFAULT_CATEGORIES,
@@ -57,7 +56,7 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 	const cached = cache.get(roomId);
 	if (cached) {
 		// A corrected invite must replace the provider using the previous key.
-		const access = roomAccess(roomId, secret);
+		const access = resolveRoomSecret(roomId, secret);
 		cached.handle.legacy = access.legacy;
 		if (browser && access.syncSecret && (!cached.handle.syncProvider || cached.secret !== access.syncSecret)) {
 			cached.handle.syncProvider?.destroy();
@@ -82,7 +81,7 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		ready = Promise.resolve();
 	}
 
-	const access = roomAccess(roomId, secret);
+	const access = resolveRoomSecret(roomId, secret);
 	let syncProvider: EncryptedSyncProvider | undefined;
 	if (browser && access.syncSecret) {
 		syncProvider = createSyncProvider(doc, syncUrl(), access.syncSecret, persistence) ?? undefined;
@@ -105,12 +104,10 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 }
 
 /** Only a current-format secret may reach the sync server; old groups stay local. */
-function roomAccess(roomId: string, secret?: string): { syncSecret: string | undefined; legacy: boolean } {
+function resolveRoomSecret(roomId: string, secret?: string): { syncSecret: string | undefined; legacy: boolean } {
 	const known = secret ?? findProject(roomId)?.secret;
-	return {
-		syncSecret: known && isValidSecret(known) ? known : undefined,
-		legacy: known !== undefined && isLegacySecret(known)
-	};
+	const valid = known !== undefined && isValidSecret(known);
+	return { syncSecret: valid ? known : undefined, legacy: known !== undefined && !valid };
 }
 
 export async function destroyRoom(roomId: string): Promise<void> {

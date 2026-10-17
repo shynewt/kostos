@@ -1,6 +1,5 @@
 import { isLegacySecret, LEGACY_GROUP_SUMMARY } from '$lib/legacy';
 import { plural } from '$lib/plural';
-import { INSECURE_CONTEXT_MESSAGE } from './crypto';
 import type { LocalState } from './persistence';
 import { PROBLEM_LABELS, relativeTime, type SyncProblem, type SyncStatus } from './status';
 
