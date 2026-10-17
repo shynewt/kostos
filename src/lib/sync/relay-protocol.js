@@ -1,5 +1,7 @@
 // The relay can see transport metadata only. All document contents stay encrypted.
 export const MAX_MESSAGE_BYTES = 1_048_576;
+/** Per-room storage ceiling. Past it a room refuses writes (the `storage` error) instead of dropping history. */
+export const MAX_ROOM_BYTES = 32 * 1024 * 1024;
 const MAGIC = [75, 79, 83, 51];
 
 /** @param {Uint8Array} packet */

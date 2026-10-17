@@ -5,7 +5,8 @@
  * barriers are serialized with writes, including across WebSocket hibernation.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { unwrapPacket, payloadHash } from '../sync/relay-protocol.js';
+import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../sync/relay-protocol.js';
+import { DENIED_CLOSE_CODE, DENIED_MESSAGE, hashesEqual, parseProofProtocol, proofHash } from '../sync/room-access.js';
 
 type Entry = { seq: number; hash: string; payload: ArrayBuffer };
 
@@ -19,6 +20,7 @@ export class SyncRoom extends DurableObject {
 		this.initialized = ctx.blockConcurrencyWhile(async () => {
 			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, hash TEXT UNIQUE NOT NULL, payload BLOB NOT NULL)');
 			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)');
+			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS room_auth (id INTEGER PRIMARY KEY CHECK (id = 1), proof_hash TEXT NOT NULL)');
 			// Entries replaced by a snapshot. Never replayed, kept so a bad snapshot is recoverable.
 			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS archive (id INTEGER PRIMARY KEY, seq INTEGER NOT NULL, hash TEXT NOT NULL, payload BLOB NOT NULL, archived_at INTEGER NOT NULL)');
 			const migrated = ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'migrated'").toArray();
@@ -45,12 +47,31 @@ export class SyncRoom extends DurableObject {
 	}
 	private control(ws: WebSocket, message: object): void { ws.send(JSON.stringify(message)); }
 
+	/** The first proof to connect claims the room (the primary key makes a second claim impossible);
+	 *  every later connection must present the same one. Synchronous, so it needs no await inside serialized(). */
+	private admit(hash: string): boolean {
+		const sql = this.ctx.storage.sql;
+		sql.exec('INSERT OR IGNORE INTO room_auth (id, proof_hash) VALUES (1, ?)', hash);
+		return hashesEqual(sql.exec<{ proof_hash: string }>('SELECT proof_hash FROM room_auth WHERE id = 1').one().proof_hash, hash);
+	}
+
 	async fetch(request: Request): Promise<Response> {
 		if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return new Response('Expected WebSocket', { status: 426 });
+		const offered = parseProofProtocol(request.headers.get('Sec-WebSocket-Protocol'));
+		if (!offered) return new Response('Unauthorized', { status: 401 });
+		const hash = await proofHash(offered.proof);
 		await this.initialized;
 		return this.serialized(async () => {
 			const pair = new WebSocketPair();
 			const [client, server] = Object.values(pair);
+			const headers = { 'Sec-WebSocket-Protocol': offered.protocol };
+			if (!this.admit(hash)) {
+				// not hibernatable on purpose: this socket never joins the room, so no handler ever sees its messages
+				server.accept();
+				this.control(server, DENIED_MESSAGE);
+				server.close(DENIED_CLOSE_CODE, 'Unauthorized');
+				return new Response(null, { status: 101, webSocket: client, headers });
+			}
 			this.ctx.acceptWebSocket(server);
 			try {
 				for (const entry of this.ctx.storage.sql.exec<Entry>('SELECT seq, hash, payload FROM messages ORDER BY seq')) server.send(entry.payload);
@@ -59,7 +80,7 @@ export class SyncRoom extends DurableObject {
 			} catch {
 				server.close(1011, 'Could not replay sync history');
 			}
-			return new Response(null, { status: 101, webSocket: client });
+			return new Response(null, { status: 101, webSocket: client, headers });
 		});
 	}
 
@@ -96,6 +117,12 @@ export class SyncRoom extends DurableObject {
 				const hash = await payloadHash(payload);
 				let revision = this.ctx.storage.sql.exec<{ seq: number }>('SELECT seq FROM messages WHERE hash = ?', hash).toArray()[0]?.seq;
 				if (revision === undefined) {
+					// database size, not a SUM over rows: it is O(1), and every row read is billed
+					if (this.ctx.storage.sql.databaseSize + payload.byteLength > MAX_ROOM_BYTES) {
+						this.control(ws, { type: 'error', reason: 'storage' });
+						ws.close(1011, 'Room storage limit reached');
+						return;
+					}
 					revision = this.ctx.storage.transactionSync(() => {
 						this.ctx.storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', hash, payload);
 						return this.revision();
