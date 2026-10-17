@@ -303,6 +303,17 @@ describe('verified encrypted sync', () => {
 		expect(Socket.instances.length).toBeGreaterThan(1);
 	});
 
+	it('still reads the full error when the server closes the socket right behind it', async () => {
+		const ws = await start();
+		const peer = new Y.Doc(); peer.getArray('expenses').push(['still decrypting']);
+		ws.binary(await encryptPayload(await deriveKey(secret), frame(MSG_UPDATE, Y.encodeStateAsUpdate(peer))));
+		ws.control(ROOM_FULL_MESSAGE);
+		ws.close();
+		await vi.waitFor(() => expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'full' }));
+		expect(Socket.instances).toHaveLength(1);
+		peer.destroy();
+	});
+
 	it('lets only the Try again button replay a full group before its wait is over', async () => {
 		vi.useFakeTimers();
 		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);

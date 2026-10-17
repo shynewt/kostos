@@ -171,8 +171,9 @@ export class EncryptedSyncProvider {
 		ws.onclose = () => {
 			if (!this.isCurrent(ws)) return;
 			if (!opened) { this.unreachable(); return; }
-			// The server dropped an open connection (a deploy, a restart): reconnect quietly.
-			this.recover('network');
+			// The server dropped an open connection (a deploy, a restart): reconnect quietly. Messages
+			// still being decrypted come first, since the last one may be the error that explains the close.
+			void this.receiveQueue.then(() => { if (this.isCurrent(ws)) this.recover('network'); });
 		};
 		ws.onerror = () => { if (this.isCurrent(ws) && !opened) this.unreachable(); };
 	}
