@@ -54,4 +54,22 @@ describe('openRoom with an old-format secret', () => {
 		expect(handle.legacy).toBe(false);
 		expect(createSyncProvider).toHaveBeenCalledTimes(1);
 	});
+
+	it('flags any stored secret that is not a current one', () => {
+		for (const length of [0, 23, 42, 44]) {
+			const roomId = `PRT-ODD${length}`;
+			stored(roomId, 'a'.repeat(length));
+			const handle = openRoom(roomId);
+			expect(handle.legacy).toBe(true);
+			expect(handle.syncProvider).toBeUndefined();
+		}
+		expect(createSyncProvider).not.toHaveBeenCalled();
+	});
+
+	it('re-evaluates a cached handle when the secret becomes known', () => {
+		vi.mocked(findProject).mockReturnValue(null);
+		expect(openRoom('PRT-LATE').legacy).toBe(false);
+		expect(openRoom('PRT-LATE', legacySecret).legacy).toBe(true);
+		expect(createSyncProvider).not.toHaveBeenCalled();
+	});
 });

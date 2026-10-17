@@ -57,7 +57,9 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 	const cached = cache.get(roomId);
 	if (cached) {
 		// A corrected invite must replace the provider using the previous key.
-		const effectiveSecret = syncSecret(secret ?? secretFromStorage(roomId));
+		const known = secret ?? secretFromStorage(roomId);
+		const effectiveSecret = syncSecret(known);
+		cached.handle.legacy = isLegacyGroup(known);
 		if (browser && effectiveSecret && (!cached.handle.syncProvider || cached.secret !== effectiveSecret)) {
 			cached.handle.syncProvider?.destroy();
 			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), effectiveSecret, cached.persistence) ?? undefined;
@@ -98,10 +100,14 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		ready,
 		syncProvider,
 		persistence,
-		legacy: known !== undefined && isLegacySecret(known)
+		legacy: isLegacyGroup(known)
 	};
 	cache.set(roomId, { handle, persistence, secret: effectiveSecret });
 	return handle;
+}
+
+function isLegacyGroup(secret: string | undefined): boolean {
+	return secret !== undefined && isLegacySecret(secret);
 }
 
 function secretFromStorage(roomId: string): string | undefined {
