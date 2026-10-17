@@ -57,13 +57,12 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 	const cached = cache.get(roomId);
 	if (cached) {
 		// A corrected invite must replace the provider using the previous key.
-		const known = secret ?? secretFromStorage(roomId);
-		const effectiveSecret = syncSecret(known);
-		cached.handle.legacy = isLegacyGroup(known);
-		if (browser && effectiveSecret && (!cached.handle.syncProvider || cached.secret !== effectiveSecret)) {
+		const access = roomAccess(roomId, secret);
+		cached.handle.legacy = access.legacy;
+		if (browser && access.syncSecret && (!cached.handle.syncProvider || cached.secret !== access.syncSecret)) {
 			cached.handle.syncProvider?.destroy();
-			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), effectiveSecret, cached.persistence) ?? undefined;
-			cached.secret = effectiveSecret;
+			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), access.syncSecret, cached.persistence) ?? undefined;
+			cached.secret = access.syncSecret;
 		}
 		return cached.handle;
 	}
@@ -83,11 +82,10 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		ready = Promise.resolve();
 	}
 
-	const known = secret ?? secretFromStorage(roomId);
-	const effectiveSecret = syncSecret(known);
+	const access = roomAccess(roomId, secret);
 	let syncProvider: EncryptedSyncProvider | undefined;
-	if (browser && effectiveSecret) {
-		syncProvider = createSyncProvider(doc, syncUrl(), effectiveSecret, persistence) ?? undefined;
+	if (browser && access.syncSecret) {
+		syncProvider = createSyncProvider(doc, syncUrl(), access.syncSecret, persistence) ?? undefined;
 	}
 
 	const handle: RoomHandle = {
@@ -100,23 +98,19 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		ready,
 		syncProvider,
 		persistence,
-		legacy: isLegacyGroup(known)
+		legacy: access.legacy
 	};
-	cache.set(roomId, { handle, persistence, secret: effectiveSecret });
+	cache.set(roomId, { handle, persistence, secret: access.syncSecret });
 	return handle;
 }
 
-function isLegacyGroup(secret: string | undefined): boolean {
-	return secret !== undefined && isLegacySecret(secret);
-}
-
-function secretFromStorage(roomId: string): string | undefined {
-	return findProject(roomId)?.secret;
-}
-
 /** Only a current-format secret may reach the sync server; old groups stay local. */
-function syncSecret(secret: string | undefined): string | undefined {
-	return secret && isValidSecret(secret) ? secret : undefined;
+function roomAccess(roomId: string, secret?: string): { syncSecret: string | undefined; legacy: boolean } {
+	const known = secret ?? findProject(roomId)?.secret;
+	return {
+		syncSecret: known && isValidSecret(known) ? known : undefined,
+		legacy: known !== undefined && isLegacySecret(known)
+	};
 }
 
 export async function destroyRoom(roomId: string): Promise<void> {
