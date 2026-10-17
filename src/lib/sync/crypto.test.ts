@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { base64UrlEncode, decryptPayload, deriveKey, deriveLocalId, deriveRoomAccess, encryptPayload } from './crypto';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { base64UrlEncode, decryptPayload, deriveKey, deriveLocalId, deriveRoomAccess, encryptPayload, INSECURE_CONTEXT_MESSAGE, InsecureContextError } from './crypto';
 import { toHex } from './relay-protocol.js';
 
 function secretFromSeed(seed: number): string {
@@ -87,5 +87,18 @@ describe('secret derivations', () => {
 	it('encodes bytes without padding', () => {
 		expect(base64UrlEncode(new Uint8Array(16))).toHaveLength(22);
 		expect(base64UrlEncode(Uint8Array.from([251, 255, 254]))).toBe('-__-');
+	});
+});
+
+describe('on a plain HTTP origin', () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it('fails every derivation with one readable error instead of a TypeError', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		for (const derive of [deriveKey, deriveLocalId, deriveRoomAccess]) {
+			await expect(derive(fakeSecret())).rejects.toBeInstanceOf(InsecureContextError);
+		}
+		await expect(deriveLocalId(fakeSecret())).rejects.toThrow(INSECURE_CONTEXT_MESSAGE);
+		expect(INSECURE_CONTEXT_MESSAGE).toContain('HTTPS');
 	});
 });

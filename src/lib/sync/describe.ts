@@ -1,3 +1,4 @@
+import { INSECURE_CONTEXT_MESSAGE } from './crypto';
 import type { LocalState } from './persistence';
 import { PROBLEM_LABELS, relativeTime, type SyncProblem, type SyncStatus } from './status';
 
@@ -27,8 +28,12 @@ const BANNER_TEXT: Record<SyncProblem, string> = {
 	protocol: 'This server needs an update before it can sync.',
 	history: 'Older server history is incomplete. Export a backup from Settings.',
 	size: 'This group is too large to sync. Export a backup from Settings.',
-	denied: 'This group belongs to a different key. Ask for a fresh invite link.'
+	denied: 'This group belongs to a different key. Ask for a fresh invite link.',
+	insecure: INSECURE_CONTEXT_MESSAGE
 };
+
+/** Retrying cannot change these, so the status offers no retry button. */
+const TERMINAL_PROBLEMS: SyncProblem[] = ['denied', 'insecure'];
 
 function plural(count: number, one: string, many: string): string {
 	return `${count} ${count === 1 ? one : many}`;
@@ -103,7 +108,7 @@ export function describeSync(
 			};
 		case 'error':
 			return {
-				...base, tone: 'warn', state: 'error', label: 'Sync paused', attention: true, retry: sync.problem !== 'denied',
+				...base, tone: 'warn', state: 'error', label: 'Sync paused', attention: true, retry: !TERMINAL_PROBLEMS.includes(sync.problem ?? 'network'),
 				headline: 'Couldn’t sync',
 				body: PROBLEM_LABELS[sync.problem ?? 'network'],
 				banner: BANNER_TEXT[sync.problem ?? 'network']

@@ -12,8 +12,18 @@ const KEY_USAGES: KeyUsage[] = ['encrypt', 'decrypt'];
 
 export type RoomAccess = { relayRoomId: string; proof: string };
 
+export const INSECURE_CONTEXT_MESSAGE = 'Kostos needs HTTPS (or localhost) to encrypt your data.';
+
+/** Browsers only expose `crypto.subtle` on HTTPS and localhost, so a plain-HTTP self-host has none. */
+export class InsecureContextError extends Error {
+	constructor() {
+		super(INSECURE_CONTEXT_MESSAGE);
+	}
+}
+
 /** Changing a purpose or a size orphans every existing group; crypto.test.ts pins them. */
 async function expand(secretBase64Url: string, purpose: 'encryption' | 'local' | 'room' | 'auth', bits: number): Promise<Uint8Array> {
+	if (!globalThis.crypto?.subtle) throw new InsecureContextError();
 	const base = await crypto.subtle.importKey('raw', base64UrlDecode(secretBase64Url) as BufferSource, 'HKDF', false, ['deriveBits']);
 	const info = new TextEncoder().encode(`kostos/${purpose}/v1`);
 	const derived = await crypto.subtle.deriveBits({ name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info }, base, bits);

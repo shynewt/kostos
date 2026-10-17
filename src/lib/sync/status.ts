@@ -1,5 +1,7 @@
+import { INSECURE_CONTEXT_MESSAGE } from './crypto';
+
 export type SyncPhase = 'local' | 'loading' | 'connecting' | 'syncing' | 'synced' | 'offline' | 'error';
-export type SyncProblem = 'network' | 'timeout' | 'storage' | 'decrypt' | 'protocol' | 'history' | 'size' | 'denied';
+export type SyncProblem = 'network' | 'timeout' | 'storage' | 'decrypt' | 'protocol' | 'history' | 'size' | 'denied' | 'insecure';
 
 export type SyncStatus = {
 	phase: SyncPhase;
@@ -22,7 +24,8 @@ export const PROBLEM_LABELS: Record<SyncProblem, string> = {
 	protocol: 'This server needs an update before sync can be verified.',
 	history: 'Older server history is incomplete. Keep your existing devices and export a backup in Settings.',
 	size: 'This group is too large to sync in one message. Export a backup from Settings.',
-	denied: 'This group belongs to a different key. Ask for a fresh invite link.'
+	denied: 'This group belongs to a different key. Ask for a fresh invite link.',
+	insecure: INSECURE_CONTEXT_MESSAGE
 };
 
 export function relativeTime(at: number | null, now: number): string {

@@ -5,7 +5,7 @@
  */
 import * as Y from 'yjs';
 import { browser } from '$app/environment';
-import { decryptPayload, deriveKey, deriveRoomAccess, encryptPayload, type RoomAccess } from './crypto';
+import { decryptPayload, deriveKey, deriveRoomAccess, encryptPayload, InsecureContextError, type RoomAccess } from './crypto';
 import { frame, parse, MSG_STEP1, MSG_UPDATE } from './protocol';
 import { REMOTE_ORIGIN, LOCAL_LOAD, type RoomPersistence } from './persistence';
 import { type SyncStatus, type SyncProblem } from './status';
@@ -67,7 +67,7 @@ export class EncryptedSyncProvider {
 			this.fresh = !hasData;
 			this.setState({ lastSyncedAt: persistence?.state.lastSyncedAt ?? null, unverifiedSince: persistence?.state.unverifiedSince ?? Date.now() });
 			this.connect();
-		}).catch(() => this.fail(persistence?.state.phase === 'error' ? 'storage' : 'decrypt', false));
+		}).catch((error) => this.fail(error instanceof InsecureContextError ? 'insecure' : persistence?.state.phase === 'error' ? 'storage' : 'decrypt', false));
 	}
 
 	get status(): ConnectionStatus { return this.state.phase; }

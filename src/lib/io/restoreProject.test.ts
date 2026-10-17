@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addProject, setCurrentMember } from '$lib/storage';
-import { deriveLocalId } from '$lib/sync/crypto';
+import { deriveLocalId, INSECURE_CONTEXT_MESSAGE } from '$lib/sync/crypto';
 import { openRoom, readExpenses, readMembers, readProject } from '$lib/sync/doc';
 import type { Expense, Member } from '$lib/types';
 import { parseProjectArchive } from './projectArchive';
@@ -80,5 +80,15 @@ describe('createGroup', () => {
 		const second = await createGroup(contents(), null);
 		expect(first).not.toBe(second);
 		expect(vi.mocked(addProject).mock.calls[0][0].secret).not.toBe(vi.mocked(addProject).mock.calls[1][0].secret);
+	});
+
+	it('says why when the page has no crypto.subtle, and saves nothing', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		try {
+			await expect(createGroup(contents(), null)).rejects.toThrow(INSECURE_CONTEXT_MESSAGE);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+		expect(addProject).not.toHaveBeenCalled();
 	});
 });

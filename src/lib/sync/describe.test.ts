@@ -41,6 +41,13 @@ describe('describeSync', () => {
 		expect(view.banner).toBe(view.body);
 	});
 
+	it('words a plain HTTP origin as terminal and names the fix', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'insecure' }), null, NOW);
+		expect(view).toMatchObject({ state: 'error', retry: false });
+		expect(view.body).toContain('HTTPS');
+		expect(view.banner).toBe(view.body);
+	});
+
 	it('treats the demo group as plain local storage', () => {
 		expect(describeSync(LOCAL_STATUS, null, NOW, { demo: true })).toMatchObject({ tone: 'idle', banner: null, attention: false });
 		expect(describeSync(LOCAL_STATUS, null, NOW).banner).toContain('Invite link missing');

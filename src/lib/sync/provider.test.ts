@@ -254,4 +254,12 @@ describe('verified encrypted sync', () => {
 		expect(Socket.instances).toHaveLength(1);
 		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'denied', checking: false });
 	});
+
+	it('reports a plain HTTP origin instead of a wrong invite link', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('insecure'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', checking: false });
+		expect(Socket.instances).toHaveLength(0);
+	});
 });
