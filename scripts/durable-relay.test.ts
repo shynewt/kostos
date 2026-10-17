@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRelay } from './relay.js';
-import { joinRoom, largePacket, openSocket, packet, PROOF, snapshot, terminateOpenSockets, until } from './test-helpers.js';
+import { joinRoom, largePacket, openSocket, packet, packetsFillingTheCap, PROOF, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 import { MAX_ROOM_ENTRIES, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import { parseProofProtocol } from '../src/lib/sync/room-access.js';
 
@@ -218,6 +218,34 @@ describe('durable encrypted relay', () => {
 		expect(reader.controls.find((m) => m.type === 'ack')).toMatchObject({ revision: 6 });
 		expect(reader.controls.at(-1)).toMatchObject({ type: 'caught-up', revision: 200 });
 	}, 30_000);
+	it('forgets a room whose last socket closed before its queued writes finished', async () => {
+		const url = await start(); const sender = await joinRoom(url);
+		for (let i = 0; i < 20; i++) sender.ws.send(largePacket());
+		sender.ws.close();
+		await sender.closed;
+		await until(() => server.clients.size === 0);
+		await attach.drain();
+		const reader = await joinRoom(url);
+		expect(reader.binary).toHaveLength(20);
+		expect(fsSpy.calls.filter((call) => call === `read ${directory}/${ROOM_STEM}.jsonl`)).toHaveLength(2);
+	}, 30_000);
+	it('does not let a denied socket that closes late evict the room that replaced its own', async () => {
+		const url = await start(); const owner = await joinRoom(url);
+		const intruder = await openSocket(url, 'Q'.repeat(43));
+		// never reads the denial, so its close handshake only finishes after the room was evicted and recreated
+		intruder.ws.pause();
+		owner.ws.send(JSON.stringify({ type: 'barrier', id: 'intruder-processed' }));
+		await until(() => owner.controls.some((m) => m.type === 'caught-up'));
+		owner.ws.close();
+		await owner.closed;
+		await until(() => server.clients.size === 1);
+		const second = await joinRoom(url);
+		intruder.ws.resume();
+		await intruder.closed;
+		const third = await joinRoom(url);
+		third.ws.send(packet(7));
+		await until(() => second.binary.length === 1, 2000);
+	});
 	it('keeps an update from a socket that closes straight after sending it', async () => {
 		const url = await start(); const sender = await joinRoom(url);
 		for (let i = 0; i < 20; i++) sender.ws.send(packet(i));
@@ -226,6 +254,17 @@ describe('durable encrypted relay', () => {
 		const receiver = await joinRoom(url);
 		expect(receiver.binary).toHaveLength(20);
 	});
+	it('accepts the write that exactly fills the cap and refuses the next one', async () => {
+		const url = await start(); const sender = await joinRoom(url);
+		const filling = packetsFillingTheCap();
+		for (const [index, update] of filling.entries()) {
+			sender.ws.send(update);
+			await until(() => sender.controls.some((m) => m.type === 'ack' && m.revision === index + 1));
+		}
+		sender.ws.send(packet(1));
+		expect(await sender.closed).toBe(1011);
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'full' });
+	}, 60_000);
 	it('refuses writes past the room storage cap and keeps what was acknowledged', async () => {
 		const url = await start(); const sender = await joinRoom(url);
 		let acknowledged = 0;

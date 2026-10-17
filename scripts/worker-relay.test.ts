@@ -10,7 +10,7 @@ import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_ENTRIES } from '../src/lib/sync/relay-protocol.js';
-import { joinRoom, largePacket, openSocket, packet, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
+import { joinRoom, largePacket, openSocket, packet, packetsFillingTheCap, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 
 const room = (name: string) => createHash('sha256').update(name).digest('hex');
 
@@ -214,6 +214,18 @@ describe('room storage cap', () => {
 		expect(again.binary).toHaveLength(32);
 	}, 60_000);
 
+	it('accepts the write that exactly fills the cap and refuses the next one', async () => {
+		const sender = await connect('exact-cap');
+		const filling = packetsFillingTheCap();
+		for (const [index, update] of filling.entries()) {
+			sender.ws.send(update);
+			await until(() => sender.controls.some((m) => m.type === 'ack' && m.revision === index + 1));
+		}
+		sender.ws.send(packet(1));
+		expect(await sender.closed).toBe(1011);
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'full' });
+	}, 60_000);
+
 	it('still acknowledges an update it already stored when the room is at the cap', async () => {
 		const stored = await fillToCap('full-retry');
 		const retry = await connect('full-retry');
@@ -254,6 +266,20 @@ async function bytesOnDisk(folder: string): Promise<number> {
 	}
 	return total;
 }
+
+describe('compaction', () => {
+	it('ignores a snapshot that would replace a single entry', async () => {
+		const device = await connect('single-entry');
+		device.ws.send(packet(1));
+		await until(() => device.controls.some((m) => m.type === 'ack'));
+		device.ws.send(snapshot(1, 60));
+		device.ws.send(JSON.stringify({ type: 'barrier', id: 'after' }));
+		await until(() => device.controls.some((m) => m.type === 'caught-up'));
+		expect(device.controls.some((m) => m.type === 'compacted')).toBe(false);
+		const reader = await connect('single-entry');
+		expect(reader.binary).toEqual([packet(1).subarray(5)]);
+	});
+});
 
 describe('room archive ceiling', () => {
 	it('stops archiving once the archive is full, so alternating writes and compactions cannot grow storage forever', async () => {

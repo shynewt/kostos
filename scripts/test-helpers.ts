@@ -1,7 +1,7 @@
 /* Shared by the relay tests: polling, proof values and a WebSocket that records what it receives. */
 import { randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
-import { MAX_MESSAGE_BYTES, PACKET_MAGIC } from '../src/lib/sync/relay-protocol.js';
+import { MAX_MESSAGE_BYTES, MAX_ROOM_BYTES, PACKET_MAGIC } from '../src/lib/sync/relay-protocol.js';
 import { PROOF_PREFIX } from '../src/lib/sync/room-access.js';
 
 export const PROOF = 'P'.repeat(43);
@@ -24,9 +24,21 @@ export function packet(seed = 0, durable = true) {
 	return out;
 }
 
-/** A durable packet at the transport size limit, filled with random bytes. */
+/** A durable packet whose payload is `payloadBytes` of random bytes, so no two share a hash. */
+export function packetWithPayload(payloadBytes: number) {
+	return Buffer.concat([Buffer.from([...PACKET_MAGIC, 1]), randomBytes(payloadBytes)]);
+}
+
+/** A durable packet at the transport size limit. */
 export function largePacket() {
-	return Buffer.concat([Buffer.from([...PACKET_MAGIC, 1]), randomBytes(MAX_MESSAGE_BYTES - 5)]);
+	return packetWithPayload(MAX_MESSAGE_BYTES - 5);
+}
+
+/** Packets whose payloads add up to exactly MAX_ROOM_BYTES: as many large ones as fit, then the remainder. */
+export function packetsFillingTheCap() {
+	const largePayloadBytes = MAX_MESSAGE_BYTES - 5;
+	const largeCount = Math.floor(MAX_ROOM_BYTES / largePayloadBytes);
+	return [...Array.from({ length: largeCount }, largePacket), packetWithPayload(MAX_ROOM_BYTES - largeCount * largePayloadBytes)];
 }
 
 /** A request to replace every entry up to revision `through`; `size` is the whole packet. */
