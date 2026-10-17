@@ -1,15 +1,42 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRelay } from './relay.js';
-import { joinRoom, openSocket, terminateOpenSockets, until } from './test-helpers.js';
+import { joinRoom, openSocket, PROOF, terminateOpenSockets, until } from './test-helpers.js';
 import { MAX_MESSAGE_BYTES, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import { parseProofProtocol } from '../src/lib/sync/room-access.js';
 
 const ROOM = 'a'.repeat(64);
+const ROOM_STEM = createHash('sha256').update(ROOM).digest('hex');
+
+// lets a test make the next log append write half a line and then fail, like a full disk
+const failingAppend = vi.hoisted(() => ({ armed: false }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('node:fs/promises')>();
+	return {
+		...actual,
+		open: async (path: string, flags: string) => {
+			const handle = await actual.open(path, flags);
+			if (!failingAppend.armed || flags !== 'a') return handle;
+			failingAppend.armed = false;
+			return new Proxy(handle, {
+				get(target, property) {
+					if (property === 'writeFile') {
+						return async (data: string) => {
+							await target.write(data.slice(0, 20));
+							throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+						};
+					}
+					const value = Reflect.get(target, property);
+					return typeof value === 'function' ? value.bind(target) : value;
+				}
+			});
+		}
+	};
+});
 const proofOf = (request: { headers: Record<string, string | string[] | undefined> }) =>
 	parseProofProtocol(request.headers['sec-websocket-protocol'] as string | undefined)?.proof ?? '';
 
@@ -133,9 +160,8 @@ describe('durable encrypted relay', () => {
 	});
 	it('treats a torn claim file as an error, never as an unclaimed room', async () => {
 		const url = await start();
-		const stem = createHash('sha256').update(ROOM).digest('hex');
 		await mkdir(directory, { recursive: true });
-		await writeFile(`${directory}/${stem}.auth`, 'half-writ');
+		await writeFile(`${directory}/${ROOM_STEM}.auth`, 'half-writ');
 		const peer = await openSocket(url);
 		expect(await peer.closed).toBe(1011);
 		expect(peer.controls).toEqual([{ type: 'error', reason: 'storage' }]);
@@ -163,4 +189,72 @@ describe('durable encrypted relay', () => {
 		const reader = await joinRoom(url);
 		expect(reader.binary).toHaveLength(32);
 	}, 60_000);
+});
+
+describe('relay disk log recovery', () => {
+	const logFile = () => `${directory}/${ROOM_STEM}.jsonl`;
+	const loggedLines = async () => (await readFile(logFile(), 'utf8')).split('\n');
+
+	async function writeThree() {
+		const url = await start(); const sender = await joinRoom(url);
+		for (let i = 0; i < 3; i++) sender.ws.send(packet(i));
+		await until(() => sender.controls.some((m) => m.type === 'ack' && m.revision === 3));
+		await stop();
+	}
+
+	it('drops an interrupted final append, keeps acknowledged updates and appends cleanly afterwards', async () => {
+		await writeThree();
+		await appendFile(logFile(), '{"hash":"ab","data":"AAA');
+		const restarted = await start(directory); const peer = await joinRoom(restarted);
+		expect(peer.binary).toHaveLength(3);
+		expect(peer.controls.at(-1)).toMatchObject({ type: 'ready', revision: 3 });
+		peer.ws.send(packet(10));
+		await until(() => peer.controls.some((m) => m.type === 'ack' && m.revision === 4));
+		await stop();
+		const lines = await loggedLines();
+		expect(lines).toHaveLength(5);
+		expect(lines.at(-1)).toBe('');
+		for (const line of lines.slice(0, -1)) expect(() => JSON.parse(line)).not.toThrow();
+		const reread = await joinRoom(await start(directory));
+		expect(reread.binary).toHaveLength(4);
+	});
+
+	it('still refuses a room with a corrupt line in the middle of its log', async () => {
+		await writeThree();
+		const [first, , third] = await loggedLines();
+		await writeFile(logFile(), `${first}\n{"hash":"ab","data":"AAA\n${third}\n`);
+		const peer = await openSocket(await start(directory));
+		expect(await peer.closed).toBe(1011);
+		expect(peer.controls).toEqual([{ type: 'error', reason: 'storage' }]);
+	});
+
+	it('truncates a half-written append when the write fails, so the room carries on', async () => {
+		await writeThree();
+		const before = await readFile(logFile());
+		const url = await start(directory); const sender = await joinRoom(url);
+		failingAppend.armed = true;
+		sender.ws.send(packet(20));
+		expect(await sender.closed).toBe(1011);
+		expect(sender.controls.some((m) => m.type === 'ack')).toBe(false);
+		expect(await readFile(logFile())).toEqual(before);
+		const retry = await joinRoom(url);
+		retry.ws.send(packet(20));
+		await until(() => retry.controls.some((m) => m.type === 'ack' && m.revision === 4));
+		expect(retry.binary).toHaveLength(3);
+	});
+
+	it('logs why a room failed without leaking the proof', async () => {
+		const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const url = await start();
+			await mkdir(directory, { recursive: true });
+			await writeFile(`${directory}/${ROOM_STEM}.auth`, 'half-writ');
+			await (await openSocket(url)).closed;
+			const logged = errors.mock.calls.flat().join(' ');
+			expect(logged).toContain(ROOM_STEM.slice(0, 8));
+			expect(logged).not.toContain(PROOF);
+		} finally {
+			errors.mockRestore();
+		}
+	});
 });

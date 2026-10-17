@@ -5,7 +5,7 @@
  * claims a room, and the claim lives next to its log in <room hash>.auth.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, truncate, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import {
@@ -48,8 +48,10 @@ export function createRelay(directory) {
 	const rooms = new Map();
 	/** @param {string} id */
 	function makeRoom(id) {
-		const stem = resolve(directory, createHash('sha256').update(id).digest('hex'));
+		const name = createHash('sha256').update(id).digest('hex');
+		const stem = resolve(directory, name);
 		const room = {
+			label: name.slice(0, 8),
 			/** @type {Set<import('ws').WebSocket>} */ sockets: new Set(),
 			/** @type {{hash: string, payload: Buffer}[]} */ history: [],
 			/** @type {Map<string, number>} */ hashes: new Map(),
@@ -71,15 +73,17 @@ export function createRelay(directory) {
 	async function load(room) {
 		if (room.loaded) return;
 		await mkdir(directory, { recursive: true });
-		let contents = '';
-		try { contents = await readFile(room.file, 'utf8'); }
+		/** @type {Buffer} */
+		let contents = Buffer.alloc(0);
+		try { contents = await readFile(room.file); }
 		catch (error) { if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'ENOENT') throw error; }
-		// Never acknowledge a room whose disk history is corrupt or incomplete.
-		// An interrupted final append is reported rather than silently discarded.
+		// Acknowledgements follow the fsync, so an unterminated final line was never acknowledged
+		// and is dropped. Corruption anywhere else must stop the room rather than lose history.
+		const terminatedLength = contents.lastIndexOf('\n') + 1;
 		/** @type {{hash: string, payload: Buffer}[]} */
 		const history = [];
 		const hashes = new Map();
-		for (const line of contents.split('\n').filter(Boolean)) {
+		for (const line of contents.subarray(0, terminatedLength).toString('utf8').split('\n').filter(Boolean)) {
 			const entry = JSON.parse(line);
 			const payload = Buffer.from(entry.data, 'base64');
 			if (await payloadHash(payload) !== entry.hash) throw new Error('Corrupt sync history');
@@ -87,6 +91,7 @@ export function createRelay(directory) {
 			hashes.set(entry.hash, history.length);
 		}
 		const authHash = await readClaim(room.authFile);
+		if (terminatedLength < contents.length) await truncate(room.file, terminatedLength);
 		room.history = history;
 		room.hashes = hashes;
 		room.authHash = authHash;
@@ -95,7 +100,8 @@ export function createRelay(directory) {
 	}
 	/** @param {ReturnType<typeof makeRoom>} room @param {import('ws').WebSocket} ws @param {() => Promise<void>} work */
 	function enqueue(room, ws, work) {
-		room.tail = room.tail.then(async () => { await load(room); await work(); }).catch(() => {
+		room.tail = room.tail.then(async () => { await load(room); await work(); }).catch((error) => {
+			console.error(`[kostos] room ${room.label} storage failure: ${error.code ?? error.message}`);
 			room.loaded = false;
 			control(ws, STORAGE_ERROR_MESSAGE);
 			ws.close(STORAGE_CLOSE_CODE, 'Could not persist sync data');
@@ -171,8 +177,15 @@ export function createRelay(directory) {
 				}
 				const file = await open(activeRoom.file, 'a');
 				try {
-					await file.writeFile(`${JSON.stringify({ hash, data: payload.toString('base64') })}\n`);
-					await file.sync();
+					const { size } = await file.stat();
+					try {
+						await file.writeFile(`${JSON.stringify({ hash, data: payload.toString('base64') })}\n`);
+						await file.sync();
+					} catch (error) {
+						// a partial line would swallow the next append
+						await file.truncate(size).catch(() => {});
+						throw error;
+					}
 				} finally { await file.close(); }
 				activeRoom.history.push({ hash, payload });
 				activeRoom.bytes += payload.length;
