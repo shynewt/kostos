@@ -23,7 +23,9 @@
 
 	const INCOMPLETE_INVITE_MESSAGE = 'This invite link is incomplete. Ask the sender for the full link from their Share button.';
 
-	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'denied' | 'invalid' | 'unreadable';
+	const LOCAL_STORAGE_MESSAGE = 'This browser won’t let Kostos save data here, so the group can’t be joined. Close other Kostos tabs, turn off private browsing if it’s on, then open the invite link again.';
+
+	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'denied' | 'invalid' | 'unreadable' | 'storage';
 
 	const secret = $derived(parseInvite(page.url.hash) ?? '');
 	const oldInvite = $derived(isOldInvite(`${page.url.search}${page.url.hash}`));
@@ -56,6 +58,7 @@
 		if (!room) return 'parsing';
 		if (project && !room.checking) return 'ready';
 		if (room.sync.problem === 'denied') return 'denied';
+		if (room.local?.phase === 'error') return 'storage';
 		if (['error', 'offline', 'synced'].includes(room.sync.phase)) return 'empty';
 		return 'syncing';
 	});
@@ -143,6 +146,8 @@
 			{@render deadEnd(unreadableMessage)}
 		{:else if status === 'denied'}
 			{@render deadEnd(PROBLEM_LABELS.denied)}
+		{:else if status === 'storage'}
+			{@render deadEnd(LOCAL_STORAGE_MESSAGE)}
 		{:else if status === 'parsing' || status === 'syncing'}
 			<div class="loading-block">
 				<div class="loading-pulse" aria-hidden="true"></div>
