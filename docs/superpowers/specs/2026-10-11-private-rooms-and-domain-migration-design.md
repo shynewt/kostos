@@ -30,7 +30,7 @@ This is a breaking protocol change, so the release is **3.0.0**.
 | relay room ID | Derived. What the sync server routes by. Called `relayRoomId` in code. |
 | proof | Derived. Shows the server the client holds the secret. |
 
-## Token and derivation
+## Secret and derivation
 
 Share link: `https://APP_DOMAIN/join#<secret>`. The secret never goes in a query string or path.
 
@@ -55,31 +55,34 @@ Worker (`worker/index.ts`):
 Durable Object (`src/lib/server/sync-do.ts`):
 - A `room_auth` table holds `sha256(proof)`. The first connection claims the room inside the existing `serialized()` block (primary key makes a double claim impossible). Later connections are compared in constant time.
 - A wrong proof still completes the upgrade with the echoed subprotocol, receives `{"type":"denied"}` and is closed with 1008. A failed HTTP upgrade is invisible to browser JavaScript, and without this signal every device would retry forever and look merely offline.
-- Per-room storage cap: `MAX_ROOM_BYTES` (32 MiB). Past it, writes get the existing `storage` error instead of an acknowledgement.
+- Per-room storage cap: `MAX_ROOM_BYTES` (32 MiB) on live history, the payload bytes a new client replays. The archive of entries a compaction replaced is kept and not counted. Past the cap, writes get the existing `storage` error instead of an acknowledgement. A client compaction replaces old entries with one snapshot, which frees live space.
 - Replay, `complete` and barrier logic are unchanged. The new Worker has its own Durable Object namespace, so the schema starts clean.
 
 Node relays (`scripts/relay.js`, `serve.js`, `sync-server.js`; self-hosting, dev, e2e):
-- Same rules from the shared `src/lib/sync/room-access.js`: strict 64-hex ID, proof required, same `denied` signal, same storage cap.
-- The claim lives in `<room hash>.auth` next to the room's log. It is written to a temp file and linked into place, so a crash never leaves a half-written claim. A file that is not a valid hash is a hard error, never "unclaimed".
+- Same rules from the shared `src/lib/sync/room-access.js`: strict 64-hex ID, proof required, same `denied` signal, same storage cap. The Node log cannot compact, so its cap is permanent; a group that reaches it exports a backup and restores as a new group.
+- The claim lives in `<room hash>.auth` next to the room's log. It is written to a temp file, renamed into place, and then the directory is fsynced, so a crash never leaves a half-written claim and the rename survives power loss. A file that is not a valid hash is a hard error, never "unclaimed".
+- On load, an unterminated last log line is dropped: acknowledgements follow the fsync, so that write was never acknowledged. Corruption anywhere else stops the room instead of losing history. Idle rooms (no sockets, no pending work) are evicted from memory and reload from disk on the next connection, since anyone can mint rooms.
 - `serve.js` handles SIGTERM (done in v2.10.1).
 
 Abuse beyond one room is handled at the edge, not in code: a Cloudflare rate-limit rule on `/sync/*` for the hosted Worker, and the reverse proxy for self-hosters. Both are in the rollout checklist and the self-hosting guide.
 
 ## Client
 
-- `src/lib/token.ts`: `generateSecret` makes 16 bytes. `parseToken` accepts the share link or a bare secret and returns the secret. Room ID generation and the `PRT` alphabet are removed.
+- `src/lib/invite.ts`: `generateSecret` makes 16 bytes (`SECRET_LENGTH` is 22 characters). `parseInvite` accepts the share link or a bare secret and returns the secret; `invitePath` builds the `/join#<secret>` path. Room ID generation and the `PRT` alphabet are removed.
 - `src/lib/sync/crypto.ts`: one `expand` helper and the derivations (key, local ID, relay room ID plus proof).
 - `src/lib/sync/provider.ts`: connects to `/sync/<relay room ID>` with the proof as subprotocol. On `denied` it stops retrying and reports a terminal state the sync status UI words as "This group belongs to a different key. Ask for a fresh invite link."
 - Local project key is the local ID, so storage and routes keep their shape. The three places that showed the label (new group, invite card, join error) drop it.
 - Join box: accepts the full link or the 22-character key. Copy says "invite link or group key". `/join` reads the secret from the fragment only.
 - Old-format input (`?room=`, `ROOM.SECRET`, a 43-character key) is rejected with a message that says the invite is from the old site.
+- WebCrypto needs a secure context. On plain HTTP the app shows "Kostos needs HTTPS (or localhost) to encrypt your data." in new group, restore, join and the sync status, and does not retry.
+- A stored group is "legacy" when its secret is not a current valid secret, whatever its length. It gets no provider and stays readable from local data.
 - Call sites that stop passing a separate room ID: `routes/new`, `import`, `restore`, `join`, `scan`, `+page.svelte`, `ProjectAppBar.svelte`. Restore logic shared by restore, import and demo is extracted once instead of copied.
 
 ## Code quality bar
 
 The goal is a codebase an outsider reads and finds cared for.
 
-- One concern per module: `token.ts` parses invites, `crypto.ts` derives and encrypts, `room-access.js` holds the server rules, `legacy.ts` recognises old groups. No second copy of any pattern or constant.
+- One concern per module: `invite.ts` parses invites, `crypto.ts` derives and encrypts, `room-access.js` holds the server rules, `legacy.ts` recognises old groups. No second copy of any pattern or constant.
 - Plain JS only where a Node script must import it, and then typed with JSDoc.
 - `type` not `interface`, `T[]` not `Array<T>`, no `any`, no dead code left behind (label generation, old token patterns and the `?room=` handling are deleted, not commented out).
 - Named constants for every limit and prefix. Comments say why, never what.
@@ -96,13 +99,13 @@ The README gets a short "Upgrading to v3" section. Steps for the person who runs
 4. Share the new invite link of each restored group. Others join that link. Only one person per group does steps 3 and 4.
 5. When everyone has moved, delete the old `*.jsonl` files from the data volume.
 
-What makes this work: a v3 app still opens an old group offline from the data on the device, and Export and Restore already exist. The only new UI is the banner. The old server files are never read again. A restore keeps members, categories, payment methods, trips and expenses. It does not keep the activity log or conflict history, and the device's "this is me" choice has to be picked again. The guide says so.
+What makes this work: a v3 app still opens an old group offline from the data on the device, and Export and Restore already exist. The only new UI is the banner. The old server files are never read again. A restore keeps members, categories, payment methods, trips and expenses. It does not keep the activity log or conflict history, and the device's "Which member are you?" choice has to be picked again. The guide says so. The cleanup step deletes only `.jsonl` files without a `.auth` partner, since v3 logs use the same naming.
 
 ## Hosted migration
 
 1. Cut a `legacy` branch from `main` at the last v2 release. It keeps the old protocol and gets: a persistent banner telling users to move to `APP_DOMAIN`, an Export button that warns unless the device is fully synced (`phase` is synced and no pending changes), and the "one person per group" wording. It deploys to the existing Worker through its own workflow, pinned to that branch.
 2. Deploy this branch as a second Worker on `APP_DOMAIN`, only after the domain is registered and its zone is on Cloudflare.
-3. One person per group exports on the old site and restores on `APP_DOMAIN`, then shares the new link. The banner says not to export yourself. The mover can paste the new link into the old group's description, which reaches every member through normal sync.
+3. One person per group exports on the old site and restores on `APP_DOMAIN`, then shares the new link. The banner says not to export yourself. The mover can paste the new link into the old group's description; it reaches every member through normal sync but only shows in the group's Settings, so it backs up the owner message.
 4. Installed apps keep the old build until they accept the update prompt. The legacy build marks the update as needed to see an important notice. Dormant users are reached through the owners of the 4 groups directly.
 5. On a published retirement date (at least three months out), take the old Worker down. Until then it keeps serving and exporting. The app is never redirected, because installed apps and WebSocket upgrades do not follow redirects and an unexported group would become unreachable. Only the landing page and `/join` may redirect after the date.
 
@@ -126,9 +129,17 @@ SEO is not part of this change. The repo has no sitemap or canonical tags (`stat
 - Rollback: `wrangler rollback` for code problems. Old rooms stay until the retirement date.
 - Final `rg` for the old domain and for `PRT-`.
 
+## Known limits and threat model
+
+- Squatting needs the relay room ID. It is a SHA-256-derived value that only devices holding the secret compute, so an attacker cannot guess one; whoever learns an ID before the first connection can claim the room.
+- The operator is trusted until a group's first connection. They see the relay room ID and proof by design, and could claim a room first. After the claim only the matching proof gets in, and content stays AES-GCM encrypted.
+- Room creation is bounded at the edge, not in code: anyone can create rooms, and each costs a small `.auth` file or a Durable Object. A Cloudflare rate-limit rule or a reverse-proxy limit is required for a public server.
+- Run one Node process per data directory. Claims are renamed into place without a cross-process lock, so two processes can split a room.
+- Secrets are 22 base64url characters, but the last character carries only 4 bits of the 128. A non-canonical secret differing there derives the same values and opens the same group, which is harmless.
+
 ## Testing
 
-- Token and crypto unit tests for the new format, pinned vectors for every derivation, and a check that each derived value differs from the others.
+- Invite parsing and crypto unit tests for the new format, pinned vectors for every derivation, and a check that each derived value differs from the others.
 - Worker: malformed ID gets 400, missing proof gets 401.
 - Durable Object: first connection claims, wrong proof gets `denied` and close 1008, right proof connects, two simultaneous first connections give one winner, writes past the cap are refused.
 - Node relay: the same cases against a temp directory, plus a crash-torn `.auth` file being treated as an error.
