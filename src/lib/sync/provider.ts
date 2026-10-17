@@ -34,6 +34,8 @@ export class EncryptedSyncProvider {
 	private heartbeat: ReturnType<typeof setInterval> | null = null;
 	private pullTimer: ReturnType<typeof setTimeout> | null = null;
 	private reconnectDelay = 1000;
+	/** Until then only the Try again button reconnects a full group: every attempt replays up to MAX_ROOM_BYTES. */
+	private holdUntil = 0;
 	private sendQueue: Promise<void> = Promise.resolve();
 	private receiveQueue: Promise<void> = Promise.resolve();
 	private pending = new Set<string>();
@@ -66,8 +68,8 @@ export class EncryptedSyncProvider {
 			this.setState({ pendingChanges: local.pendingChanges, lastSyncedAt: local.lastSyncedAt });
 		});
 		if (typeof window !== 'undefined') {
-			window.addEventListener('online', this.retry);
-			window.addEventListener('offline', this.handleOffline);
+			window.addEventListener('online', this.reconnectUnlessHeld);
+			window.addEventListener('offline', this.reconnectUnlessHeld);
 			document.addEventListener('visibilitychange', this.handleVisibility);
 			window.addEventListener('pageshow', this.handlePageShow);
 		}
@@ -113,6 +115,7 @@ export class EncryptedSyncProvider {
 			this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 			return;
 		}
+		this.holdUntil = 0;
 		this.supported = this.replayed = this.durable = false;
 		this.complete = true;
 		this.sessionProblem = null;
@@ -356,6 +359,7 @@ export class EncryptedSyncProvider {
 	private fail(problem: SyncProblem, reconnect = true): void {
 		if (this.destroyed) return;
 		this.sessionProblem = problem;
+		if (problem === 'full') this.holdUntil = Date.now() + ROOM_FULL_RETRY_MS;
 		// a failure that will not reconnect has to stay visible, or nothing clears it when the device is back online
 		this.setState({ phase: reconnect && navigator.onLine === false ? 'offline' : 'error', checking: false, problem, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		if (reconnect) {
@@ -395,7 +399,8 @@ export class EncryptedSyncProvider {
 		this.heartbeat = this.pullTimer = null;
 	}
 	private nextReconnectDelay(): number {
-		if (this.sessionProblem === 'full') return ROOM_FULL_RETRY_MS;
+		const hold = this.holdUntil - Date.now();
+		if (hold > 0) return hold;
 		const delay = this.reconnectDelay;
 		this.reconnectDelay = Math.min(delay * 2, 30_000);
 		return delay;
@@ -416,11 +421,13 @@ export class EncryptedSyncProvider {
 		try { ws?.close(); } catch { /* Already closed. */ }
 		this.connect();
 	};
-	private handleOffline = (): void => {
-		this.retry();
+	/** Network and foreground events. A held group keeps its scheduled retry instead of replaying now. */
+	private reconnectUnlessHeld = (): void => {
+		if (Date.now() < this.holdUntil) this.scheduleReconnect();
+		else this.retry();
 	};
-	private handleVisibility = (): void => { if (document.visibilityState === 'visible') this.retry(); };
-	private handlePageShow = (event: PageTransitionEvent): void => { if (event.persisted) this.retry(); };
+	private handleVisibility = (): void => { if (document.visibilityState === 'visible') this.reconnectUnlessHeld(); };
+	private handlePageShow = (event: PageTransitionEvent): void => { if (event.persisted) this.reconnectUnlessHeld(); };
 
 	destroy(): void {
 		this.destroyed = true;
@@ -432,8 +439,8 @@ export class EncryptedSyncProvider {
 		this.ws = null;
 		this.listeners.clear();
 		if (typeof window !== 'undefined') {
-			window.removeEventListener('online', this.retry);
-			window.removeEventListener('offline', this.handleOffline);
+			window.removeEventListener('online', this.reconnectUnlessHeld);
+			window.removeEventListener('offline', this.reconnectUnlessHeld);
 			document.removeEventListener('visibilitychange', this.handleVisibility);
 			window.removeEventListener('pageshow', this.handlePageShow);
 		}

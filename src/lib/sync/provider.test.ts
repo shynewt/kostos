@@ -303,6 +303,24 @@ describe('verified encrypted sync', () => {
 		expect(Socket.instances.length).toBeGreaterThan(1);
 	});
 
+	it('lets only the Try again button replay a full group before its wait is over', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('full'));
+		await vi.advanceTimersByTimeAsync(60_000);
+		document.dispatchEvent(new Event('visibilitychange'));
+		events.dispatchEvent(new Event('online'));
+		events.dispatchEvent(new Event('offline'));
+		events.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+		expect(Socket.instances).toHaveLength(1);
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'full' });
+		provider.retry();
+		expect(Socket.instances).toHaveLength(2);
+	});
+
 	it('still reports a real storage failure as storage', async () => {
 		const ws = await start();
 		ws.control({ type: 'error', reason: 'storage' });
