@@ -12,7 +12,7 @@ import {
 	unwrapPacket, payloadHash
 } from '../sync/relay-protocol.js';
 import {
-	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
+	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON, ROOM_FULL_MESSAGE, STORAGE_ERROR_MESSAGE,
 	hashesEqual, parseProofProtocol, proofHash
 } from '../sync/room-access.js';
 
@@ -136,8 +136,8 @@ export class SyncRoom extends DurableObject {
 				let revision = this.ctx.storage.sql.exec<{ seq: number }>('SELECT seq FROM messages WHERE hash = ?', hash).toArray()[0]?.seq;
 				if (revision === undefined) {
 					if (this.exceedsCap(payload.byteLength)) {
-						this.control(ws, STORAGE_ERROR_MESSAGE);
-						ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_FULL_REASON);
+						this.control(ws, ROOM_FULL_MESSAGE);
+						ws.close(INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON);
 						return;
 					}
 					revision = this.ctx.storage.transactionSync(() => {

@@ -14,7 +14,7 @@ import {
 	unwrapPacket, payloadHash
 } from '../src/lib/sync/relay-protocol.js';
 import {
-	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
+	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON, ROOM_FULL_MESSAGE, STORAGE_ERROR_MESSAGE,
 	hashesEqual, isProofHash, proofHash
 } from '../src/lib/sync/room-access.js';
 
@@ -189,8 +189,8 @@ export function createRelay(directory) {
 				const existing = activeRoom.hashes.get(hash);
 				if (existing) { control(ws, { type: 'ack', hash, revision: existing }); return; }
 				if (activeRoom.bytes + payload.length > MAX_ROOM_BYTES) {
-					control(ws, STORAGE_ERROR_MESSAGE);
-					ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_FULL_REASON);
+					control(ws, ROOM_FULL_MESSAGE);
+					ws.close(INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON);
 					return;
 				}
 				const file = await open(activeRoom.file, 'a');

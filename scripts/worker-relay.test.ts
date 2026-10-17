@@ -176,7 +176,7 @@ describe('room storage cap', () => {
 			if (hasType(full, 'error')) break;
 			stored.push(update);
 		}
-		expect(full.controls.at(-1)).toEqual({ type: 'error', reason: 'storage' });
+		expect(full.controls.at(-1)).toEqual({ type: 'error', reason: 'full' });
 		expect(await full.closed).toBe(1011);
 		return stored;
 	}

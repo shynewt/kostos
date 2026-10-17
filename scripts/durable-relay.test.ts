@@ -222,7 +222,7 @@ describe('durable encrypted relay', () => {
 			await until(() => sender.controls.some((m) => m.type === 'ack' && m.revision === acknowledged + 1) || sender.controls.some((m) => m.type === 'error'));
 			if (!sender.controls.some((m) => m.type === 'error')) acknowledged++;
 		}
-		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'storage' });
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'full' });
 		expect(acknowledged).toBe(32);
 		expect(await sender.closed).toBe(1011);
 		const reader = await joinRoom(url);

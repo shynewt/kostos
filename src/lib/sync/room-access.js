@@ -12,7 +12,10 @@ export const DENIED_CLOSE_CODE = 1008;
 export const INTERNAL_ERROR_CLOSE_CODE = 1011;
 /** Sent instead of an acknowledgement when a write could not be stored; the socket then closes with INTERNAL_ERROR_CLOSE_CODE. */
 export const STORAGE_ERROR_MESSAGE = { type: 'error', reason: 'storage' };
-export const STORAGE_FULL_REASON = 'Room storage limit reached';
+/** Sent instead of STORAGE_ERROR_MESSAGE when the room refuses a write because it reached its size or entry
+ *  limit. Unlike a storage failure, retrying the same write cannot succeed until the room is compacted. */
+export const ROOM_FULL_MESSAGE = { type: 'error', reason: 'full' };
+export const ROOM_FULL_CLOSE_REASON = 'Room storage limit reached';
 
 export const SYNC_PATH_PREFIX = '/sync/';
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
