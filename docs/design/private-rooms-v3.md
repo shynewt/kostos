@@ -55,9 +55,11 @@ Worker (`worker/index.ts`):
 Durable Object (`src/lib/server/sync-do.ts`):
 - A `room_auth` table holds `sha256(proof)`. The first connection claims the room inside the existing `serialized()` block (primary key makes a double claim impossible). Later connections are compared in constant time.
 - A wrong proof still completes the upgrade with the echoed subprotocol, receives `{"type":"denied"}` and is closed with 1008. A failed HTTP upgrade is invisible to browser JavaScript, and without this signal every device would retry forever and look merely offline.
-- Per-room caps from `relay-protocol.js`: `MAX_ROOM_BYTES` (32 MiB) on live history, the payload bytes a new client replays, and `MAX_ROOM_ENTRIES` (100,000) on live entries. Past either, a write gets `ROOM_FULL_MESSAGE` (`{"type":"error","reason":"full"}` from `room-access.js`) instead of an acknowledgement, and the socket closes with 1011. A client compaction replaces old entries with one snapshot, which frees live space.
-- The entries a compaction replaced go to an archive, capped at `MAX_ARCHIVE_BYTES` (another 32 MiB, so a room stores at most twice the live cap). A compaction that would overflow the archive is ignored, so a client that keeps writing and compacting cannot grow storage forever.
-- A storage failure is a different signal: reason `storage`, logged server-side. The client words the two differently and treats them differently (see Client).
+- Per-room caps from `relay-protocol.js`: `MAX_ROOM_BYTES` (32 MiB) on live history, the payload bytes a new client replays, and `MAX_ROOM_ENTRIES` (100,000) on live entries. Past either, a write gets `ROOM_FULL_MESSAGE` (`{"type":"error","reason":"full"}` from `room-access.js`) instead of an acknowledgement, and the socket closes with 1011 and the reason "Room storage limit reached". A client compaction replaces old entries with one snapshot, which frees live space.
+- The entries a compaction replaced go to an archive, capped at `MAX_ARCHIVE_BYTES` (another 32 MiB, so a room stores at most twice the live cap). The archive is recovery-only and never replayed, so when it is full the oldest archived rows are dropped to make room; a compaction is never refused because of the archive. It is still ignored when it covers fewer than 2 entries or would push live bytes past the cap.
+- The Durable Object keeps the two byte totals in `sync_meta` (`live_bytes` and `archive_bytes`) and updates them with each write, so a write never scans rows. A room that lacks the keys gets them from one scan on its first start.
+- A storage failure is a different signal: reason `storage`, logged server-side, socket closed with 1011 and "Could not persist sync data". The client words the two differently and treats them differently (see Client).
+- An unreadable or oversized packet gets `{"type":"error","reason":"size"}` and a close with 1009 and "Invalid message size". A denied proof closes with 1008 and "Unauthorized". The Node relays use the same codes and reasons from `room-access.js`.
 - Replay, `complete` and barrier logic are unchanged. The new Worker has its own Durable Object namespace, so the schema starts clean.
 
 Node relays (`scripts/relay.js`, `serve.js`, `sync-server.js`; self-hosting, dev, e2e):
@@ -71,11 +73,11 @@ Abuse beyond one room is handled at the edge, not in code: a Cloudflare rate-lim
 
 ## Client
 
-- `src/lib/invite.ts`: `generateSecret` makes 16 bytes (`SECRET_LENGTH` is 22 characters). `parseInvite` accepts the share link or a bare secret and returns the secret; `invitePath` builds the `/join#<secret>` path. Room ID generation and the `PRT` alphabet are removed.
+- `src/lib/invite.ts`: `generateSecret` makes 16 bytes (`SECRET_LENGTH` is 22 characters). `parseInvite` accepts the share link or a bare secret anywhere in a pasted message and returns the secret, or `null` when none or several different ones are found. It trims quotes, brackets, backticks, asterisks, tildes, pipes, braces, an ellipsis, an ideographic full stop and a zero-width space around the pasted key; `invitePath` builds the `/join#<secret>` path. Room ID generation and the `PRT` alphabet are removed.
 - `src/lib/sync/crypto.ts`: one `expand` helper and the derivations (key, local ID, relay room ID plus proof).
-- `src/lib/sync/provider.ts`: connects to `/sync/<relay room ID>` with the proof as subprotocol. On `denied` it stops retrying and reports a terminal state the sync status UI words as "This invite doesn’t match the group. Ask for a new invite link." On the `full` error reason it reports a `full` problem ("This group is full, so new changes stay on this phone. Export a backup from Settings and restore it as a new group.") and retries only after about 5 minutes, since the same write cannot succeed until the room is compacted; a `storage` error keeps the normal backoff and its own wording.
+- `src/lib/sync/provider.ts`: connects to `/sync/<relay room ID>` with the proof as subprotocol. On `denied` it stops retrying and reports a terminal state the sync status UI words as "This invite doesn’t match the group. Ask for a new invite link." On the `full` error reason it reports a `full` problem ("This group is full, so new changes stay on this phone. Export a backup from Settings and restore it as a new group.") and retries only after about 5 minutes, since the same write cannot succeed until the room is compacted. Network and foreground events do not replay a full group before that wait ends; only the "Try again" button does, because each attempt replays up to 32 MiB. A `storage` error from the server keeps the normal backoff and its own wording. A storage failure while the client starts up (the device cannot read or save its local copy) is terminal: no retry, and the data already on the device stays readable.
 - Local project key is the local ID, so storage and routes keep their shape. The three places that showed the label (new group, invite card, join error) drop it.
-- Join box: accepts the full link or the 22-character key. Copy says "invite link or group key". `/join` reads the secret from the fragment only.
+- Join box: accepts the full link or the 22-character key. Copy says "invite link or group key". `/join` reads the secret from the fragment only, and keeps the local ID it derives together with the secret it came from, as a `{secret, roomId}` pair. If the hash changes in place, the old ID is discarded until the new one is derived, so two groups can never merge.
 - Old-format input (`?room=`, `ROOM.SECRET`, a 43-character key) is rejected with a message that says the invite is from the old site.
 - WebCrypto needs a secure context. On plain HTTP the app shows "Kostos needs HTTPS (or localhost) to encrypt your data." in new group, restore, join and the sync status, and does not retry.
 - A stored group is "legacy" when its secret is not a current valid secret, whatever its length. It gets no provider and stays readable from local data.
@@ -90,7 +92,6 @@ The goal is a codebase an outsider reads and finds cared for.
 - `type` not `interface`, `T[]` not `Array<T>`, no `any`, no dead code left behind (label generation, old token patterns and the `?room=` handling are deleted, not commented out).
 - Named constants for every limit and prefix. Comments say why, never what.
 - Tests describe behaviour, not implementation, and each new rule has one that fails first.
-- The last task runs `simplify` and `code-review` over the whole branch diff and fixes what they find before merging.
 
 ## Upgrading a self-hosted server
 
@@ -137,7 +138,7 @@ SEO is not part of this change. The repo has no sitemap or canonical tags (`stat
 - Squatting needs the relay room ID. It is a SHA-256-derived value that only devices holding the secret compute, so an attacker cannot guess one; whoever learns an ID before the first connection can claim the room.
 - The operator is trusted until a group's first connection. They see the relay room ID and proof by design, and could claim a room first. After the claim only the matching proof gets in, and content stays AES-GCM encrypted.
 - Room creation is bounded at the edge, not in code: anyone can create rooms, and each costs a small `.auth` file or a Durable Object. A Cloudflare rate-limit rule or a reverse-proxy limit is required for a public server.
-- Storage per room is bounded: a Durable Object room holds at most 32 MiB live plus 32 MiB archived, and refuses writes at 100,000 live entries. The archive used to grow without limit; a full archive now makes compactions no-ops, so the live cap is the one that can then stay full.
+- Storage per room is bounded: a Durable Object room holds at most 32 MiB live plus 32 MiB archived, and refuses writes at 100,000 live entries. The archive used to grow without limit; now a full archive drops its oldest rows, so only the live cap can stay full.
 - The Node relay never compacts, so a room that reaches 32 MiB or 100,000 entries is full for good. The way out is a backup restored as a new group.
 - On an idle Node room the log is read before the proof is checked (see Server). Cheap per request, and the edge limit is what stops floods.
 - Run one Node process per data directory. Claims are renamed into place without a cross-process lock, so two processes can split a room.
@@ -147,7 +148,7 @@ SEO is not part of this change. The repo has no sitemap or canonical tags (`stat
 
 - Invite parsing and crypto unit tests for the new format, pinned vectors for every derivation, and a check that each derived value differs from the others.
 - Worker: malformed ID gets 400, missing proof gets 401.
-- Durable Object: first connection claims, wrong proof gets `denied` and close 1008, right proof connects, two simultaneous first connections give one winner, writes past the byte or entry cap get the `full` error, a compaction frees live space, and one that would overflow the archive is ignored.
+- Durable Object: first connection claims, wrong proof gets `denied` and close 1008, right proof connects, two simultaneous first connections give one winner, writes past the byte or entry cap get the `full` error, a compaction frees live space, and one that would overflow the archive drops the oldest archive rows instead.
 - Node relay: the same cases against a temp directory, plus a crash-torn `.auth` file being treated as an error, idle eviction and an exact cap fill.
 - Provider: connects with the subprotocol, stops retrying after `denied`, backs off 5 minutes after `full`, and syncs a document between two clients.
 - Join flow: full link and bare key parse; the old forms are rejected with the old-site message.
