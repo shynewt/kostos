@@ -76,9 +76,11 @@ wrangler login
 npm run cf:deploy
 ```
 
-`worker/index.ts` is the entry. It routes `/sync/*` to a `SyncRoom` Durable Object (in `src/lib/server/sync-do.ts`) and falls through to the static assets binding for everything else. The DO uses Hibernating WebSockets, so idle rooms cost no CPU. Configuration lives in `wrangler.toml`; replace `APP_DOMAIN` there with your own domain before deploying.
+`worker/index.ts` is the entry. It routes `/sync/*` to a `SyncRoom` Durable Object (in `src/lib/server/sync-do.ts`) and falls through to the static assets binding for everything else. The DO uses Hibernating WebSockets, so idle rooms cost no CPU.
 
-A room is addressed by a 64-character hex ID derived from the group's secret. The first client to connect stores a hash of its access proof; any other proof is answered with a `denied` message and a 1008 close. The Node relays apply the same rule and keep the hash in `<room>.auth` next to the room log.
+Configuration lives in `wrangler.toml`. The Worker is named `kostos-app` and has its own Durable Object namespace, so rooms on an older Worker are left alone and do not move. `workers_dev` and `preview_urls` are off, which means the only public address is your custom domain, and that domain's zone has to be on your Cloudflare account. Before deploying, replace `APP_DOMAIN` in the route pattern of `wrangler.toml`. If you deploy through `.github/workflows/release.yml`, also replace it in the `url:` of the `production` environment; the workflow refuses to run while either one is still a placeholder.
+
+A room is addressed by a 64-character hex ID derived from the group's secret. The first client to connect stores a hash of its access proof; any other proof is answered with a `denied` message and a 1008 close. The Node relays apply the same rule and keep the hash in `<hash>.auth` next to the room log `<hash>.jsonl` (the file name is the SHA-256 of the relay room ID).
 
 `wrangler.toml` turns off Workers invocation logs so the access proof in the `Sec-WebSocket-Protocol` header isn't retained. Cloudflare's edge and any Logpush job you add yourself sit outside that setting, and the server sees the relay room ID and proof by design.
 
@@ -109,7 +111,7 @@ Or with `docker run`:
 docker run -d -p 8080:8080 -v kostos-data:/data --restart unless-stopped ghcr.io/shynewt/kostos:3
 ```
 
-Each release publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GitHub Container Registry. `:3` follows every 3.x release. `:3.0` only gets patch releases and `:3.0.0` never changes.
+Each release publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GitHub Container Registry. `:3` follows every stable 3.x release. `:3.0` only gets patch releases and `:3.0.0` never changes. Pre-releases get their own version tag and nothing else.
 
 For HTTPS, [Caddy](https://caddyserver.com/docs/quick-starts/reverse-proxy) is the quickest way. It gets a certificate for your domain by itself and passes the sync WebSocket through:
 
@@ -137,15 +139,33 @@ Abuse beyond a single room is not handled in code. Put a rate limit on `/sync/` 
 
 #### Upgrading to v3
 
-v3 changes the sync protocol, so groups move to new keys. Members' data survives through export and restore.
+v3 changes the sync protocol, so groups move to new keys. Members' data survives through export and restore. This guide is for Docker and Node self-hosters; on Cloudflare, deploy the `kostos-app` Worker as described above and move groups the same way.
 
 1. Ask members to open the app online once, so their devices hold the latest data.
-2. Pull the new image (change the tag from `:2` to `:3` if you pin it) and restart. Same volume, same variables, same port, nothing else changes.
-3. Open each group on one device. v3 recognises the old format, does not try to sync it, and shows a banner with two buttons: export a backup, and restore it as a new group.
-4. Share the new invite link of each restored group. Others join that link. Only one person per group does steps 3 and 4.
-5. When everyone has moved, delete the old `*.jsonl` files from the data volume.
+2. Pull the new image (change the tag from `:2` to `:3` if you pin it) and restart. Same volume, same variables, same port.
+3. Check that the server is reached over HTTPS. A plain-HTTP LAN address stops working in v3: new group, restore and join show "Kostos needs HTTPS (or localhost) to encrypt your data."
+4. Open each group on one device. v3 recognises the old format, does not try to sync it, and shows a banner ("This group no longer syncs.") with two buttons: Export backup, and Restore as a new group.
+5. Restore on that device: choose the backup file, pick which member you are ("Which member are you?"), tap Restore on this device. Then use the Share icon at the top of the new group to send its invite link. Everyone else joins that link. Only one person per group does steps 4 and 5.
+6. When everyone has moved, delete the old logs. A v3 group's log (`<hash>.jsonl`) has a `<hash>.auth` file next to it; an old one doesn't. This removes only the `.jsonl` files without an `.auth` partner:
 
-A restore keeps members, categories, payment methods, trips and expenses. It does not keep the activity log or conflict history, and whoever restores picks "this is me" again.
+   ```sh
+   docker compose exec kostos sh -c 'for f in /data/*.jsonl; do [ -e "$f" ] || continue; [ -e "${f%.jsonl}.auth" ] || rm "$f"; done'
+   ```
+
+   With plain `docker run`, use `docker exec <container> sh -c '...'` with the same script, or run it against the files directly if you aren't using Docker (swap `/data` for your `KOSTOS_DATA_DIR`). If you're unsure whether everyone has moved, leave the files alone; they cost disk space and nothing else.
+
+A restore keeps members, categories, payment methods, trips and expenses. It does not keep the activity log or conflict history, and whoever restores picks which member they are again.
+
+### Limits and operating notes
+
+- Browsers only expose WebCrypto on HTTPS or `localhost`, so Kostos needs HTTPS. Anywhere else the app shows "Kostos needs HTTPS (or localhost) to encrypt your data."
+- Run one server process per data directory. Room claims aren't locked across processes, so two processes sharing a directory can split a room.
+- Each group's live encrypted history is capped at 32 MiB, and writes past that are refused (the app says the server couldn't save changes). On Cloudflare the Durable Object frees space when a synced device compacts its history, and the replaced entries go to an archive that doesn't count toward the cap. The Node relay can't compact, so its cap is permanent: if a group ever gets there, export a backup and restore it as a new group.
+- The Node relay keeps one small `.auth` file per room and anyone can create rooms, so put a rate limit in front of a public server (a reverse proxy rule, or a Cloudflare rule on `/sync/*`).
+- Whoever knows a relay room ID before the group's first connection can claim it, and after that only the group's proof gets in. The operator is trusted until that first connection.
+- On start the Node relay drops an unfinished last line of a room log, since a write is only acknowledged after it is flushed. It also frees idle rooms from memory and reloads them from disk on the next connection.
+- The Docker `HEALTHCHECK` follows `PORT` but always probes `127.0.0.1`.
+- `release.yml` refuses to run until `APP_DOMAIN` is replaced in `wrangler.toml` and in the environment url.
 
 ## Why v2
 
@@ -157,7 +177,9 @@ Kostos v1 was a Next.js + SQLite app where the server held every group's data. I
 - **Link-based, not session-based.** v1 used localStorage to remember "who you are" per browser. v2 makes the invite link the identity: the same link on a new device is the same group, instantly.
 - **Smaller and faster.** SvelteKit 5 + adapter-static ships ~150KB of JS gzipped. Initial paint is under a second on a 3G simulation.
 
-**Migrating from v1.** v1 lives on the [`v1` branch](https://github.com/shynewt/kostos/tree/v1) of this repo and stays available for self-hosters who don't want to migrate yet. To move a project: open v1, export the project to JSON, then drop the file on `/import` in v2. The importer maps members, categories, payment methods, and every expense. Sub-cent rounding may shift even-split balances by ±1 cent vs v1 due to integer-cent arithmetic; totals are preserved.
+**v3: private rooms.** The design stays the same, but the sync server now only lets in a client that proves it holds the group's secret, and the 22-character secret replaces the short room label. That broke the old protocol, which is why existing groups move through export and restore (see [Upgrading to v3](#upgrading-to-v3)).
+
+**Migrating from v1.** v1 lives on the [`v1` branch](https://github.com/shynewt/kostos/tree/v1) of this repo and stays available for self-hosters who don't want to migrate yet. To move a project: open v1, export the project to JSON, then drop the file on `/import` of a current Kostos site. The importer maps members, categories, payment methods, and every expense. Sub-cent rounding may shift even-split balances by ±1 cent vs v1 due to integer-cent arithmetic; totals are preserved.
 
 ## Development
 
@@ -196,9 +218,9 @@ Scripts:
 
 A socket opening does not mean expenses are current. The client waits for encrypted replay, uploads its saved document, receives acknowledgements for committed writes, and checks an ordered server barrier before showing “Up to date”. This means the device matches the relay at the displayed time; another member's offline changes cannot appear until that member reconnects. Foregrounding the app reconnects and checks again. A saved document is uploaded on every connection, so sending and recovery do not depend on another member being online.
 
-Upgrade the relay with the app: the new client requires protocol 3 to confirm sync. Existing clients' encrypted binary updates are still accepted. Cloudflare migrates the previous KV history into SQLite without deleting the old value. If the old history reached its 1,000-message cap, Kostos reports incomplete history rather than claiming the room is current. Already-discarded data cannot be recovered from the server: keep existing devices, export a full backup from a device containing the expenses, and restore it into a new group if necessary. Restarting the old in-memory Node relay also cannot recover its former history; existing devices re-upload what they have.
+A v3 server only accepts a client that sends an access proof, and a v2 client sends none, so v2 clients cannot sync with it. Groups move with the [upgrade steps](#upgrading-to-v3) instead. On Cloudflare, the Durable Object still copies a pre-SQLite KV `history` into SQLite on first start, and a history that hit the old 1,000-message cap is reported as incomplete rather than current. That only matters if you deploy over a Worker name that already holds old rooms, and v3 clients can't reach those rooms anyway. Data that was already discarded can't be recovered from the server: export a full backup from a device that has the expenses and restore it as a new group.
 
-Both relays retain the full encrypted log. They do not prune history until a safe checkpoint protocol exists. Monitor disk/storage use for long-running deployments. Messages above 1 MiB fail explicitly and do not receive a successful acknowledgement. Each room is capped at 32 MiB; writes past that are refused and the app reports that the server couldn't save changes.
+Neither relay prunes its live history on its own. Messages above 1 MiB fail explicitly and do not receive a successful acknowledgement. Watch disk and storage use on long-running deployments; the per-room cap is in the [limits](#limits-and-operating-notes) below.
 
 To run the mobile sync scenarios against local Cloudflare instead of Node, build the app, run `npm run cf:dev`, and set `KOSTOS_E2E_BASE_URL` to its URL when running `npm run test:e2e -- e2e/sync.e2e.ts`. Playwright must have Chromium installed; `PLAYWRIGHT_CHROMIUM_PATH` can select an existing executable.
 
