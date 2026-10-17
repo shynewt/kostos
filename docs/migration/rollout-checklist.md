@@ -14,7 +14,7 @@ Checklist:
 - [ ] Domain registered, zone in the same Cloudflare account, `CLOUDFLARE_API_TOKEN` scope includes it.
 - [ ] `APP_DOMAIN` replaced in the route pattern of `wrangler.toml` and the `production` environment `url:` of `.github/workflows/release.yml`. `rg -n APP_DOMAIN wrangler.toml` finds nothing, and `rg -n "url: https://APP_DOMAIN" .github/workflows/release.yml` finds nothing (those are the two things the Release workflow's guard checks). Edit only these two spots rather than running a global search-and-replace, which would also rewrite the placeholders in the commands on this page. (The guard itself survives a global replace; it builds its search word from two pieces.)
 - [ ] The README live demo link points at the real domain: `rg -n "https://APP_DOMAIN" README.md` finds nothing.
-- [ ] On the `legacy` branch, `src/lib/migration.ts` sets real values for `APP_HOST` and `RETIREMENT_DATE`: `rg -n "= '(APP_DOMAIN|RETIREMENT_DATE)'" src/lib/migration.ts` finds nothing.
+- [ ] On the `legacy` branch, `src/lib/migration.ts` sets real values for `APP_HOST` and `RETIREMENT_DATE`: `rg -n "^export const (APP_HOST|RETIREMENT_DATE) = [\"'][A-Z_]+[\"'];" src/lib/migration.ts` finds nothing (single or double quotes, the same pattern the Release Legacy guard uses).
 - [ ] `workers_dev = false` and `preview_urls = false` on the new Worker, so there is no second public origin.
 - [ ] Cloudflare WAF rate-limit rule on `/sync/*`.
 - [ ] Workers Logs checked: invocation logs are off, and a test connection leaves no `kostos1.` value in the dashboard. If that cannot be shown, the README says so.
