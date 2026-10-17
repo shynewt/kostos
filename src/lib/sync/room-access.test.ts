@@ -6,7 +6,9 @@ import {
 	parseRoomId,
 	parseSyncRequest,
 	PROOF_PREFIX,
-	proofHash
+	proofHash,
+	relayRoomIdFromPath,
+	SYNC_PATH_PREFIX
 } from './room-access.js';
 
 const room = 'a1'.repeat(32);
@@ -25,6 +27,19 @@ describe('parseRoomId', () => {
 		expect(parseRoomId('g'.repeat(64))).toBeNull();
 		expect(parseRoomId(`${room.slice(1)}\n`)).toBeNull();
 		expect(parseRoomId('')).toBeNull();
+	});
+});
+
+describe('relayRoomIdFromPath', () => {
+	it('reads the room ID after the sync prefix', () => {
+		expect(relayRoomIdFromPath(`${SYNC_PATH_PREFIX}${room}`)).toBe(room);
+		expect(relayRoomIdFromPath(`/sync/${room.replace('a', '%61')}`)).toBe(room);
+	});
+
+	it('returns null for other paths, bad escapes and invalid room IDs', () => {
+		for (const bad of ['/', `/${room}`, '/sync', '/sync/', '/sync/%ZZ', `/sync/${room}/extra`, `/sync/${room.toUpperCase()}`, '/sync/PRT-AAAA-BBBB']) {
+			expect(relayRoomIdFromPath(bad), bad).toBeNull();
+		}
 	});
 });
 

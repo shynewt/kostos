@@ -6,7 +6,10 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../sync/relay-protocol.js';
-import { DENIED_CLOSE_CODE, DENIED_MESSAGE, hashesEqual, parseProofProtocol, proofHash } from '../sync/room-access.js';
+import {
+	DENIED_CLOSE_CODE, DENIED_MESSAGE, STORAGE_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
+	hashesEqual, parseProofProtocol, proofHash
+} from '../sync/room-access.js';
 
 type Entry = { seq: number; hash: string; payload: ArrayBuffer };
 
@@ -119,8 +122,8 @@ export class SyncRoom extends DurableObject {
 				if (revision === undefined) {
 					// database size, not a SUM over rows: it is O(1), and every row read is billed
 					if (this.ctx.storage.sql.databaseSize + payload.byteLength > MAX_ROOM_BYTES) {
-						this.control(ws, { type: 'error', reason: 'storage' });
-						ws.close(1011, 'Room storage limit reached');
+						this.control(ws, STORAGE_ERROR_MESSAGE);
+						ws.close(STORAGE_CLOSE_CODE, STORAGE_FULL_REASON);
 						return;
 					}
 					revision = this.ctx.storage.transactionSync(() => {
@@ -131,7 +134,7 @@ export class SyncRoom extends DurableObject {
 				}
 				this.control(ws, { type: 'ack', hash, revision });
 			} catch {
-				try { this.control(ws, { type: 'error', reason: 'storage' }); ws.close(1011, 'Could not persist sync data'); } catch { /* Closed peer. */ }
+				try { this.control(ws, STORAGE_ERROR_MESSAGE); ws.close(STORAGE_CLOSE_CODE, 'Could not persist sync data'); } catch { /* Closed peer. */ }
 			}
 		});
 	}

@@ -8,7 +8,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../src/lib/sync/relay-protocol.js';
-import { DENIED_CLOSE_CODE, DENIED_MESSAGE, hashesEqual, isProofHash, proofHash } from '../src/lib/sync/room-access.js';
+import {
+	DENIED_CLOSE_CODE, DENIED_MESSAGE, STORAGE_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
+	hashesEqual, isProofHash, proofHash
+} from '../src/lib/sync/room-access.js';
 
 /** null only when nobody has claimed the room; a damaged file throws.
  *  @param {string} file @returns {Promise<string | null>} */
@@ -94,8 +97,8 @@ export function createRelay(directory) {
 	function enqueue(room, ws, work) {
 		room.tail = room.tail.then(async () => { await load(room); await work(); }).catch(() => {
 			room.loaded = false;
-			control(ws, { type: 'error', reason: 'storage' });
-			ws.close(1011, 'Could not persist sync data');
+			control(ws, STORAGE_ERROR_MESSAGE);
+			ws.close(STORAGE_CLOSE_CODE, 'Could not persist sync data');
 		});
 	}
 	/** The first proof to connect claims the room; every later connection must match it.
@@ -162,8 +165,8 @@ export function createRelay(directory) {
 				const existing = activeRoom.hashes.get(hash);
 				if (existing) { control(ws, { type: 'ack', hash, revision: existing }); return; }
 				if (activeRoom.bytes + payload.length > MAX_ROOM_BYTES) {
-					control(ws, { type: 'error', reason: 'storage' });
-					ws.close(1011, 'Room storage limit reached');
+					control(ws, STORAGE_ERROR_MESSAGE);
+					ws.close(STORAGE_CLOSE_CODE, STORAGE_FULL_REASON);
 					return;
 				}
 				const file = await open(activeRoom.file, 'a');

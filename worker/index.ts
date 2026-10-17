@@ -5,7 +5,7 @@
  * WebSocket sync hits /sync/<relay room ID> and gets routed to a SyncRoom DO instance.
  */
 
-import { parseProofProtocol, parseRoomId } from '../src/lib/sync/room-access.js';
+import { parseProofProtocol, relayRoomIdFromPath, SYNC_PATH_PREFIX } from '../src/lib/sync/room-access.js';
 
 export { SyncRoom } from '../src/lib/server/sync-do';
 
@@ -18,17 +18,11 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
 
-		if (url.pathname.startsWith('/sync/')) {
-			if (request.headers.get('Upgrade') !== 'websocket') {
+		if (url.pathname.startsWith(SYNC_PATH_PREFIX)) {
+			if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
 				return new Response('Expected WebSocket', { status: 426 });
 			}
-			let rawRoomId = '';
-			try {
-				rawRoomId = decodeURIComponent(url.pathname.slice('/sync/'.length));
-			} catch {
-				return new Response('Bad room', { status: 400 });
-			}
-			const relayRoomId = parseRoomId(rawRoomId);
+			const relayRoomId = relayRoomIdFromPath(url.pathname);
 			if (!relayRoomId) return new Response('Bad room', { status: 400 });
 			if (!parseProofProtocol(request.headers.get('Sec-WebSocket-Protocol'))) return new Response('Unauthorized', { status: 401 });
 			return env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName(relayRoomId)).fetch(request);
