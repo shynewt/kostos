@@ -3,7 +3,7 @@ main = "worker/index.ts"
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat"]
 
-# no second public origin: the Worker is reachable on APP_DOMAIN only
+# no second public origin: the Worker is reachable on its custom domain only
 workers_dev = false
 preview_urls = false
 
