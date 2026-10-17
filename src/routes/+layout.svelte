@@ -26,7 +26,15 @@
 	{/if}
 </svelte:head>
 
-<MigrationBanner />
-{@render children()}
+<div class="shell">
+	<MigrationBanner />
+	{@render children()}
+</div>
 <MathToolbar />
 <UpdateBanner />
+
+<style>
+	/* the banner sits above every screen, so the screen takes the height left over instead of a full 100dvh */
+	.shell { display: flex; flex-direction: column; height: 100svh; height: 100dvh; padding-top: env(safe-area-inset-top); }
+	.shell > :global(.screen) { flex: 1; height: auto; min-height: 0; padding-top: 0; }
+</style>

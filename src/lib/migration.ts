@@ -12,5 +12,5 @@ export const UPDATE_NOTICE_TEXT = 'Update to see an important notice about Kosto
 export function exportWarning(sync: SyncStatus, local: LocalState | null): string | null {
 	const pending = Math.max(sync.pendingChanges, local?.pendingChanges ?? 0);
 	if (sync.phase === 'synced' && pending === 0) return null;
-	return 'This phone has not finished syncing, so the backup could miss recent changes. Open the group online and wait for “Up to date” first.';
+	return 'This phone has not finished syncing, so the backup could miss recent changes. Open the group online and wait for a solid dot under the group name (tap it to see “Up to date”), then export.';
 }
