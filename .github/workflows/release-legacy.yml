@@ -37,7 +37,7 @@ jobs:
       - name: Refuse to ship placeholders
         run: |
           test -f src/lib/migration.ts
-          if grep -nE "^export const (APP_HOST|RETIREMENT_DATE) = '[A-Z_]+';" src/lib/migration.ts; then
+          if grep -nE "^export const (APP_HOST|RETIREMENT_DATE) = [\"'][A-Z_]+[\"'];" src/lib/migration.ts; then
             echo "Set APP_HOST and RETIREMENT_DATE in src/lib/migration.ts first"
             exit 1
           fi
