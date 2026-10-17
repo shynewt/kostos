@@ -12,7 +12,7 @@
 	import { getCurrentMember, removeProject, setCurrentMember } from '$lib/storage';
 	import { updateMember, updateProject } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
-	import { serializeProject, toCSV } from '$lib/io/projectArchive';
+	import { backupFile, saveFile, spreadsheetFile } from '$lib/io/exportFiles';
 	import type { ProjectColor, SplitDefault } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
@@ -91,45 +91,12 @@
 
 	const expenses = $derived(room.expenses);
 
-	function downloadFile(name: string, mime: string, contents: string) {
-		const blob = new Blob([contents], { type: mime });
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = name;
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
-		// Revoke after the click finishes so Safari has time to start the download.
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
-	}
-
-	function slug(value: string): string {
-		const cleaned = value
-			.toLowerCase()
-			.normalize('NFKD')
-			.replace(/[^\w\s-]/g, '')
-			.trim()
-			.replace(/\s+/g, '-');
-		return cleaned || 'project';
-	}
-
 	function exportJson() {
-		if (!project) return;
-		const archive = serializeProject(project, members, expenses);
-		const date = new Date().toISOString().slice(0, 10);
-		downloadFile(
-			`kostos-${slug(project.name)}-${date}.json`,
-			'application/json',
-			JSON.stringify(archive, null, 2)
-		);
+		if (project) saveFile(backupFile(project, members, expenses));
 	}
 
 	function exportCsv() {
-		if (!project) return;
-		const csv = toCSV(project, members, expenses);
-		const date = new Date().toISOString().slice(0, 10);
-		downloadFile(`kostos-${slug(project.name)}-${date}.csv`, 'text/csv', csv);
+		if (project) saveFile(spreadsheetFile(project, members, expenses));
 	}
 </script>
 
