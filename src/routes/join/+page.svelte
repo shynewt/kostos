@@ -17,6 +17,7 @@
 	import { isOldInvite, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
+	import { plural } from '$lib/plural';
 	import { PROBLEM_LABELS } from '$lib/sync/status';
 	import { provideRoomContext, useRoom } from '$lib/sync/useRoom.svelte';
 
@@ -26,17 +27,17 @@
 
 	const secret = $derived(parseInvite(page.url.hash)?.secret ?? '');
 	const oldInvite = $derived(isOldInvite(`${page.url.search}${page.url.hash}`));
-	let roomId = $state('');
 	let unreadableMessage = $state('');
-	// the hash can change while the derivation is pending; only the latest one may set roomId
+	let derivation = $state<{ secret: string; roomId: string } | null>(null);
+	// the hash can change in place; an ID derived from the previous secret must never open a room with the new one
+	const roomId = $derived(derivation?.secret === secret ? derivation.roomId : '');
 	$effect(() => {
 		const current = secret;
-		roomId = '';
 		unreadableMessage = '';
 		if (!current) return;
 		let stale = false;
 		deriveLocalId(current).then(
-			(id) => { if (!stale) roomId = id; },
+			(id) => { if (!stale) derivation = { secret: current, roomId: id }; },
 			(error) => {
 				if (!stale) unreadableMessage = error instanceof InsecureContextError ? error.message : 'This invite couldn’t be opened on this device.';
 			}
@@ -44,37 +45,40 @@
 		return () => { stale = true; };
 	});
 
-	let status = $state<Status>('parsing');
-	let project = $state<Project | null>(null);
-	let members = $state<Member[]>([]);
-	let pickedId = $state<string | null>(null);
+	const room = $derived(roomId && secret ? useRoom(roomId, secret) : null);
+	provideRoomContext(() => room);
+	$effect(() => room?.observe());
+	const project = $derived(room?.project ?? null);
+	const members = $derived(room?.members ?? []);
+	const status = $derived.by<Status>(() => {
+		if (!secret) return 'invalid';
+		if (unreadableMessage) return 'unreadable';
+		if (!room) return 'parsing';
+		if (project && !room.checking) return 'ready';
+		if (room.sync.problem === 'denied') return 'denied';
+		if (['error', 'offline', 'synced'].includes(room.sync.phase)) return 'empty';
+		return 'syncing';
+	});
+
+	let chosenId = $state<string | null>(null);
+	// a choice made in another group (the hash can change in place) falls back to the first member
+	const pickedId = $derived(members.some((member) => member.id === chosenId) ? chosenId : (members[0]?.id ?? null));
 	let newName = $state('');
 	let joining = $state(false);
 	let joinError = $state<string | null>(null);
 
-	const room = $derived(roomId && secret ? useRoom(roomId, secret) : null);
-	provideRoomContext(() => room);
-	$effect(() => room?.observe());
-	$effect(() => {
-		if (!secret) { status = 'invalid'; return; }
-		if (unreadableMessage) { status = 'unreadable'; return; }
-		if (!room) { status = 'parsing'; return; }
-		project = room.project;
-		members = room.members;
-		if (project && !room.checking) {
-			status = 'ready';
-			if (!pickedId && members.length) pickedId = members[0].id;
-		} else if (room.sync.problem === 'denied') status = 'denied';
-		else if (['error', 'offline', 'synced'].includes(room.sync.phase)) status = 'empty';
-		else status = 'syncing';
-	});
 	function retry() { room?.handle.syncProvider?.retry(); }
 
-	async function joinAsExisting() {
-		if (!project || !pickedId || joining) return;
+	async function join(memberId: string, newMember?: Member) {
+		if (!project || joining) return;
 		joining = true;
 		joinError = null;
 		try {
+			if (newMember) {
+				const handle = openRoom(roomId, secret);
+				addMember(handle, newMember);
+				await handle.persistence?.flush();
+			}
 			addProject({
 				roomId,
 				secret,
@@ -83,44 +87,29 @@
 				color: project.color,
 				lastActiveAt: Date.now()
 			});
-			setCurrentMember(roomId, pickedId);
+			setCurrentMember(roomId, memberId);
 			await goto(`/p/${roomId}`);
 		} catch (error) {
 			joinError = error instanceof Error ? error.message : 'Could not save the group on this device';
 		} finally { joining = false; }
 	}
 
-	async function joinAsNew(event?: Event) {
-		event?.preventDefault();
-		if (!project || joining) return;
+	function joinAsExisting() {
+		if (pickedId) return join(pickedId);
+	}
+
+	function joinAsNew(event: Event) {
+		event.preventDefault();
 		const name = newName.trim();
 		if (!name) return;
-		joining = true;
-		joinError = null;
-		try {
-			const handle = openRoom(roomId, secret);
-			const member: Member = {
-				id: generateId(),
-				name,
-				color: pickMemberColor(members),
-				emoji: pickMemberEmoji(members),
-				createdAt: Date.now()
-			};
-			addMember(handle, member);
-			await handle.persistence?.flush();
-			addProject({
-				roomId,
-				secret,
-				name: project.name,
-				emoji: project.emoji,
-				color: project.color,
-				lastActiveAt: Date.now()
-			});
-			setCurrentMember(roomId, member.id);
-			await goto(`/p/${roomId}`);
-		} catch (error) {
-			joinError = error instanceof Error ? error.message : 'Could not save the group on this device';
-		} finally { joining = false; }
+		const member: Member = {
+			id: generateId(),
+			name,
+			color: pickMemberColor(members),
+			emoji: pickMemberEmoji(members),
+			createdAt: Date.now()
+		};
+		return join(member.id, member);
 	}
 </script>
 
@@ -184,7 +173,7 @@
 					<div class="col">
 						<div class="eyebrow">Joining</div>
 						<div class="h2 hero-title">{project.name}</div>
-						<div class="dim mono hero-meta">{members.length} {members.length === 1 ? 'member' : 'members'}</div>
+						<div class="dim mono hero-meta">{plural(members.length, 'member', 'members')}</div>
 					</div>
 				</div>
 			</section>
@@ -195,7 +184,7 @@
 			</div>
 
 			{#if members.length > 0}
-				<MemberPicker {members} bind:selectedId={pickedId} />
+				<MemberPicker {members} bind:selectedId={() => pickedId, (id) => (chosenId = id)} />
 			{:else}
 				<p class="dim no-members">
 					This group has no members yet. Add yourself below.
