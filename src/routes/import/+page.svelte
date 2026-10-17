@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import FormError from '$lib/components/FormError.svelte';
 	import { currencyDecimals } from '$lib/currencies';
 	import { isV1Export, mapV1ToV2, type ImportResult } from '$lib/import/v1';
 	import { createGroup } from '$lib/io/createGroup';
@@ -209,9 +210,7 @@
 			</div>
 		{/if}
 
-		{#if error}
-			<div class="error" role="alert">{error}</div>
-		{/if}
+		{#if error}<FormError message={error} />{/if}
 
 		{#if fileName && !error && !parsed}
 			<p class="dim mono file-name">{fileName}</p>
@@ -357,14 +356,6 @@
 
 	.actions {
 		justify-content: flex-end;
-	}
-
-	.error {
-		padding: 10px 12px;
-		border-radius: 12px;
-		background: color-mix(in oklab, #ef4444 16%, transparent);
-		color: var(--ink);
-		font-size: 13px;
 	}
 
 	.file-name {

@@ -5,6 +5,7 @@
 	import { PROJECT_COLORS, PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import CurrencyPicker from '$lib/components/CurrencyPicker.svelte';
 	import EmojiTilePicker from '$lib/components/EmojiTilePicker.svelte';
+	import FormError from '$lib/components/FormError.svelte';
 	import { CURRENCY_PRESETS, type CurrencyPreset } from '$lib/currencies';
 	import { createGroup } from '$lib/io/createGroup';
 	import { generateId } from '$lib/sync/doc';
@@ -253,7 +254,7 @@
 			</button>
 		</div>
 
-		{#if createError}<p role="alert" class="dim">{createError}</p>{/if}
+		{#if createError}<FormError message={createError} />{/if}
 		<button
 			type="submit"
 			class="btn btn-primary btn-block submit-btn"

@@ -3,8 +3,9 @@
 	import { page } from '$app/state';
 	import { pickMemberColor, pickMemberEmoji } from '$lib/avatar';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
-	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
+	import FormError from '$lib/components/FormError.svelte';
+	import MemberPicker from '$lib/components/MemberPicker.svelte';
 	import { addProject, setCurrentMember } from '$lib/storage';
 	import { deriveLocalId, InsecureContextError } from '$lib/sync/crypto';
 	import {
@@ -14,10 +15,12 @@
 	} from '$lib/sync/doc';
 	import type { Member, Project } from '$lib/types';
 	import { isOldInvite, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
-	import { setContext } from 'svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
-	import { useRoom } from '$lib/sync/useRoom.svelte';
+	import { PROBLEM_LABELS } from '$lib/sync/status';
+	import { provideRoomContext, useRoom } from '$lib/sync/useRoom.svelte';
+
+	const INCOMPLETE_INVITE_MESSAGE = 'This invite link is incomplete. Ask the sender for the full link from their Share button.';
 
 	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'denied' | 'invalid' | 'unreadable';
 
@@ -50,7 +53,7 @@
 	let joinError = $state<string | null>(null);
 
 	const room = $derived(roomId && secret ? useRoom(roomId, secret) : null);
-	setContext('kostos-room', { get room() { return room; } });
+	provideRoomContext(() => room);
 	$effect(() => room?.observe());
 	$effect(() => {
 		if (!secret) { status = 'invalid'; return; }
@@ -138,25 +141,19 @@
 	{#if status !== 'denied'}<SyncBanner />{/if}
 
 	<div class="scroll">
+		{#snippet deadEnd(message: string)}
+			<EmptyCard>
+				<p>{message}</p>
+				<a href="/" class="btn btn-block back-btn">Back</a>
+			</EmptyCard>
+		{/snippet}
+
 		{#if status === 'invalid'}
-			<EmptyCard>
-				{#if oldInvite}
-					<p>{OLD_INVITE_MESSAGE}</p>
-				{:else}
-					<p>This invite link is incomplete. Ask the sender for the full link from their <strong>Share</strong> button.</p>
-				{/if}
-				<a href="/" class="btn btn-block back-btn">Back</a>
-			</EmptyCard>
+			{@render deadEnd(oldInvite ? OLD_INVITE_MESSAGE : INCOMPLETE_INVITE_MESSAGE)}
 		{:else if status === 'unreadable'}
-			<EmptyCard>
-				<p>{unreadableMessage}</p>
-				<a href="/" class="btn btn-block back-btn">Back</a>
-			</EmptyCard>
+			{@render deadEnd(unreadableMessage)}
 		{:else if status === 'denied'}
-			<EmptyCard>
-				<p>This invite doesn’t match the group. Ask for a new invite link.</p>
-				<a href="/" class="btn btn-block back-btn">Back</a>
-			</EmptyCard>
+			{@render deadEnd(PROBLEM_LABELS.denied)}
 		{:else if status === 'parsing' || status === 'syncing'}
 			<div class="loading-block">
 				<div class="loading-pulse" aria-hidden="true"></div>
@@ -198,27 +195,7 @@
 			</div>
 
 			{#if members.length > 0}
-				<div class="card member-list">
-					{#each members as m, i (m.id)}
-						{#if i > 0}<hr class="hairline" style="margin-left: 56px;" />{/if}
-						<button
-							type="button"
-							class="member-row"
-							class:on={m.id === pickedId}
-							onclick={() => (pickedId = m.id)}
-						>
-							<Avatar member={m} size="md" />
-							<span class="col member-text">
-								<span class="member-name">{m.name}</span>
-							</span>
-							<span class="check" class:on={m.id === pickedId}>
-								{#if m.id === pickedId}
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
-								{/if}
-							</span>
-						</button>
-					{/each}
-				</div>
+				<MemberPicker {members} bind:selectedId={pickedId} />
 			{:else}
 				<p class="dim no-members">
 					This group has no members yet. Add yourself below.
@@ -240,7 +217,7 @@
 				</div>
 			</form>
 
-			{#if joinError}<p role="alert">{joinError}</p>{/if}
+			{#if joinError}<FormError message={joinError} />{/if}
 			<button
 				type="button"
 				class="btn btn-primary btn-block continue-btn"
@@ -324,59 +301,6 @@
 	.hero-meta {
 		font-size: 11px;
 		margin-top: 4px;
-	}
-
-	.member-list {
-		padding: 4px;
-	}
-
-	.member-row {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		width: 100%;
-		padding: 14px 12px;
-		background: transparent;
-		border: 0;
-		color: inherit;
-		cursor: pointer;
-		font: inherit;
-		text-align: left;
-		border-radius: 14px;
-	}
-
-	.member-row.on {
-		background: color-mix(in oklab, var(--accent) 8%, transparent);
-	}
-
-	.member-text {
-		flex: 1;
-	}
-
-	.member-name {
-		font-size: 14px;
-		font-weight: 600;
-	}
-
-	.check {
-		width: 22px;
-		height: 22px;
-		border-radius: 999px;
-		border: 1.5px solid var(--line-2);
-		display: grid;
-		place-items: center;
-		color: transparent;
-	}
-
-	.check.on {
-		background: var(--accent);
-		color: var(--accent-ink);
-		border-color: var(--accent);
-	}
-
-	.check svg {
-		width: 13px;
-		height: 13px;
 	}
 
 	.no-members {

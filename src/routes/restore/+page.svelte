@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import Avatar from '$lib/components/Avatar.svelte';
+	import FormError from '$lib/components/FormError.svelte';
+	import MemberPicker from '$lib/components/MemberPicker.svelte';
 	import { parseProjectArchive, type ProjectArchive } from '$lib/io/projectArchive';
 	import { archiveContents, createGroup } from '$lib/io/createGroup';
 
@@ -101,9 +102,7 @@
 				<button type="button" class="btn btn-primary pick-btn" onclick={() => fileInput?.click()}>
 					Choose file
 				</button>
-				{#if parseError}
-					<p class="error">{parseError}</p>
-				{/if}
+				{#if parseError}<FormError message={parseError} />{/if}
 				{#if fileName && !parseError}
 					<p class="dim file-hint">{fileName}</p>
 				{/if}
@@ -144,29 +143,9 @@
 			<div class="section-head">
 				<div class="eyebrow">Which member are you?</div>
 			</div>
-			<div class="card members-card">
-				{#each archive.members as m, i (m.id)}
-					{#if i > 0}<hr class="hairline" style="margin-left: 56px;" />{/if}
-					<button
-						type="button"
-						class="member-row"
-						class:on={youMemberId === m.id}
-						onclick={() => (youMemberId = m.id)}
-					>
-						<Avatar member={m} size="sm" />
-						<span class="member-name">{m.name}</span>
-						{#if youMemberId === m.id}
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="member-check">
-								<path d="M5 12l5 5L20 7" />
-							</svg>
-						{/if}
-					</button>
-				{/each}
-			</div>
+			<MemberPicker members={archive.members} bind:selectedId={youMemberId} />
 
-			{#if parseError}
-				<p class="error" role="alert">{parseError}</p>
-			{/if}
+			{#if parseError}<FormError message={parseError} />{/if}
 			<button
 				type="button"
 				class="btn btn-primary btn-block submit-btn"
@@ -226,13 +205,6 @@
 		margin: 12px 0 0;
 	}
 
-	.error {
-		font-size: 12px;
-		color: var(--owe);
-		margin: 12px 0 0;
-		line-height: 1.4;
-	}
-
 	.preview-block {
 		display: flex;
 		flex-direction: column;
@@ -285,40 +257,6 @@
 	.stat-value {
 		font-size: 13px;
 		font-weight: 500;
-	}
-
-	.members-card {
-		padding: 4px;
-	}
-
-	.member-row {
-		width: 100%;
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 12px;
-		background: transparent;
-		border: 0;
-		color: inherit;
-		cursor: pointer;
-		font: inherit;
-		text-align: left;
-	}
-
-	.member-name {
-		flex: 1;
-		font-size: 14px;
-		font-weight: 500;
-	}
-
-	.member-row.on .member-name {
-		color: var(--accent);
-	}
-
-	.member-check {
-		width: 18px;
-		height: 18px;
-		color: var(--accent);
 	}
 
 	.submit-btn {
