@@ -1,6 +1,8 @@
 // The relay can see transport metadata only. All document contents stay encrypted.
 export const MAX_MESSAGE_BYTES = 1_048_576;
-/** Per-room storage ceiling. Past it a room refuses writes (the `storage` error) instead of dropping history. */
+/** Per-room ceiling on live history: the payload bytes a new client replays, not the archive of entries a
+ *  compaction replaced. Past it a room refuses writes (the `storage` error) instead of dropping history.
+ *  A Durable Object room recovers by compacting; a Node relay cannot compact, so its cap is permanent. */
 export const MAX_ROOM_BYTES = 32 * 1024 * 1024;
 const MAGIC = [75, 79, 83, 51];
 

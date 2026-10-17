@@ -1,6 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 /* One encrypted append-only log per group. The server never sees document
- * plaintext. SQL rows avoid a growing single KV value and are never trimmed.
+ * plaintext. SQL rows avoid a growing single KV value and are never trimmed;
+ * compaction moves replaced rows to an archive. MAX_ROOM_BYTES caps live
+ * history, the payload bytes a new client replays, so compacting frees room.
  * Acknowledgements are sent only after a transactional write; replay and
  * barriers are serialized with writes, including across WebSocket hibernation.
  */
@@ -49,6 +51,16 @@ export class SyncRoom extends DurableObject {
 		return this.ctx.storage.sql.exec<{ revision: number }>('SELECT COALESCE(MAX(seq), 0) AS revision FROM messages').one().revision;
 	}
 	private control(ws: WebSocket, message: object): void { ws.send(JSON.stringify(message)); }
+
+	/** Whether live history (the rows a new client replays, not the archive) would pass MAX_ROOM_BYTES after
+	 *  growing by `deltaBytes`. The database size bounds live bytes from above for free, so the exact sum,
+	 *  which bills a read per live row, only runs once archived rows make that bound too loose. */
+	private exceedsCap(deltaBytes: number): boolean {
+		const sql = this.ctx.storage.sql;
+		if (sql.databaseSize + deltaBytes <= MAX_ROOM_BYTES) return false;
+		const live = sql.exec<{ bytes: number }>('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM messages').one().bytes;
+		return live + deltaBytes > MAX_ROOM_BYTES;
+	}
 
 	/** The first proof to connect claims the room (the primary key makes a second claim impossible);
 	 *  every later connection must present the same one. Synchronous, so it needs no await inside serialized(). */
@@ -120,8 +132,7 @@ export class SyncRoom extends DurableObject {
 				const hash = await payloadHash(payload);
 				let revision = this.ctx.storage.sql.exec<{ seq: number }>('SELECT seq FROM messages WHERE hash = ?', hash).toArray()[0]?.seq;
 				if (revision === undefined) {
-					// database size, not a SUM over rows: it is O(1), and every row read is billed
-					if (this.ctx.storage.sql.databaseSize + payload.byteLength > MAX_ROOM_BYTES) {
+					if (this.exceedsCap(payload.byteLength)) {
 						this.control(ws, STORAGE_ERROR_MESSAGE);
 						ws.close(STORAGE_CLOSE_CODE, STORAGE_FULL_REASON);
 						return;
@@ -140,11 +151,12 @@ export class SyncRoom extends DurableObject {
 	}
 
 	/** Replace entries up to `through` with one snapshot at the same seq, so revision numbers and
-	 *  everything after `through` stay as they are. Late or redundant requests are ignored. */
+	 *  everything after `through` stay as they are. Late, redundant or over-cap requests are ignored. */
 	private compact(ws: WebSocket, through: number, payload: Uint8Array): void {
 		if (through < 1 || through > this.revision()) return;
-		const covered = this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM messages WHERE seq <= ?', through).one().n;
-		if (covered < 2) return;
+		const { n: covered, bytes: coveredBytes } = this.ctx.storage.sql
+			.exec<{ n: number; bytes: number }>('SELECT COUNT(*) AS n, COALESCE(SUM(length(payload)), 0) AS bytes FROM messages WHERE seq <= ?', through).one();
+		if (covered < 2 || this.exceedsCap(payload.byteLength - coveredBytes)) return;
 		const hash = `snapshot:${through}:${Date.now()}`;
 		this.ctx.storage.transactionSync(() => {
 			this.ctx.storage.sql.exec('INSERT INTO archive (seq, hash, payload, archived_at) SELECT seq, hash, payload, ? FROM messages WHERE seq <= ?', Date.now(), through);

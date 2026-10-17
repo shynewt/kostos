@@ -1,8 +1,10 @@
 /* Shared Node relay: complete append-only encrypted history, serialized room
  * operations, and acknowledgements after fsync. KOSTOS_DATA_DIR should be on a
- * persistent volume in Docker. Nothing is ever trimmed; a room that reaches
- * MAX_ROOM_BYTES refuses further writes instead. The first proof to connect
- * claims a room, and the claim lives next to its log in <room hash>.auth.
+ * persistent volume in Docker. Nothing is ever trimmed. MAX_ROOM_BYTES caps live
+ * history: the payload bytes a new client replays, not the archive of entries a
+ * compaction replaced. This relay cannot compact, so its cap is permanent. The
+ * first proof to connect claims a room, and the claim lives next to its log in
+ * <room hash>.auth.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, truncate, unlink } from 'node:fs/promises';

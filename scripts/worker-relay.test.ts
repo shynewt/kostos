@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
+import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MAX_MESSAGE_BYTES } from '../src/lib/sync/relay-protocol.js';
 import { joinRoom, openSocket, PROOF, proofProtocol, terminateOpenSockets, until } from './test-helpers.js';
@@ -161,23 +162,67 @@ describe('room access', () => {
 		await until(() => peers.every((peer) => peer.controls.length > 0));
 		expect(peers.map((peer) => peer.controls[0].type).sort()).toEqual(['denied', 'ready']);
 	});
+});
 
-	it('refuses writes past the room storage cap with the storage error and keeps what was acknowledged', async () => {
-		const full = await connect('full');
-		const large = () => Buffer.concat([Buffer.from([75, 79, 83, 51, 1]), randomBytes(MAX_MESSAGE_BYTES - 5)]);
-		let acknowledged = 0;
-		let refusal: Record<string, unknown> | undefined;
-		for (let i = 0; i < 40 && !refusal; i++) {
-			full.ws.send(large());
-			await until(() => full.controls.some((m) => m.type === 'ack' && m.revision === acknowledged + 1) || full.controls.some((m) => m.type === 'error'));
-			refusal = full.controls.find((m) => m.type === 'error');
-			if (!refusal) acknowledged++;
+describe('room storage cap', () => {
+	const largePacket = () => Buffer.concat([Buffer.from([75, 79, 83, 51, 1]), randomBytes(MAX_MESSAGE_BYTES - 5)]);
+	const smallPacket = (seed: number) => { const out = Buffer.alloc(45); out.set([75, 79, 83, 51, 1]); out.writeUInt32BE(seed, 8); return out; };
+	const snapshot = (through: number, size: number) => {
+		const out = Buffer.alloc(size); out.set([75, 79, 83, 51, 2]); out.writeUInt32BE(through, 5); return out;
+	};
+	const hasType = (peer: { controls: Record<string, unknown>[] }, type: string) => peer.controls.some((m) => m.type === type);
+
+	/** Writes until the room refuses. Returns what was stored, in order, and leaves the closed socket behind. */
+	async function fillToCap(name: string, leading: Buffer[] = []) {
+		const full = await connect(name);
+		const stored: Buffer[] = [];
+		for (const packet of [...leading, ...Array.from({ length: 40 }, largePacket)]) {
+			full.ws.send(packet);
+			await until(() => full.controls.some((m) => m.type === 'ack' && m.revision === stored.length + 1) || hasType(full, 'error'));
+			if (hasType(full, 'error')) break;
+			stored.push(packet);
 		}
-		expect(refusal).toEqual({ type: 'error', reason: 'storage' });
-		expect(acknowledged).toBeGreaterThan(25);
-		expect(acknowledged).toBeLessThanOrEqual(32);
+		expect(full.controls.at(-1)).toEqual({ type: 'error', reason: 'storage' });
 		expect(await full.closed).toBe(1011);
+		return stored;
+	}
+
+	it('refuses writes once the live history reaches the cap, and keeps what was acknowledged', async () => {
+		const stored = await fillToCap('full');
+		expect(stored).toHaveLength(32);
 		const again = await connect('full');
-		expect(again.binary).toHaveLength(acknowledged);
+		expect(again.binary).toHaveLength(32);
+	}, 60_000);
+
+	it('still acknowledges an update it already stored when the room is at the cap', async () => {
+		const stored = await fillToCap('full-retry');
+		const retry = await connect('full-retry');
+		retry.ws.send(stored[3]);
+		await until(() => hasType(retry, 'ack'));
+		expect(retry.controls.find((m) => m.type === 'ack')).toMatchObject({ revision: 4 });
+		expect(retry.ws.readyState).toBe(WebSocket.OPEN);
+	}, 60_000);
+
+	it('accepts writes again after a compaction frees live history', async () => {
+		const stored = await fillToCap('recover');
+		const device = await connect('recover');
+		device.ws.send(snapshot(stored.length, 200));
+		await until(() => hasType(device, 'compacted'));
+		device.ws.send(largePacket());
+		await until(() => device.controls.some((m) => m.type === 'ack' && m.revision === stored.length + 1));
+		const reader = await connect('recover');
+		expect(reader.binary).toHaveLength(2);
+	}, 60_000);
+
+	it('ignores a snapshot that would push the live history past the cap', async () => {
+		const stored = await fillToCap('snapshot-overflow', [smallPacket(1), smallPacket(2)]);
+		const device = await connect('snapshot-overflow');
+		device.ws.send(snapshot(2, MAX_MESSAGE_BYTES));
+		device.ws.send(JSON.stringify({ type: 'barrier', id: 'after' }));
+		await until(() => hasType(device, 'caught-up'));
+		expect(hasType(device, 'compacted')).toBe(false);
+		expect(device.ws.readyState).toBe(WebSocket.OPEN);
+		const reader = await connect('snapshot-overflow');
+		expect(reader.binary).toHaveLength(stored.length);
 	}, 60_000);
 });
