@@ -31,6 +31,14 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Refuse to ship placeholders
+        run: |
+          test -f wrangler.toml
+          if grep -n "APP_DOMAIN" wrangler.toml || grep -nE "^ +url: https://APP_DOMAIN" .github/workflows/release.yml; then
+            echo "Replace APP_DOMAIN in wrangler.toml and the environment url of this workflow first"
+            exit 1
+          fi
+
       - name: Type-check
         run: npm run check
 
