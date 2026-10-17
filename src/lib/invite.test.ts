@@ -1,46 +1,46 @@
 import { describe, expect, it } from 'vitest';
-import { generateSecret, inviteError, INVALID_INVITE_MESSAGE, isOldInvite, isValidSecret, OLD_INVITE_MESSAGE, parseToken } from './token';
+import { generateSecret, inviteError, INVALID_INVITE_MESSAGE, isOldInvite, isValidSecret, OLD_INVITE_MESSAGE, parseInvite } from './invite';
 
 const secret = 'AAECAwQFBgcICQoLDA0ODw';
 const legacySecret = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
 
-describe('parseToken', () => {
+describe('parseInvite', () => {
 	it('reads the share link the app hands out', () => {
 		expect(secret).toHaveLength(22);
-		expect(parseToken(`https://kostos.example/join#${secret}`)).toEqual({ secret });
+		expect(parseInvite(`https://kostos.example/join#${secret}`)).toEqual({ secret });
 	});
 
 	it('reads links pasted without a scheme, wrapped, or inside a sentence', () => {
 		const link = `kostos.example/join#${secret}`;
-		expect(parseToken(link)).toEqual({ secret });
-		expect(parseToken(`<https://${link}>`)).toEqual({ secret });
-		expect(parseToken(`Join us here: https://${link}.`)).toEqual({ secret });
-		expect(parseToken(`(https://${link})`)).toEqual({ secret });
+		expect(parseInvite(link)).toEqual({ secret });
+		expect(parseInvite(`<https://${link}>`)).toEqual({ secret });
+		expect(parseInvite(`Join us here: https://${link}.`)).toEqual({ secret });
+		expect(parseInvite(`(https://${link})`)).toEqual({ secret });
 	});
 
 	it('reads the bare key and keeps its case', () => {
-		expect(parseToken(`  ${secret} `)).toEqual({ secret });
-		expect(parseToken('abc-_ABC-_abc-_ABC-_ab')).toEqual({ secret: 'abc-_ABC-_abc-_ABC-_ab' });
+		expect(parseInvite(`  ${secret} `)).toEqual({ secret });
+		expect(parseInvite('abc-_ABC-_abc-_ABC-_ab')).toEqual({ secret: 'abc-_ABC-_abc-_ABC-_ab' });
 	});
 
 	it('keeps keys that end in - or _', () => {
-		expect(parseToken('https://kostos.example/join#abcdefghijklmnopqrst-_')).toEqual({ secret: 'abcdefghijklmnopqrst-_' });
+		expect(parseInvite('https://kostos.example/join#abcdefghijklmnopqrst-_')).toEqual({ secret: 'abcdefghijklmnopqrst-_' });
 	});
 
 	it('rejects the old link and key forms', () => {
 		expect(legacySecret).toHaveLength(43);
-		expect(parseToken(`https://kostos.example/join?room=PRT-AB23-CD45#${legacySecret}`)).toBeNull();
-		expect(parseToken(`PRT-AB23-CD45.${legacySecret}`)).toBeNull();
-		expect(parseToken(legacySecret)).toBeNull();
-		expect(parseToken('PRT-AB23-CD45')).toBeNull();
+		expect(parseInvite(`https://kostos.example/join?room=PRT-AB23-CD45#${legacySecret}`)).toBeNull();
+		expect(parseInvite(`PRT-AB23-CD45.${legacySecret}`)).toBeNull();
+		expect(parseInvite(legacySecret)).toBeNull();
+		expect(parseInvite('PRT-AB23-CD45')).toBeNull();
 	});
 
 	it('rejects links without a key, wrong lengths and stray characters', () => {
-		expect(parseToken('https://kostos.example/join')).toBeNull();
-		expect(parseToken(secret.slice(1))).toBeNull();
-		expect(parseToken(`${secret}x`)).toBeNull();
-		expect(parseToken(`${secret}<script>`)).toBeNull();
-		expect(parseToken('')).toBeNull();
+		expect(parseInvite('https://kostos.example/join')).toBeNull();
+		expect(parseInvite(secret.slice(1))).toBeNull();
+		expect(parseInvite(`${secret}x`)).toBeNull();
+		expect(parseInvite(`${secret}<script>`)).toBeNull();
+		expect(parseInvite('')).toBeNull();
 	});
 });
 

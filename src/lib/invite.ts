@@ -6,7 +6,7 @@
 import { isLegacySecret } from './legacy';
 import { base64UrlEncode } from './sync/crypto';
 
-export type ParsedToken = { secret: string };
+export type ParsedInvite = { secret: string };
 
 const SECRET_BYTES = 16;
 const SECRET_PATTERN = /^[A-Za-z0-9_-]{22}$/;
@@ -25,7 +25,7 @@ export function isValidSecret(value: string): boolean {
 }
 
 /** Accepts the share link (`/join#SECRET`) or the bare secret. */
-export function parseToken(raw: string): ParsedToken | null {
+export function parseInvite(raw: string): ParsedInvite | null {
 	const key = keyOf(extractCandidate(raw));
 	return isValidSecret(key) ? { secret: key } : null;
 }

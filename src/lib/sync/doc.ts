@@ -17,7 +17,7 @@ import {
 	type Project,
 	type Trip
 } from '$lib/types';
-import { isValidSecret } from '$lib/token';
+import { isValidSecret } from '$lib/invite';
 import { diffExpense } from './activity-diff';
 import { createSyncProvider, type EncryptedSyncProvider } from './provider';
 

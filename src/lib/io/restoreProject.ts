@@ -2,7 +2,7 @@
 import { addProject, setCurrentMember } from '$lib/storage';
 import { deriveLocalId } from '$lib/sync/crypto';
 import { addExpense, initProject, openRoom, type RoomHandle } from '$lib/sync/doc';
-import { generateSecret } from '$lib/token';
+import { generateSecret } from '$lib/invite';
 import type { Expense, Member, Project } from '$lib/types';
 import type { ProjectArchive } from './projectArchive';
 

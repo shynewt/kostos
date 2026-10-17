@@ -13,7 +13,7 @@
 		openRoom
 	} from '$lib/sync/doc';
 	import type { Member, Project } from '$lib/types';
-	import { isOldInvite, isValidSecret, OLD_INVITE_MESSAGE } from '$lib/token';
+	import { isOldInvite, isValidSecret, OLD_INVITE_MESSAGE } from '$lib/invite';
 	import { setContext } from 'svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';

@@ -7,7 +7,7 @@
 	import { formatAmount } from '$lib/money';
 	import { isLegacySecret } from '$lib/legacy';
 	import { listProjects, type ProjectRef } from '$lib/storage';
-	import { inviteError, parseToken } from '$lib/token';
+	import { inviteError, parseInvite } from '$lib/invite';
 
 	let projects = $state<ProjectRef[]>([]);
 	let tokenInputOpen = $state(false);
@@ -33,7 +33,7 @@
 
 	function onJoinSubmit(event: SubmitEvent) {
 		event.preventDefault();
-		const parsed = parseToken(token);
+		const parsed = parseInvite(token);
 		if (!parsed) {
 			error = inviteError(token);
 			return;
