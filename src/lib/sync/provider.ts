@@ -5,10 +5,11 @@
  */
 import * as Y from 'yjs';
 import { browser } from '$app/environment';
-import { decryptPayload, deriveKey, encryptPayload } from './crypto';
+import { decryptPayload, deriveKey, deriveRoomAccess, encryptPayload, type RoomAccess } from './crypto';
 import { frame, parse, MSG_STEP1, MSG_UPDATE } from './protocol';
 import { REMOTE_ORIGIN, LOCAL_LOAD, type RoomPersistence } from './persistence';
 import { type SyncStatus, type SyncProblem } from './status';
+import { PROOF_PREFIX } from './room-access.js';
 
 export type ConnectionStatus = SyncStatus['phase'];
 const MAX_MESSAGE_BYTES = 1_048_576;
@@ -42,11 +43,13 @@ export class EncryptedSyncProvider {
 	private complete = true;
 	private sessionProblem: SyncProblem | null = null;
 	private revision = 0;
+	private access: RoomAccess | null = null;
 	private barrier: { id: string; version: number } | null = null;
 	private unsubscribeLocal: (() => void) | undefined;
 
-	constructor(private doc: Y.Doc, private url: string, private roomId: string, secret: string, private persistence?: RoomPersistence) {
+	constructor(private doc: Y.Doc, private url: string, secret: string, private persistence?: RoomPersistence) {
 		this.key = deriveKey(secret);
+		const access = deriveRoomAccess(secret);
 		doc.on('update', this.onUpdate);
 		this.unsubscribeLocal = persistence?.onChange((local) => {
 			this.setState({ pendingChanges: local.pendingChanges, lastSyncedAt: local.lastSyncedAt });
@@ -57,7 +60,8 @@ export class EncryptedSyncProvider {
 			document.addEventListener('visibilitychange', this.handleVisibility);
 			window.addEventListener('pageshow', this.handlePageShow);
 		}
-		void Promise.all([persistence?.ready ?? Promise.resolve(), this.key]).then(() => {
+		void Promise.all([persistence?.ready ?? Promise.resolve(), this.key, access]).then(([, , derived]) => {
+			this.access = derived;
 			const hasData = doc.store.clients.size > 0;
 			this.seeded = hasData && !persistence?.state.partial;
 			this.fresh = !hasData;
@@ -88,6 +92,8 @@ export class EncryptedSyncProvider {
 			this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 			return;
 		}
+		const access = this.access;
+		if (!access) return;
 		this.supported = this.replayed = this.durable = false;
 		this.complete = true;
 		this.sessionProblem = null;
@@ -101,7 +107,7 @@ export class EncryptedSyncProvider {
 		if (this.state.phase === 'offline') this.setState({ problem: null });
 		else this.setState({ phase: 'connecting', checking: true, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		let ws: WebSocket;
-		try { ws = new WebSocket(`${this.url}/${encodeURIComponent(this.roomId)}`); }
+		try { ws = new WebSocket(`${this.url}/${access.relayRoomId}`, [`${PROOF_PREFIX}${access.proof}`]); }
 		catch { this.unreachable(); return; }
 		this.ws = ws;
 		ws.binaryType = 'arraybuffer';
@@ -401,7 +407,7 @@ export class EncryptedSyncProvider {
 	}
 }
 
-export function createSyncProvider(doc: Y.Doc, url: string | undefined, roomId: string, secret: string, persistence?: RoomPersistence): EncryptedSyncProvider | null {
+export function createSyncProvider(doc: Y.Doc, url: string | undefined, secret: string, persistence?: RoomPersistence): EncryptedSyncProvider | null {
 	if (!browser || !url) return null;
-	return new EncryptedSyncProvider(doc, url, roomId, secret, persistence);
+	return new EncryptedSyncProvider(doc, url, secret, persistence);
 }

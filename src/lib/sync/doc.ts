@@ -54,7 +54,7 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		const effectiveSecret = secret ?? secretFromStorage(roomId);
 		if (browser && effectiveSecret && (!cached.handle.syncProvider || cached.secret !== effectiveSecret)) {
 			cached.handle.syncProvider?.destroy();
-			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), roomId, effectiveSecret, cached.persistence) ?? undefined;
+			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), effectiveSecret, cached.persistence) ?? undefined;
 			cached.secret = effectiveSecret;
 		}
 		return cached.handle;
@@ -80,7 +80,7 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		const effectiveSecret = secret ?? secretFromStorage(roomId);
 		if (effectiveSecret) {
 			syncProvider =
-				createSyncProvider(doc, syncUrl(), roomId, effectiveSecret, persistence) ?? undefined;
+				createSyncProvider(doc, syncUrl(), effectiveSecret, persistence) ?? undefined;
 		}
 	}
 
