@@ -8,7 +8,7 @@ import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_MESSAGE_BYTES } from '../src/lib/sync/relay-protocol.js';
+import { MAX_MESSAGE_BYTES, MAX_ROOM_ENTRIES } from '../src/lib/sync/relay-protocol.js';
 import { joinRoom, largePacket, openSocket, packet, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 
 const room = (name: string) => createHash('sha256').update(name).digest('hex');
@@ -20,7 +20,16 @@ let script: string;
 const legacyScript = `export class SyncRoom {
  constructor(ctx) { this.ctx = ctx; }
  async fetch(request) {
-  const count = Number(new URL(request.url).searchParams.get('count'));
+  const params = new URL(request.url).searchParams;
+  const entries = Number(params.get('entries'));
+  if (entries) {
+   // a legacy value over 2 MB can't be stored, so fill the v3 table directly
+   const sql = this.ctx.storage.sql;
+   sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, hash TEXT UNIQUE NOT NULL, payload BLOB NOT NULL)');
+   this.ctx.storage.transactionSync(() => { for (let i = 0; i < entries; i++) sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', 'seed:' + i, new ArrayBuffer(28)); });
+   return new Response('seeded');
+  }
+  const count = Number(params.get('count'));
   await this.ctx.storage.put('history', Array.from({length:count}, (_, i) => { const data = new Uint8Array(40); new DataView(data.buffer).setUint32(0, i); return data.buffer; }));
   return new Response('seeded');
  }
@@ -38,6 +47,7 @@ beforeAll(async () => {
 	await mf.ready;
 	await mf.dispatchFetch(`http://local/sync/${room('small')}?count=3`);
 	await mf.dispatchFetch(`http://local/sync/${room('capped')}?count=1000`);
+	await mf.dispatchFetch(`http://local/sync/${room('one-below-entry-cap')}?entries=${MAX_ROOM_ENTRIES - 1}`);
 	await mf.setOptions({ ...options(), script });
 	await mf.ready;
 }, 30_000);
@@ -218,5 +228,26 @@ describe('room storage cap', () => {
 		expect(device.ws.readyState).toBe(WebSocket.OPEN);
 		const reader = await connect('snapshot-overflow');
 		expect(reader.binary).toHaveLength(stored.length);
+	}, 60_000);
+});
+
+describe('room entry cap', () => {
+	it('accepts the entry that fills the cap, then refuses the next one', async () => {
+		const sender = await connect('one-below-entry-cap');
+		expect(sender.binary).toHaveLength(MAX_ROOM_ENTRIES - 1);
+		sender.ws.send(packet(1));
+		await until(() => sender.controls.some((m) => m.type === 'ack'));
+		expect(sender.controls.find((m) => m.type === 'ack')).toMatchObject({ revision: MAX_ROOM_ENTRIES });
+		sender.ws.send(packet(2));
+		expect(await sender.closed).toBe(1011);
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'full' });
+		expect(sender.controls.filter((m) => m.type === 'ack')).toHaveLength(1);
+	}, 60_000);
+
+	it('still acknowledges an update it already stored when the room is at the entry cap', async () => {
+		const retry = await connect('one-below-entry-cap');
+		retry.ws.send(packet(1));
+		await until(() => retry.controls.some((m) => m.type === 'ack'));
+		expect(retry.ws.readyState).toBe(WebSocket.OPEN);
 	}, 60_000);
 });

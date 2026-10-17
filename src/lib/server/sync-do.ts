@@ -2,13 +2,14 @@
 /* One encrypted append-only log per group. The server never sees document
  * plaintext. SQL rows avoid a growing single KV value and are never trimmed;
  * compaction moves replaced rows to an archive. MAX_ROOM_BYTES caps live
- * history, the payload bytes a new client replays, so compacting frees room.
+ * history, the payload bytes a new client replays, so compacting frees room;
+ * MAX_ROOM_ENTRIES caps how many live entries there are.
  * Acknowledgements are sent only after a transactional write; replay and
  * barriers are serialized with writes, including across WebSocket hibernation.
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
-	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
+	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
 	unwrapPacket, payloadHash
 } from '../sync/relay-protocol.js';
 import {
@@ -63,6 +64,12 @@ export class SyncRoom extends DurableObject {
 		if (sql.databaseSize + deltaBytes <= MAX_ROOM_BYTES) return false;
 		const live = sql.exec<{ bytes: number }>('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM messages').one().bytes;
 		return live + deltaBytes > MAX_ROOM_BYTES;
+	}
+
+	/** Sequence numbers never shrink, so a revision under the limit proves the live count is too; the exact count only runs past it. */
+	private atEntryLimit(): boolean {
+		if (this.revision() < MAX_ROOM_ENTRIES) return false;
+		return this.ctx.storage.sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM messages').one().n >= MAX_ROOM_ENTRIES;
 	}
 
 	/** The first proof to connect claims the room (the primary key makes a second claim impossible);
@@ -135,7 +142,7 @@ export class SyncRoom extends DurableObject {
 				const hash = await payloadHash(payload);
 				let revision = this.ctx.storage.sql.exec<{ seq: number }>('SELECT seq FROM messages WHERE hash = ?', hash).toArray()[0]?.seq;
 				if (revision === undefined) {
-					if (this.exceedsCap(payload.byteLength)) {
+					if (this.atEntryLimit() || this.exceedsCap(payload.byteLength)) {
 						this.control(ws, ROOM_FULL_MESSAGE);
 						ws.close(INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON);
 						return;

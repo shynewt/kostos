@@ -2,7 +2,8 @@
  * operations, and acknowledgements after fsync. KOSTOS_DATA_DIR should be on a
  * persistent volume in Docker. Nothing is ever trimmed. MAX_ROOM_BYTES caps live
  * history: the payload bytes a new client replays, not the archive of entries a
- * compaction replaced. This relay cannot compact, so its cap is permanent. The
+ * compaction replaced; MAX_ROOM_ENTRIES caps how many there are. This relay
+ * cannot compact, so both caps are permanent. The
  * first proof to connect claims a room, and the claim lives next to its log in
  * <room hash>.auth.
  */
@@ -10,7 +11,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, truncate, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import {
-	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
+	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
 	unwrapPacket, payloadHash
 } from '../src/lib/sync/relay-protocol.js';
 import {
@@ -188,7 +189,7 @@ export function createRelay(directory) {
 				const hash = await payloadHash(payload);
 				const existing = activeRoom.hashes.get(hash);
 				if (existing) { control(ws, { type: 'ack', hash, revision: existing }); return; }
-				if (activeRoom.bytes + payload.length > MAX_ROOM_BYTES) {
+				if (activeRoom.history.length >= MAX_ROOM_ENTRIES || activeRoom.bytes + payload.length > MAX_ROOM_BYTES) {
 					control(ws, ROOM_FULL_MESSAGE);
 					ws.close(INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON);
 					return;

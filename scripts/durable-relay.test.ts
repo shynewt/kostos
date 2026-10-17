@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRelay } from './relay.js';
 import { joinRoom, largePacket, openSocket, packet, PROOF, snapshot, terminateOpenSockets, until } from './test-helpers.js';
-import { payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { MAX_ROOM_ENTRIES, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import { parseProofProtocol } from '../src/lib/sync/room-access.js';
 
 const ROOM = 'a'.repeat(64);
@@ -228,6 +228,42 @@ describe('durable encrypted relay', () => {
 		const reader = await joinRoom(url);
 		expect(reader.binary).toHaveLength(32);
 	}, 60_000);
+});
+
+describe('room entry cap', () => {
+	async function seedEntries(count: number) {
+		directory = await mkdtemp(join(tmpdir(), 'kostos-relay-'));
+		const lines = Array.from({ length: count }, (_, seed) => {
+			const payload = Buffer.alloc(28);
+			payload.writeUInt32BE(seed, 0);
+			return JSON.stringify({ hash: createHash('sha256').update(payload).digest('hex'), data: payload.toString('base64') });
+		});
+		await writeFile(`${directory}/${ROOM_STEM}.jsonl`, `${lines.join('\n')}\n`);
+	}
+
+	it('refuses a write that would pass the entry cap and keeps what was stored', async () => {
+		await seedEntries(MAX_ROOM_ENTRIES - 1);
+		const sender = await joinRoom(await start(directory));
+		sender.ws.send(packet(1));
+		await until(() => sender.controls.some((m) => m.type === 'ack'));
+		expect(sender.controls.find((m) => m.type === 'ack')).toMatchObject({ revision: MAX_ROOM_ENTRIES });
+		sender.ws.send(packet(2));
+		expect(await sender.closed).toBe(1011);
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'full' });
+		expect(sender.controls.filter((m) => m.type === 'ack')).toHaveLength(1);
+	}, 30_000);
+
+	it('still acknowledges an update it already stored when the room is at the entry cap', async () => {
+		await seedEntries(MAX_ROOM_ENTRIES - 1);
+		const url = await start(directory);
+		const sender = await joinRoom(url);
+		sender.ws.send(packet(1));
+		await until(() => sender.controls.some((m) => m.type === 'ack'));
+		const retry = await joinRoom(url);
+		retry.ws.send(packet(1));
+		await until(() => retry.controls.some((m) => m.type === 'ack'));
+		expect(retry.ws.readyState).toBe(WebSocket.OPEN);
+	}, 30_000);
 });
 
 describe('relay disk log recovery', () => {

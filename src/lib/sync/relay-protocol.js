@@ -4,6 +4,9 @@ export const MAX_MESSAGE_BYTES = 1_048_576;
  *  compaction replaced. Past it a room refuses writes (the `storage` error) instead of dropping history.
  *  A Durable Object room recovers by compacting; a Node relay cannot compact, so its cap is permanent. */
 export const MAX_ROOM_BYTES = 32 * 1024 * 1024;
+/** Per-room ceiling on live entries, refused like MAX_ROOM_BYTES. The Node relay holds every entry in memory and a
+ *  Durable Object scans them to enforce the byte cap, so tiny entries cost far more than their size suggests. */
+export const MAX_ROOM_ENTRIES = 100_000;
 /** "KOS3": the first four bytes of a versioned packet. A fifth flag byte follows. */
 export const PACKET_MAGIC = [75, 79, 83, 51];
 export const PROTOCOL_VERSION = 3;
