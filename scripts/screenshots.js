@@ -211,7 +211,7 @@ async function main() {
 
 	// 1. Landing
 	await page.goto(`${BASE_URL}/`);
-	await page.waitForSelector('text=Create your first group');
+	await page.waitForSelector('text=Create a group');
 	await shot('01-landing');
 
 	// 2. Restore the seed archive
@@ -249,14 +249,14 @@ async function main() {
 	await page.waitForTimeout(400);
 	await shot('05-math-toolbar');
 
-	// 6. Multi-currency: pick a foreign currency and a stored rate
+	// 6. Multi-currency: pick a foreign currency and type what was charged
 	await page.fill('.amount-input', '45');
 	await page.fill('.title-input', 'Souvenirs');
 	await page.click('.currency-chip');
 	await page.waitForSelector('text=US Dollar');
 	await page.click('text=US Dollar');
-	await page.waitForSelector('.rate-card');
-	await page.fill('.rate-input', '0.92');
+	await page.waitForSelector('.fx-card');
+	await page.fill('.fx-input', '41.40');
 	await page.click('.title-input'); // blur the amount so the math toolbar hides
 	await page.waitForTimeout(300);
 	await shot('04-currency');
@@ -273,7 +273,7 @@ async function main() {
 	await shot('06-stats');
 
 	// 8. Settings: data section
-	await page.click('a[aria-label="Project settings"]');
+	await page.click('a[aria-label="Group settings"]');
 	await page.waitForSelector('text=Export backup (JSON)');
 	await page.evaluate(() => {
 		document.querySelector('.data-card')?.scrollIntoView({ block: 'center' });
