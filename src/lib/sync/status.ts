@@ -27,7 +27,7 @@ export const PROBLEM_LABELS: Record<SyncProblem, string> = {
 	history: 'Older server history is incomplete. Keep your existing devices and export a backup in Settings.',
 	size: 'This group is too large to sync in one message. Export a backup from Settings.',
 	full: GROUP_FULL_TEXT,
-	denied: 'This group belongs to a different key. Ask for a fresh invite link.',
+	denied: 'This invite doesn’t match the group. Ask for a new invite link.',
 	insecure: INSECURE_CONTEXT_MESSAGE
 };
 

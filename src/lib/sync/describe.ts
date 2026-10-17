@@ -50,6 +50,15 @@ export function syncLine(project: { secret: string; lastSyncedAt?: number | null
 	return project.lastSyncedAt ? `Synced ${relativeTime(project.lastSyncedAt, now)}` : 'Not synced yet';
 }
 
+function syncFacts(lastSynced: number | null, pending: number, now: number): SyncView['facts'] {
+	const facts: SyncView['facts'] = [{
+		label: 'Last synced',
+		value: lastSynced ? `${formatClock(lastSynced, now)} · ${relativeTime(lastSynced, now)}` : 'Not yet on this phone'
+	}];
+	if (pending > 0) facts.push({ label: 'Waiting to send', value: plural(pending, 'change', 'changes') });
+	return facts;
+}
+
 export function describeSync(
 	sync: SyncStatus,
 	local: LocalState | null,
@@ -57,28 +66,20 @@ export function describeSync(
 	options: { demo?: boolean; legacy?: boolean } = {}
 ): SyncView {
 	const pending = Math.max(sync.pendingChanges, local?.pendingChanges ?? 0);
-	const facts: SyncView['facts'] = [];
-	const lastSynced = sync.lastSyncedAt;
-	facts.push({
-		label: 'Last synced',
-		value: lastSynced ? `${formatClock(lastSynced, now)} · ${relativeTime(lastSynced, now)}` : 'Not yet on this phone'
-	});
-	if (pending > 0) facts.push({ label: 'Waiting to send', value: plural(pending, 'change', 'changes') });
-
-	const base = { facts, retry: false, banner: null, attention: false };
+	const base = { facts: [], retry: false, banner: null, attention: false };
+	const connectedFacts = () => syncFacts(sync.lastSyncedAt, pending, now);
 
 	if (local?.phase === 'error') {
 		return {
 			...base,
 			tone: 'warn', state: 'local-error', label: 'Not saved here', attention: true,
 			headline: 'Not saved on this phone',
-			body: 'Your changes may be lost if the app closes. Keep it open and try again, or export a backup from Settings.',
-			facts: []
+			body: 'Your changes may be lost if the app closes. Keep it open and try again, or export a backup from Settings.'
 		};
 	}
 	if (options.legacy) {
 		return {
-			...base, tone: 'warn', state: 'legacy', label: 'Not syncing', attention: true, facts: [],
+			...base, tone: 'warn', state: 'legacy', label: 'Not syncing', attention: true,
 			headline: 'This group no longer syncs',
 			body: LEGACY_GROUP_SUMMARY
 		};
@@ -86,23 +87,23 @@ export function describeSync(
 	switch (sync.phase) {
 		case 'local':
 			if (options.demo) {
-				return { ...base, tone: 'idle', state: 'local', label: 'Only on this phone', headline: 'Only on this phone', body: 'The demo group never leaves your device.', facts: [] };
+				return { ...base, tone: 'idle', state: 'local', label: 'Only on this phone', headline: 'Only on this phone', body: 'The demo group never leaves your device.' };
 			}
 			return {
-				...base, tone: 'warn', state: 'local', label: 'Invite needed', attention: true, facts: [],
+				...base, tone: 'warn', state: 'local', label: 'Invite needed', attention: true,
 				headline: 'Not connected to the group',
 				body: 'Open the full invite link to reconnect this phone with your group.',
 				banner: 'Invite link missing. Open the full link to reconnect.'
 			};
 		case 'synced':
 			return {
-				...base, tone: 'ok', state: 'synced', label: 'Up to date',
+				...base, tone: 'ok', state: 'synced', label: 'Up to date', facts: connectedFacts(),
 				headline: 'Up to date',
 				body: 'This phone has everything the group has sent. Changes made offline on other phones appear when they reconnect.'
 			};
 		case 'offline':
 			return {
-				...base, tone: 'offline', state: 'offline', attention: true,
+				...base, tone: 'offline', state: 'offline', attention: true, facts: connectedFacts(),
 				label: pending ? `Offline · ${pending} waiting` : 'Offline',
 				headline: 'Offline',
 				body: pending
@@ -112,7 +113,7 @@ export function describeSync(
 			};
 		case 'error':
 			return {
-				...base, tone: 'warn', state: 'error', label: 'Sync paused', attention: true, retry: !TERMINAL_PROBLEMS.includes(sync.problem ?? 'network'),
+				...base, tone: 'warn', state: 'error', label: 'Sync paused', attention: true, facts: connectedFacts(), retry: !TERMINAL_PROBLEMS.includes(sync.problem ?? 'network'),
 				headline: 'Couldn’t sync',
 				body: PROBLEM_LABELS[sync.problem ?? 'network'],
 				banner: BANNER_TEXT[sync.problem ?? 'network']
@@ -120,7 +121,7 @@ export function describeSync(
 		default: {
 			const saving = local?.phase === 'saving';
 			return {
-				...base, tone: 'busy', state: sync.phase,
+				...base, tone: 'busy', state: sync.phase, facts: connectedFacts(),
 				label: saving ? 'Saving…' : pending ? `Syncing ${plural(pending, 'change', 'changes')}` : 'Checking…',
 				headline: pending ? 'Sending your changes' : 'Checking for new expenses',
 				body: pending

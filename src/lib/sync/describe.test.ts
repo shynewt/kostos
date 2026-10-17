@@ -38,7 +38,7 @@ describe('describeSync', () => {
 	it('words a refused key as a terminal problem with no retry', () => {
 		const view = describeSync(status({ phase: 'error', problem: 'denied' }), null, NOW);
 		expect(view).toMatchObject({ state: 'error', tone: 'warn', retry: false });
-		expect(view.body).toBe('This group belongs to a different key. Ask for a fresh invite link.');
+		expect(view.body).toBe('This invite doesn’t match the group. Ask for a new invite link.');
 		expect(view.banner).toBe(view.body);
 	});
 
