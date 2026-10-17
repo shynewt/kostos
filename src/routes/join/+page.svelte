@@ -6,33 +6,38 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import { addProject, setCurrentMember } from '$lib/storage';
-	import { deriveLocalId } from '$lib/sync/crypto';
+	import { deriveLocalId, InsecureContextError } from '$lib/sync/crypto';
 	import {
 		addMember,
 		generateId,
 		openRoom
 	} from '$lib/sync/doc';
 	import type { Member, Project } from '$lib/types';
-	import { isOldInvite, isValidSecret, OLD_INVITE_MESSAGE } from '$lib/invite';
+	import { isOldInvite, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
 	import { setContext } from 'svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 
-	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'invalid';
+	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'denied' | 'invalid' | 'unreadable';
 
-	const secret = $derived.by(() => {
-		const hash = page.url.hash.startsWith('#') ? page.url.hash.slice(1) : '';
-		return isValidSecret(hash) ? hash : '';
-	});
+	const secret = $derived(parseInvite(page.url.hash)?.secret ?? '');
 	const oldInvite = $derived(isOldInvite(`${page.url.search}${page.url.hash}`));
 	let roomId = $state('');
+	let unreadableMessage = $state('');
+	// the hash can change while the derivation is pending; only the latest one may set roomId
 	$effect(() => {
 		const current = secret;
 		roomId = '';
+		unreadableMessage = '';
 		if (!current) return;
 		let stale = false;
-		void deriveLocalId(current).then((id) => { if (!stale) roomId = id; });
+		deriveLocalId(current).then(
+			(id) => { if (!stale) roomId = id; },
+			(error) => {
+				if (!stale) unreadableMessage = error instanceof InsecureContextError ? error.message : 'This invite couldn’t be opened on this device.';
+			}
+		);
 		return () => { stale = true; };
 	});
 
@@ -49,13 +54,15 @@
 	$effect(() => room?.observe());
 	$effect(() => {
 		if (!secret) { status = 'invalid'; return; }
+		if (unreadableMessage) { status = 'unreadable'; return; }
 		if (!room) { status = 'parsing'; return; }
 		project = room.project;
 		members = room.members;
 		if (project && !room.checking) {
 			status = 'ready';
 			if (!pickedId && members.length) pickedId = members[0].id;
-		} else if (['error', 'offline', 'synced'].includes(room.sync.phase)) status = 'empty';
+		} else if (room.sync.problem === 'denied') status = 'denied';
+		else if (['error', 'offline', 'synced'].includes(room.sync.phase)) status = 'empty';
 		else status = 'syncing';
 	});
 	function retry() { room?.handle.syncProvider?.retry(); }
@@ -128,7 +135,7 @@
 		<div class="row" style="flex-shrink: 0;"><div class="app-bar-title">Joining</div><SyncStatus variant="dot" /></div>
 		<div class="row gap-6" style="flex: 1;"></div>
 	</header>
-	<SyncBanner />
+	{#if status !== 'denied'}<SyncBanner />{/if}
 
 	<div class="scroll">
 		{#if status === 'invalid'}
@@ -136,8 +143,18 @@
 				{#if oldInvite}
 					<p>{OLD_INVITE_MESSAGE}</p>
 				{:else}
-					<p>This invite link is missing the group key. Ask the sender to share the full link from their <strong>Share</strong> button.</p>
+					<p>This invite link is incomplete. Ask the sender for the full link from their <strong>Share</strong> button.</p>
 				{/if}
+				<a href="/" class="btn btn-block back-btn">Back</a>
+			</EmptyCard>
+		{:else if status === 'unreadable'}
+			<EmptyCard>
+				<p>{unreadableMessage}</p>
+				<a href="/" class="btn btn-block back-btn">Back</a>
+			</EmptyCard>
+		{:else if status === 'denied'}
+			<EmptyCard>
+				<p>This invite doesn’t match the group. Ask for a new invite link.</p>
 				<a href="/" class="btn btn-block back-btn">Back</a>
 			</EmptyCard>
 		{:else if status === 'parsing' || status === 'syncing'}
@@ -176,7 +193,7 @@
 			</section>
 
 			<div class="section-head">
-				<div class="eyebrow">Which one are you?</div>
+				<div class="eyebrow">Which member are you?</div>
 				<span class="dim mono">PICK ANY · MULTIPLE DEVICES OK</span>
 			</div>
 
