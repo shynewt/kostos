@@ -1,15 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { setContext } from 'svelte';
 	import LoadingScreen from '$lib/components/LoadingScreen.svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
 	import { updateProjectMetadata } from '$lib/storage';
-	import { useRoom } from '$lib/sync/useRoom.svelte';
+	import { provideRoomContext, useRoom } from '$lib/sync/useRoom.svelte';
 	let { children } = $props();
 	const roomId = $derived(page.params.roomId ?? '');
 	const room = $derived(useRoom(roomId));
-	setContext('kostos-room', { get room() { return room; } });
+	provideRoomContext(() => room);
 	let loadedRoomId = $state('');
 	let localError = $state(false);
 	$effect(() => room.observe());

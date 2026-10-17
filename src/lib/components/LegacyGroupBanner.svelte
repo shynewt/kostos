@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
 	import { backupFile, saveFile } from '$lib/io/exportFiles';
 	import { LEGACY_GROUP_SUMMARY } from '$lib/legacy';
-	import type { RoomState } from '$lib/sync/useRoom.svelte';
+	import { useRoomContext } from '$lib/sync/useRoom.svelte';
 
-	const context = getContext<{ readonly room: RoomState } | undefined>('kostos-room');
+	const context = useRoomContext();
 	const room = $derived(context?.room);
 
 	function exportBackup() {

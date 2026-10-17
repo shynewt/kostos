@@ -1,14 +1,13 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
-	import type { RoomState } from '$lib/sync/useRoom.svelte';
+	import { useRoomContext } from '$lib/sync/useRoom.svelte';
 	import SyncSheet from './SyncSheet.svelte';
 
 	/** `line` shows the sync state under the group name; `dot` is a small marker that
 	 *  only appears next to a screen title when something needs attention. */
 	let { variant = 'line' }: { variant?: 'line' | 'dot' } = $props();
 
-	const context = getContext<{ readonly room: RoomState } | undefined>('kostos-room');
+	const context = useRoomContext();
 	const room = $derived(context?.room);
 
 	let open = $state(false);
