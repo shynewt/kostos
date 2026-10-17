@@ -6,7 +6,7 @@ import { generateSecret } from '$lib/invite';
 import type { Expense, Member, Project } from '$lib/types';
 import type { ProjectArchive } from './projectArchive';
 
-export type GroupContents = { project: Omit<Project, 'id'>; members: Member[]; expenses: Expense[] };
+type GroupContents = { project: Omit<Project, 'id'>; members: Member[]; expenses: Expense[] };
 
 export function archiveContents({ project, members, expenses }: ProjectArchive): GroupContents {
 	return { project: { ...project, trips: project.trips ?? [] }, members, expenses };

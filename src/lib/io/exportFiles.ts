@@ -1,7 +1,7 @@
 import type { Expense, Member, Project } from '$lib/types';
 import { serializeProject, toCSV } from './projectArchive';
 
-export type DownloadableFile = { name: string; mime: string; contents: string };
+type DownloadableFile = { name: string; mime: string; contents: string };
 
 function slug(value: string): string {
 	const cleaned = value

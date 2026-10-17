@@ -37,7 +37,7 @@ const BANNER_TEXT: Record<SyncProblem, string> = {
 /** Retrying cannot change these, so the status offers no retry button. */
 const TERMINAL_PROBLEMS: SyncProblem[] = ['denied', 'insecure'];
 
-export function formatClock(at: number, now: number): string {
+function formatClock(at: number, now: number): string {
 	const date = new Date(at);
 	const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 	if (new Date(now).toDateString() === date.toDateString()) return time;
