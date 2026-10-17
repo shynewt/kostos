@@ -4,7 +4,7 @@ Date: 2026-10-11, revised 2026-10-16. Branch: `feat/domain-migration`.
 
 ## Goal
 
-Only a client that holds a group's secret can reach that group's room on the sync server. Hosted groups move to the new domain with their data intact, and self-hosters get a short upgrade path. The new domain is `kostos.app` if it frees up, otherwise `kostos.fi`. Everything below says `NEW_DOMAIN`.
+Only a client that holds a group's secret can reach that group's room on the sync server. Hosted groups move to the new domain with their data intact, and self-hosters get a short upgrade path. The new domain is `kostos.app` if it frees up, otherwise `kostos.fi`. Everything below says `APP_DOMAIN`.
 
 This is a breaking protocol change, so the release is **3.0.0**.
 
@@ -32,7 +32,7 @@ This is a breaking protocol change, so the release is **3.0.0**.
 
 ## Token and derivation
 
-Share link: `https://NEW_DOMAIN/join#<secret>`. The secret never goes in a query string or path.
+Share link: `https://APP_DOMAIN/join#<secret>`. The secret never goes in a query string or path.
 
 HKDF-SHA-256, empty salt, `info` is `kostos/<purpose>/v1`:
 
@@ -100,17 +100,17 @@ What makes this work: a v3 app still opens an old group offline from the data on
 
 ## Hosted migration
 
-1. Cut a `legacy` branch from `main` at the last v2 release. It keeps the old protocol and gets: a persistent banner telling users to move to `NEW_DOMAIN`, an Export button that warns unless the device is fully synced (`phase` is synced and no pending changes), and the "one person per group" wording. It deploys to the existing Worker through its own workflow, pinned to that branch.
-2. Deploy this branch as a second Worker on `NEW_DOMAIN`, only after the domain is registered and its zone is on Cloudflare.
-3. One person per group exports on the old site and restores on `NEW_DOMAIN`, then shares the new link. The banner says not to export yourself. The mover can paste the new link into the old group's description, which reaches every member through normal sync.
+1. Cut a `legacy` branch from `main` at the last v2 release. It keeps the old protocol and gets: a persistent banner telling users to move to `APP_DOMAIN`, an Export button that warns unless the device is fully synced (`phase` is synced and no pending changes), and the "one person per group" wording. It deploys to the existing Worker through its own workflow, pinned to that branch.
+2. Deploy this branch as a second Worker on `APP_DOMAIN`, only after the domain is registered and its zone is on Cloudflare.
+3. One person per group exports on the old site and restores on `APP_DOMAIN`, then shares the new link. The banner says not to export yourself. The mover can paste the new link into the old group's description, which reaches every member through normal sync.
 4. Installed apps keep the old build until they accept the update prompt. The legacy build marks the update as needed to see an important notice. Dormant users are reached through the owners of the 4 groups directly.
 5. On a published retirement date (at least three months out), take the old Worker down. Until then it keeps serving and exporting. The app is never redirected, because installed apps and WebSocket upgrades do not follow redirects and an unexported group would become unreachable. Only the landing page and `/join` may redirect after the date.
 
-Installed PWAs are tied to the old origin, so people reinstall from `NEW_DOMAIN`. The banner and the owner message say so, with a note for iOS home screen users.
+Installed PWAs are tied to the old origin, so people reinstall from `APP_DOMAIN`. The banner and the owner message say so, with a note for iOS home screen users.
 
 ## Domain
 
-`NEW_DOMAIN` appears in: `wrangler.toml`, `.github/workflows/release.yml` (environment URL), the README, and the legacy banner. Share links use `location.origin`, so the app itself needs no constant. The rollout checklist ends with `rg "kostos\.(app|fi)"` so no stale copy survives the final choice. Nothing deploys until the domain is final, because groups moved to the wrong one cannot cheaply move again.
+`APP_DOMAIN` appears in: `wrangler.toml`, `.github/workflows/release.yml` (environment URL), the README, and the legacy banner. Share links use `location.origin`, so the app itself needs no constant. The rollout checklist ends with `rg "kostos\.(app|fi)"` so no stale copy survives the final choice. Nothing deploys until the domain is final, because groups moved to the wrong one cannot cheaply move again.
 
 SEO is not part of this change. The repo has no sitemap or canonical tags (`static/robots.txt` only); the landing page and its SEO get their own design once the domain is settled.
 

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Only a client that holds a group's secret can reach that group's room on the sync server. The secret is the whole invite (22 characters, shared as `https://NEW_DOMAIN/join#<secret>`). Hosted groups move to the new domain with their data intact, self-hosters upgrade in place, and groups made before v3 stay readable and exportable until they are moved. Released as 3.0.0 because the protocol breaks.
+**Goal:** Only a client that holds a group's secret can reach that group's room on the sync server. The secret is the whole invite (22 characters, shared as `https://APP_DOMAIN/join#<secret>`). Hosted groups move to the new domain with their data intact, self-hosters upgrade in place, and groups made before v3 stay readable and exportable until they are moved. Released as 3.0.0 because the protocol breaks.
 
 **Architecture:** The secret (16 random bytes, 22 base64url characters) is expanded with HKDF-SHA-256 into four independent values: the AES-128-GCM key and a 32-hex local ID (both stay on the device), and a 64-hex relay room ID plus a 43-character proof (both go to the server). The server routes by relay room ID; the Durable Object (or Node relay) stores `sha256(proof)` when the first client connects and treats every other proof as foreign: it completes the upgrade, sends `{"type":"denied"}` and closes with 1008, because a failed HTTP upgrade is invisible to browser JavaScript. One shared plain-JS module, `src/lib/sync/room-access.js`, holds the rules so the Worker, the Node relays and the client agree. A room refuses writes past `MAX_ROOM_BYTES` (32 MiB). A stored group with an old 43-character secret never opens a socket; a banner offers export and restore as a new group.
 
@@ -49,7 +49,7 @@ Tasks 1 to 10 and 12 land on `feat/domain-migration`; Task 11 has a part on that
   Changing any purpose or size orphans every group, so a pinned test guards them.
 - Share link: `https://<host>/join#<secret>`. `?room=`, `ROOM.SECRET` and 43-character keys are rejected with a message that says the invite is from the old site.
 - Limits are named constants: `MAX_MESSAGE_BYTES` (1 MiB, existing) and `MAX_ROOM_BYTES` (32 MiB), both in `src/lib/sync/relay-protocol.js`.
-- The new domain is the literal `NEW_DOMAIN` in `wrangler.toml`, `.github/workflows/release.yml`, the README and the legacy banner until it is final. Tests never hardcode a real domain; they use `kostos.example`.
+- The new domain is the literal `APP_DOMAIN` in `wrangler.toml`, `.github/workflows/release.yml`, the README and the legacy banner until it is final. Tests never hardcode a real domain; they use `kostos.example`.
 - Demo mode (`roomId === DEMO_ROOM_ID`, value `'DEMO'`) must keep working.
 - SEO and the landing page rework are out of scope (spec). Landing copy edits in Task 5 keep titles and structure unchanged.
 - Test commands: `npx vitest run <path>` for one file, `npm test` for all, `npm run check` for types, `npm run build && npm run test:e2e` for the browser scenarios.
@@ -2427,7 +2427,7 @@ git commit -m "feat(sync): require the room proof, claim rooms atomically and ca
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: a branch that deploys as its own Worker (`kostos-v2`, new Durable Object namespace) and leaves the `kostos` Worker on the old domain untouched.
+- Produces: a branch that deploys as its own Worker (`kostos-app`, new Durable Object namespace) and leaves the `kostos` Worker on the old domain untouched.
 
 - [ ] **Step 1: Update and extend the e2e flow**
 
@@ -2506,17 +2506,17 @@ Expected: PASS. If Chromium is not installed, set `PLAYWRIGHT_CHROMIUM_PATH` or 
 `wrangler.toml` (verified with `wrangler deploy --dry-run` on wrangler 4.93.1 in a scratch directory: `workers_dev`, `preview_urls`, a placeholder custom domain and `invocation_logs` are all accepted):
 
 ```toml
-name = "kostos-v2"
+name = "kostos-app"
 main = "worker/index.ts"
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat"]
 
-# no second public origin: the Worker is reachable on NEW_DOMAIN only
+# no second public origin: the Worker is reachable on APP_DOMAIN only
 workers_dev = false
 preview_urls = false
 
 routes = [
-	{ pattern = "NEW_DOMAIN", custom_domain = true }
+	{ pattern = "APP_DOMAIN", custom_domain = true }
 ]
 ```
 
@@ -2531,7 +2531,7 @@ enabled = true
 invocation_logs = false
 ```
 
-`.github/workflows/release.yml`: `url: https://NEW_DOMAIN`.
+`.github/workflows/release.yml`: `url: https://APP_DOMAIN`.
 
 **Workers Logs and the proof.** Checked against Cloudflare's docs through Context7 on 2026-10-16: Workers Logs writes one invocation log per request that "contains details such as the Request, Response, and related metadata", and `invocation_logs = false` switches those logs off (wrangler's own schema describes the key as "Set to false to disable invocation logs"). The docs describe no per-header exclusion for Workers Logs. The only documented header redaction (names containing `auth`, `key`, `secret`, `token` or `jwt`, plus `cookie`) belongs to Tail Workers' `TailRequest`, and it would not match `Sec-WebSocket-Protocol`. So the setting above is the only documented way to keep the proof out of retained logs. The cost: no per-request logs in the dashboard (custom `console.*` output still works; the code has none). After the first deploy, open a test group, then confirm in the dashboard that no event for `/sync/` shows up and, if one does, that it carries no `kostos1.` value. Residual limitation to keep in the README: Cloudflare's edge and any Logpush job you add yourself sit outside this setting, and the relay room ID and proof reach the server by design.
 
@@ -2541,15 +2541,19 @@ Dry run (needs `build/`):
 npm run build && npx wrangler deploy --dry-run --outdir /tmp/kostos-dry-run
 ```
 
-Expected: exit 0, bindings list shows `env.SYNC_ROOM (SyncRoom)` and `env.ASSETS`. If wrangler rejects the `NEW_DOMAIN` placeholder, put the real domain in for the dry run only and say so in the handoff.
+Expected: exit 0, bindings list shows `env.SYNC_ROOM (SyncRoom)` and `env.ASSETS`. If wrangler rejects the `APP_DOMAIN` placeholder, put the real domain in for the dry run only and say so in the handoff.
 
 - [ ] **Step 4: Version 3.0.0**
 
 ```bash
 npm version 3.0.0 --no-git-tag-version --ignore-scripts
+npm pkg set name=kostos
+npm install --package-lock-only --ignore-scripts
 ```
 
-Expected: `v3.0.0`, and `git diff --stat` shows `package.json` and `package-lock.json` (lines 3 and 9) only. `svelte.config.js` takes the shown app version from the release tag or `git describe` ("we never hand-bump it"), so `package.json` is just the fallback; publishing the GitHub release `v3.0.0` is what users see.
+The package name loses its stale `-v2` here (nothing else in the repo uses it).
+
+Expected: `v3.0.0`, and `git diff --stat` shows `package.json` and `package-lock.json` only, with the name `kostos` and version `3.0.0` in both. `svelte.config.js` takes the shown app version from the release tag or `git describe` ("we never hand-bump it"), so `package.json` is just the fallback; publishing the GitHub release `v3.0.0` is what users see.
 
 - [ ] **Step 5: README**
 
@@ -2557,7 +2561,7 @@ Line numbers are from the current file.
 
 | Line | Change |
 | --- | --- |
-| 6 | Live demo link: `https://NEW_DOMAIN` |
+| 6 | Live demo link: `https://APP_DOMAIN` |
 | 12 | `Create a group, share its invite link, log expenses, settle up. ... syncs live across every device that has the invite link, and stays readable offline once you've opened it.` |
 | 16 | `- **No accounts.** A group is a secret key, and the invite link carries it. Share the link, anyone with it joins. The server never sees the key.` |
 | 69 and 130 | `/sync/<roomId>` becomes `/sync/<relay room ID>` |
@@ -2598,10 +2602,10 @@ Create `docs/migration/rollout-checklist.md`:
 ```md
 # v3 rollout checklist
 
-Nothing deploys until the domain is final. Replace `NEW_DOMAIN` everywhere first.
+Nothing deploys until the domain is final. Replace `APP_DOMAIN` everywhere first.
 
 - [ ] Domain registered, zone in the same Cloudflare account, `CLOUDFLARE_API_TOKEN` scope includes it.
-- [ ] `NEW_DOMAIN` replaced in `wrangler.toml`, `.github/workflows/release.yml`, `README.md` and, on the `legacy` branch, `src/lib/migration.ts`. `rg NEW_DOMAIN` finds nothing afterwards.
+- [ ] `APP_DOMAIN` replaced in `wrangler.toml`, `.github/workflows/release.yml`, `README.md` and, on the `legacy` branch, `src/lib/migration.ts`. `rg APP_DOMAIN` finds nothing afterwards.
 - [ ] `workers_dev = false` and `preview_urls = false` on the new Worker, so there is no second public origin.
 - [ ] Cloudflare WAF rate-limit rule on `/sync/*`.
 - [ ] Workers Logs checked: invocation logs are off, and a test connection leaves no `kostos1.` value in the dashboard. If that cannot be shown, the README says so.
@@ -2641,7 +2645,7 @@ Spec, "Hosted migration". The old site is never redirected: installed apps and W
 - Delete: `.github/workflows/release.yml`, `.github/workflows/docker.yml`
 
 **Interfaces (part B):**
-- `migration.ts`: `NEW_HOST`, `NEW_ORIGIN`, `RETIREMENT_DATE`, `exportWarning(sync: SyncStatus, local: LocalState | null): string | null`, `UPDATE_NOTICE_TEXT`.
+- `migration.ts`: `APP_HOST`, `NEW_ORIGIN`, `RETIREMENT_DATE`, `exportWarning(sync: SyncStatus, local: LocalState | null): string | null`, `UPDATE_NOTICE_TEXT`.
 - Consumes `phase` and `pendingChanges` from `SyncStatus` (`src/lib/sync/status.ts`) and `LocalState.pendingChanges`, exactly as `describeSync` does (`Math.max(sync.pendingChanges, local?.pendingChanges ?? 0)`).
 
 **Part A (this branch)**
@@ -2689,8 +2693,8 @@ jobs:
 
       - name: Refuse to ship placeholders
         run: |
-          if grep -nE "= '(NEW_DOMAIN|RETIREMENT_DATE)'" src/lib/migration.ts; then
-            echo "Set NEW_HOST and RETIREMENT_DATE in src/lib/migration.ts first"
+          if grep -nE "= '(APP_DOMAIN|RETIREMENT_DATE)'" src/lib/migration.ts; then
+            echo "Set APP_HOST and RETIREMENT_DATE in src/lib/migration.ts first"
             exit 1
           fi
 
@@ -2718,16 +2722,16 @@ Create the `production-legacy` environment in the repository settings with its o
 Create `docs/migration/owner-message-and-runbook.md`:
 
 ```md
-# Moving the hosted groups to NEW_DOMAIN
+# Moving the hosted groups to APP_DOMAIN
 
 ## Message to each group owner (4 groups)
 
-> Kostos is moving from kostos.shynewt.com to NEW_DOMAIN, and groups get new keys on the way. Yours needs moving once.
+> Kostos is moving from kostos.shynewt.com to APP_DOMAIN, and groups get new keys on the way. Yours needs moving once.
 >
 > 1. Agree with your group who moves it. Only that person does steps 2 and 3; everyone else waits for the new link and should not export.
 > 2. On the old site, open the group while online and wait for "Up to date". Then open Settings and choose Export backup.
-> 3. On NEW_DOMAIN choose "Restore from backup", pick which member you are, and share the new invite link.
-> 4. Everyone else opens the new link and picks their name. If you installed the app, reinstall it from NEW_DOMAIN. On iPhone: remove the old icon, open NEW_DOMAIN in Safari, tap Share, then Add to Home Screen.
+> 3. On APP_DOMAIN choose "Restore from backup", pick which member you are, and share the new invite link.
+> 4. Everyone else opens the new link and picks their name. If you installed the app, reinstall it from APP_DOMAIN. On iPhone: remove the old icon, open APP_DOMAIN in Safari, tap Share, then Add to Home Screen.
 >
 > Please finish by FREEZE_DATE. Changes made on the old site after you export will not carry over. The old site keeps working, and keeps exporting, until RETIREMENT_DATE.
 >
@@ -2736,7 +2740,7 @@ Create `docs/migration/owner-message-and-runbook.md`:
 ## Runbook
 
 1. Register the domain and add its zone to the Cloudflare account. Fill in `docs/migration/rollout-checklist.md`.
-2. Replace `NEW_DOMAIN` (see the checklist) and deploy this branch as the `kostos-v2` Worker. Smoke test it: create a group, join it from a second browser.
+2. Replace `APP_DOMAIN` (see the checklist) and deploy this branch as the `kostos-app` Worker. Smoke test it: create a group, join it from a second browser.
 3. Cut `legacy` from the last v2 tag (`git switch -c legacy v2.10.1`), add the migration banner (part B of the plan), push it, run the "Release legacy" workflow.
 4. Send the owner message. Put the same link in the retired site's banner ("Open the new site").
 5. The mover may paste the new invite link into the old group's description; it reaches every member through normal sync.
@@ -2810,9 +2814,9 @@ import type { LocalState } from './sync/persistence';
 import type { SyncStatus } from './sync/status';
 
 /** Both placeholders must be replaced before release; release-legacy.yml refuses to deploy otherwise. */
-export const NEW_HOST = 'NEW_DOMAIN';
+export const APP_HOST = 'APP_DOMAIN';
 export const RETIREMENT_DATE = 'RETIREMENT_DATE';
-export const NEW_ORIGIN = `https://${NEW_HOST}`;
+export const NEW_ORIGIN = `https://${APP_HOST}`;
 
 export const UPDATE_NOTICE_TEXT = 'Update to see an important notice about Kostos moving.';
 
@@ -2831,15 +2835,15 @@ Create `src/lib/components/MigrationBanner.svelte` (always visible, not dismissi
 
 ```svelte
 <script lang="ts">
-	import { NEW_HOST, NEW_ORIGIN, RETIREMENT_DATE } from '$lib/migration';
+	import { APP_HOST, NEW_ORIGIN, RETIREMENT_DATE } from '$lib/migration';
 </script>
 
 <div class="migration" role="status">
-	<p class="headline">Kostos is moving to {NEW_HOST}</p>
+	<p class="headline">Kostos is moving to {APP_HOST}</p>
 	<p class="body">
 		This site keeps working, and keeps exporting, until {RETIREMENT_DATE}. One person per group moves it: ask your group who,
-		and do not export yourself if someone already did. Installed the app? Reinstall it from {NEW_HOST} once your group has moved
-		(on iPhone: remove the old icon, open {NEW_HOST} in Safari, then Share and Add to Home Screen).
+		and do not export yourself if someone already did. Installed the app? Reinstall it from {APP_HOST} once your group has moved
+		(on iPhone: remove the old icon, open {APP_HOST} in Safari, then Share and Add to Home Screen).
 	</p>
 	<a class="open" href={NEW_ORIGIN}>Open the new site</a>
 </div>
@@ -2914,7 +2918,7 @@ git add src
 git commit -m "feat: tell old-site users to move, and warn before an unsynced export"
 ```
 
-Push `legacy`, fill in `NEW_HOST` and `RETIREMENT_DATE` in `src/lib/migration.ts`, commit that, then run the "Release legacy" workflow from the Actions tab (it checks out `legacy` itself, and deploys with the branch's own `wrangler.toml`, which still names the `kostos` Worker and the old domain). Do not publish a GitHub release from `legacy`.
+Push `legacy`, fill in `APP_HOST` and `RETIREMENT_DATE` in `src/lib/migration.ts`, commit that, then run the "Release legacy" workflow from the Actions tab (it checks out `legacy` itself, and deploys with the branch's own `wrangler.toml`, which still names the `kostos` Worker and the old domain). Do not publish a GitHub release from `legacy`.
 
 ---
 
@@ -2927,11 +2931,11 @@ Push `legacy`, fill in `NEW_HOST` and `RETIREMENT_DATE` in `src/lib/migration.ts
 ```bash
 rg -n "PRT-|generateRoomId|ROOM_PATTERN|ROOM_ALPHABET|deriveLabel|<roomId>|ROOM\.SECRET" --glob '!node_modules' --glob '!docs/superpowers/**' .
 rg -n "\?room=|room=" src scripts worker e2e README.md
-rg -n "NEW_DOMAIN|kostos\.(app|fi)|kostos\.shynewt\.com" --glob '!node_modules' --glob '!docs/superpowers/**' .
+rg -n "APP_DOMAIN|kostos\.(app|fi)|kostos\.shynewt\.com" --glob '!node_modules' --glob '!docs/superpowers/**' .
 rg -n -i "\btoken\b" src README.md --glob '*.svelte' --glob '*.html' --glob '*.md'
 ```
 
-Expected: the first two print only the old-format fixtures in `src/lib/token.test.ts` and `e2e/sync.e2e.ts`, the deliberate `'room='` check in `src/lib/token.ts` and the deliberate `/sync/PRT-AAAA-BBBB` rejection probes in `scripts/relays.test.ts`; the third prints only the `NEW_DOMAIN` placeholders listed in the rollout checklist (and, on the `legacy` branch, the old domain in the banner and runbook); the fourth prints nothing user-facing. Anything else is a leftover to fix.
+Expected: the first two print only the old-format fixtures in `src/lib/token.test.ts` and `e2e/sync.e2e.ts`, the deliberate `'room='` check in `src/lib/token.ts` and the deliberate `/sync/PRT-AAAA-BBBB` rejection probes in `scripts/relays.test.ts`; the third prints only the `APP_DOMAIN` placeholders listed in the rollout checklist (and, on the `legacy` branch, the old domain in the banner and runbook); the fourth prints nothing user-facing. Anything else is a leftover to fix.
 
 - [ ] **Step 2: Known duplicates to remove now**
 
