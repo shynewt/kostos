@@ -32,8 +32,21 @@ async function readClaim(file) {
 	return contents;
 }
 
+// fsync on a directory is refused on Windows and on some network or Docker Desktop mounts
+const DIRECTORY_SYNC_UNSUPPORTED = new Set(['EPERM', 'EINVAL', 'EISDIR', 'ENOTSUP', 'ENOSYS']);
+
+/** @param {string} directory */
+async function syncDirectory(directory) {
+	try {
+		const handle = await open(directory, 'r');
+		try { await handle.sync(); } finally { await handle.close(); }
+	} catch (error) {
+		if (!DIRECTORY_SYNC_UNSUPPORTED.has(/** @type {NodeJS.ErrnoException} */ (error).code ?? '')) throw error;
+	}
+}
+
 /** Writes the claim under a temporary name, then renames it into place, so a crash can't leave a
- *  half-written real file. The directory is synced afterwards so the rename itself survives power loss.
+ *  half-written real file. The directory is synced afterwards so the rename itself survives power loss, where the platform allows it.
  *  Callers are serialized per room, so no second claim races this one.
  *  @param {string} file @param {string} hash @returns {Promise<string>} the hash that owns the room */
 async function claimRoom(file, hash) {
@@ -42,8 +55,7 @@ async function claimRoom(file, hash) {
 		const handle = await open(temporary, 'wx');
 		try { await handle.writeFile(hash); await handle.sync(); } finally { await handle.close(); }
 		await rename(temporary, file);
-		const directoryHandle = await open(dirname(file), 'r');
-		try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
+		await syncDirectory(dirname(file));
 	} catch (error) {
 		await unlink(temporary).catch(() => {});
 		throw error;

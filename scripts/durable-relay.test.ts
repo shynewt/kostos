@@ -14,7 +14,7 @@ const ROOM_STEM = createHash('sha256').update(ROOM).digest('hex');
 
 // records file system calls, and lets a test make the next log append write half a line and then
 // fail, like a full disk
-const fsSpy = vi.hoisted(() => ({ armed: false, calls: [] as string[] }));
+const fsSpy = vi.hoisted(() => ({ armed: false, directorySyncError: null as string | null, calls: [] as string[] }));
 vi.mock('node:fs/promises', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('node:fs/promises')>();
 	return {
@@ -36,6 +36,7 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 					if (property === 'sync') {
 						return async () => {
 							fsSpy.calls.push(`sync ${path}`);
+							if (flags === 'r' && fsSpy.directorySyncError) throw Object.assign(new Error('cannot sync a directory'), { code: fsSpy.directorySyncError });
 							return target.sync();
 						};
 					}
@@ -76,7 +77,7 @@ afterEach(async () => {
 	if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-beforeEach(() => { fsSpy.calls.length = 0; });
+beforeEach(() => { fsSpy.calls.length = 0; fsSpy.directorySyncError = null; });
 
 describe('durable encrypted relay', () => {
 	it('drain waits for queued writes so a shutdown cannot cut one off', async () => {
@@ -182,6 +183,17 @@ describe('durable encrypted relay', () => {
 		const renamed = fsSpy.calls.indexOf(`rename ${directory}/${ROOM_STEM}.auth`);
 		expect(renamed).toBeGreaterThanOrEqual(0);
 		expect(fsSpy.calls.indexOf(`sync ${directory}`)).toBeGreaterThan(renamed);
+	});
+	it.each(['EPERM', 'EINVAL', 'EISDIR', 'ENOTSUP', 'ENOSYS'])('still claims a room where the platform cannot sync a directory (%s)', async (code) => {
+		fsSpy.directorySyncError = code;
+		await joinRoom(await start());
+		expect(fsSpy.calls).toContain(`sync ${directory}`);
+	});
+	it('fails the claim when the directory sync fails for any other reason', async () => {
+		fsSpy.directorySyncError = 'EIO';
+		const peer = await openSocket(await start());
+		expect(await peer.closed).toBe(1011);
+		expect(peer.controls).toEqual([{ type: 'error', reason: 'storage' }]);
 	});
 	it('forgets an idle room and loads it from disk again on the next connection', async () => {
 		const url = await start(); const first = await joinRoom(url);
