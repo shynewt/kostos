@@ -164,6 +164,9 @@
 				{/each}
 			</div>
 
+			{#if parseError}
+				<p class="error" role="alert">{parseError}</p>
+			{/if}
 			<button
 				type="button"
 				class="btn btn-primary btn-block submit-btn"
