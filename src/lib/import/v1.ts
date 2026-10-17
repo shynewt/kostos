@@ -175,7 +175,7 @@ export function mapV1ToV2(v1: V1Export): ImportResult {
 	for (const e of v1.expenses) {
 		const amountCents = toCents(e.amount, decimals);
 		if (!Number.isFinite(amountCents) || amountCents <= 0) {
-			warnings.push(`Skipped expense "${e.title}" — non-positive amount.`);
+			warnings.push(`Skipped expense "${e.title}": non-positive amount.`);
 			continue;
 		}
 
@@ -188,7 +188,7 @@ export function mapV1ToV2(v1: V1Export): ImportResult {
 		const participants = realPaidFor.filter((pf) => (pf.owedAmount ?? 0) > 0);
 
 		if (participants.length === 0) {
-			warnings.push(`Skipped expense "${e.title}" — no real participants.`);
+			warnings.push(`Skipped expense "${e.title}": no real participants.`);
 			continue;
 		}
 
