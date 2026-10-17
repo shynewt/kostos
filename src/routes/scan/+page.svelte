@@ -14,10 +14,10 @@
 		const value = raw.trim();
 		if (!value) return false;
 
-		const parsed = parseInvite(value);
-		if (parsed) {
+		const secret = parseInvite(value);
+		if (secret) {
 			status = 'matched';
-			goto(invitePath(parsed.secret));
+			goto(invitePath(secret));
 			return true;
 		}
 		return false;

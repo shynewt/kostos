@@ -25,7 +25,7 @@
 
 	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'denied' | 'invalid' | 'unreadable';
 
-	const secret = $derived(parseInvite(page.url.hash)?.secret ?? '');
+	const secret = $derived(parseInvite(page.url.hash) ?? '');
 	const oldInvite = $derived(isOldInvite(`${page.url.search}${page.url.hash}`));
 	let unreadableMessage = $state('');
 	let derivation = $state<{ secret: string; roomId: string } | null>(null);

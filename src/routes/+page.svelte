@@ -32,13 +32,13 @@
 
 	function onJoinSubmit(event: SubmitEvent) {
 		event.preventDefault();
-		const parsed = parseInvite(inviteText);
-		if (!parsed) {
+		const secret = parseInvite(inviteText);
+		if (!secret) {
 			error = inviteError(inviteText);
 			return;
 		}
 		error = null;
-		goto(invitePath(parsed.secret));
+		goto(invitePath(secret));
 	}
 
 	function relativeDay(ts: number | undefined): string {

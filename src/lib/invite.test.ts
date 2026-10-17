@@ -9,35 +9,56 @@ const legacySecret = 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8';
 describe('parseInvite', () => {
 	it('reads the share link the app hands out', () => {
 		expect(secret).toHaveLength(22);
-		expect(parseInvite(`https://kostos.example/join#${secret}`)).toEqual({ secret });
+		expect(parseInvite(`https://kostos.example/join#${secret}`)).toBe(secret);
 	});
 
 	it('reads links pasted without a scheme, wrapped, or inside a sentence', () => {
 		const link = `kostos.example/join#${secret}`;
-		expect(parseInvite(link)).toEqual({ secret });
-		expect(parseInvite(`<https://${link}>`)).toEqual({ secret });
-		expect(parseInvite(`Join us here: https://${link}.`)).toEqual({ secret });
-		expect(parseInvite(`(https://${link})`)).toEqual({ secret });
+		expect(parseInvite(link)).toBe(secret);
+		expect(parseInvite(`<https://${link}>`)).toBe(secret);
+		expect(parseInvite(`Join us here: https://${link}.`)).toBe(secret);
+		expect(parseInvite(`(https://${link})`)).toBe(secret);
 	});
 
 	it('reads the bare key and keeps its case', () => {
-		expect(parseInvite(`  ${secret} `)).toEqual({ secret });
-		expect(parseInvite('abc-_ABC-_abc-_ABC-_ab')).toEqual({ secret: 'abc-_ABC-_abc-_ABC-_ab' });
+		expect(parseInvite(`  ${secret} `)).toBe(secret);
+		expect(parseInvite('abc-_ABC-_abc-_ABC-_ab')).toBe('abc-_ABC-_abc-_ABC-_ab');
 	});
 
 	it('keeps keys that end in - or _', () => {
-		expect(parseInvite('https://kostos.example/join#abcdefghijklmnopqrst-_')).toEqual({ secret: 'abcdefghijklmnopqrst-_' });
+		expect(parseInvite('https://kostos.example/join#abcdefghijklmnopqrst-_')).toBe('abcdefghijklmnopqrst-_');
 	});
 
 	it('reads links and keys wrapped in quotes', () => {
-		expect(parseInvite(`"https://kostos.example/join#${secret}"`)).toEqual({ secret });
-		expect(parseInvite(`'${secret}'`)).toEqual({ secret });
-		expect(parseInvite(`“${secret}”`)).toEqual({ secret });
-		expect(parseInvite(`#${secret}.`)).toEqual({ secret });
+		expect(parseInvite(`"https://kostos.example/join#${secret}"`)).toBe(secret);
+		expect(parseInvite(`'${secret}'`)).toBe(secret);
+		expect(parseInvite(`“${secret}”`)).toBe(secret);
+		expect(parseInvite(`#${secret}.`)).toBe(secret);
+	});
+
+	it('reads links and keys wrapped in chat formatting', () => {
+		const link = `https://kostos.example/join#${secret}`;
+		for (const [open, close] of [['`', '`'], ['*', '*'], ['**', '**'], ['~', '~'], ['|', '|'], ['{', '}'], ['', '…'], ['', '。'], ['', '\u200b'], ['\u200b', '']]) {
+			expect(parseInvite(`${open}${secret}${close}`)).toBe(secret);
+			expect(parseInvite(`${open}${link}${close}`)).toBe(secret);
+		}
+		expect(parseInvite(`Join: \`${link}\``)).toBe(secret);
+		expect(parseInvite(`${link}\``)).toBe(secret);
+	});
+
+	it('only ever returns a key that appears literally in the input', () => {
+		const alphabet = [...`${secret}#/:.&=*~|{}\`…。\u200b <>"' x`];
+		let seed = 7;
+		const next = () => (seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648);
+		for (let round = 0; round < 500; round++) {
+			const text = Array.from({ length: 1 + (next() % 60) }, () => alphabet[next() % alphabet.length]).join('');
+			const found = parseInvite(text);
+			if (found !== null) expect(text).toContain(found);
+		}
 	});
 
 	it('ignores extra fragment parameters after the key', () => {
-		expect(parseInvite(`https://kostos.example/join#${secret}&utm_source=chat`)).toEqual({ secret });
+		expect(parseInvite(`https://kostos.example/join#${secret}&utm_source=chat`)).toBe(secret);
 	});
 
 	it('does not accept junk glued onto the key', () => {
@@ -48,25 +69,25 @@ describe('parseInvite', () => {
 	});
 
 	it('prefers the link over other words that contain a hash', () => {
-		expect(parseInvite(`Join #kostos at https://kostos.example/join#${secret} tonight`)).toEqual({ secret });
-		expect(parseInvite(`#kostos kostos.example/join#${secret}`)).toEqual({ secret });
+		expect(parseInvite(`Join #kostos at https://kostos.example/join#${secret} tonight`)).toBe(secret);
+		expect(parseInvite(`#kostos kostos.example/join#${secret}`)).toBe(secret);
 	});
 
 	it('finds the invite when other links or words come first', () => {
 		const link = `https://kostos.example/join#${secret}`;
-		expect(parseInvite(`Kostos: https://kostos.example Join: ${link}`)).toEqual({ secret });
-		expect(parseInvite(`https://kostos.example\n${link}`)).toEqual({ secret });
-		expect(parseInvite(`key ${secret}, app at https://kostos.example`)).toEqual({ secret });
-		expect(parseInvite(`${link}/`)).toEqual({ secret });
+		expect(parseInvite(`Kostos: https://kostos.example Join: ${link}`)).toBe(secret);
+		expect(parseInvite(`https://kostos.example\n${link}`)).toBe(secret);
+		expect(parseInvite(`key ${secret}, app at https://kostos.example`)).toBe(secret);
+		expect(parseInvite(`${link}/`)).toBe(secret);
 	});
 
 	it('prefers the link over a look-alike word', () => {
-		expect(parseInvite(`thanks-for-the-help-guys https://kostos.example/join#${secret}`)).toEqual({ secret });
+		expect(parseInvite(`thanks-for-the-help-guys https://kostos.example/join#${secret}`)).toBe(secret);
 	});
 
 	it('accepts the same key given twice but refuses two different keys', () => {
 		const other = 'BBECAwQFBgcICQoLDA0ODw';
-		expect(parseInvite(`${secret} https://kostos.example/join#${secret}`)).toEqual({ secret });
+		expect(parseInvite(`${secret} https://kostos.example/join#${secret}`)).toBe(secret);
 		expect(parseInvite(`${secret} ${other}`)).toBeNull();
 		expect(parseInvite(`https://kostos.example/join#${secret} https://kostos.example/join#${other}`)).toBeNull();
 	});
@@ -135,7 +156,7 @@ describe('old invites', () => {
 describe('invitePath', () => {
 	it('builds the path parseInvite reads back', () => {
 		expect(invitePath(secret)).toBe(`/join#${secret}`);
-		expect(parseInvite(`https://kostos.example${invitePath(secret)}`)).toEqual({ secret });
+		expect(parseInvite(`https://kostos.example${invitePath(secret)}`)).toBe(secret);
 	});
 
 	it('names the key length in the invalid-invite message', () => {

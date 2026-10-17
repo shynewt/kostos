@@ -5,15 +5,14 @@
  */
 import { base64UrlEncode } from './sync/crypto';
 
-export type ParsedInvite = { secret: string };
-
 export const SECRET_LENGTH = 22;
 const SECRET_BYTES = 16;
 const SECRET_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${SECRET_LENGTH}}$`);
 const OLD_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 // a real invite is a few dozen characters; anything longer is never worth scanning
 const MAX_WORD_LENGTH = 2048;
-const WRAPPERS_AND_PUNCTUATION = new Set([...'<>()[]"\'.,;:!?/“”‘’«»']);
+// chat formatting (`code`, *bold*, ~strike~, |spoiler|, {braces}), a sentence's end, and a zero-width space
+const WRAPPERS_AND_PUNCTUATION = new Set([...'<>()[]{}"\'`*~|.,;:!?/“”‘’«»…。\u200b']);
 const INVITE_TIERS: ((candidate: string) => boolean)[] = [
 	(candidate) => candidate.includes('://') || candidate.includes('/join#') || candidate.includes('room='),
 	(candidate) => candidate.includes('#'),
@@ -38,12 +37,12 @@ export function invitePath(secret: string): string {
 }
 
 /** Accepts the share link (`/join#SECRET`) or the bare secret, anywhere in a pasted message. */
-export function parseInvite(raw: string): ParsedInvite | null {
+export function parseInvite(raw: string): string | null {
 	const candidates = candidatesIn(raw);
 	// links first, so a look-alike word in the same message cannot outrank or clash with the real invite
 	for (const belongsToTier of INVITE_TIERS) {
 		const secrets = new Set(candidates.filter(belongsToTier).map(fragmentSecret).filter(isValidSecret));
-		if (secrets.size > 0) return secrets.size === 1 ? { secret: [...secrets][0] } : null;
+		if (secrets.size > 0) return secrets.size === 1 ? [...secrets][0] : null;
 	}
 	return null;
 }
@@ -69,7 +68,7 @@ function fragmentSecret(candidate: string): string {
 	return separator === -1 ? fragment : fragment.slice(0, separator);
 }
 
-/** Chat apps paste links with surrounding text, quotes, `<...>` wrappers, a sentence's final period,
+/** Chat apps paste links with surrounding text, quotes, formatting marks, a sentence's final period,
  *  a trailing slash, or without the scheme. None of those characters can appear in a secret. */
 function candidatesIn(raw: string): string[] {
 	return raw
