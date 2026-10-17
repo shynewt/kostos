@@ -2505,7 +2505,7 @@ In `e2e/sync.e2e.ts`:
 - [ ] **Step 2: Run e2e if a browser is available**
 
 Run: `npm run build && npm run test:e2e`
-Expected: PASS. If Chromium is not installed, set `PLAYWRIGHT_CHROMIUM_PATH` or say so in the final handoff; do not skip silently.
+Expected: PASS. If Chromium is not installed, set `PLAYWRIGHT_CHROMIUM_PATH` or say so in the final handoff; do not skip silently. The run rewrites the tracked `docs/screenshots/sync/*.png` (and leaves `debug-sync-failure.png` after a failure); run `git checkout docs/screenshots` and delete the debug file before committing.
 
 - [ ] **Step 3: Deploy config for the second Worker**
 
@@ -2554,12 +2554,13 @@ Expected: exit 0, bindings list shows `env.SYNC_ROOM (SyncRoom)` and `env.ASSETS
 ```bash
 npm version 3.0.0 --no-git-tag-version --ignore-scripts
 npm pkg set name=kostos
-npm install --package-lock-only --ignore-scripts
 ```
+
+Then change `name` and `version` by hand in the two places they appear at the top of `package-lock.json` (the root and `packages[""]`). `npm install --package-lock-only` is not used because the local npm drops the `libc` fields from every platform package, which is unrelated churn.
 
 The package name loses its stale `-v2` here (nothing else in the repo uses it).
 
-Expected: `v3.0.0`, and `git diff --stat` shows `package.json` and `package-lock.json` only, with the name `kostos` and version `3.0.0` in both. `svelte.config.js` takes the shown app version from the release tag or `git describe` ("we never hand-bump it"), so `package.json` is just the fallback; publishing the GitHub release `v3.0.0` is what users see.
+Expected: `v3.0.0`, and `git diff --stat` shows `package.json` and `package-lock.json` only (two lines changed in each), with the name `kostos` and version `3.0.0` in both. `svelte.config.js` takes the shown app version from the release tag or `git describe` ("we never hand-bump it"), so `package.json` is just the fallback; publishing the GitHub release `v3.0.0` is what users see.
 
 - [ ] **Step 5: README**
 
@@ -2572,15 +2573,18 @@ Line numbers are from the current file.
 | 16 | `- **No accounts.** A group is a secret key, and the invite link carries it. Share the link, anyone with it joins. The server never sees the key.` |
 | 69 and 130 | `/sync/<roomId>` becomes `/sync/<relay room ID>` |
 | 91 and 105 | image tag `:2` becomes `:3` |
+| 108 | `:3` follows every 3.x release. `:3.0` only gets patch releases and `:3.0.0` never changes. |
 | 136 | `... Only devices with the group's invite link can decrypt them.` |
 | 139 | `- **Link-based, not session-based.** v1 used localStorage to remember "who you are" per browser. v2 makes the invite link the identity: the same link on a new device is the same group, instantly.` |
 | 173 | `- **AES-128-GCM** key derived with HKDF-SHA-256 from the group's secret, never sent to the server. The same secret also yields a local ID (stays on the device), a relay room ID and an access proof (the only two things the server sees).` |
 | 183 | append: `Each room is capped at 32 MiB; writes past that are refused and the app reports that the server couldn't save changes.` |
 
-After the sentence about `worker/index.ts` (line 75) add:
+After the sentence about `worker/index.ts` (line 75) end the paragraph with "replace `APP_DOMAIN` there with your own domain before deploying", then add:
 
 ```
 A room is addressed by a 64-character hex ID derived from the group's secret. The first client to connect stores a hash of its access proof; any other proof is answered with a `denied` message and a 1008 close. The Node relays apply the same rule and keep the hash in `<room>.auth` next to the room log.
+
+`wrangler.toml` turns off Workers invocation logs so the access proof in the `Sec-WebSocket-Protocol` header isn't retained. Cloudflare's edge and any Logpush job you add yourself sit outside that setting, and the server sees the relay room ID and proof by design.
 ```
 
 After the self-host section's last paragraph (line 130) add a rate-limit note and the upgrade guide:
@@ -2611,7 +2615,7 @@ Create `docs/migration/rollout-checklist.md`:
 Nothing deploys until the domain is final. Replace `APP_DOMAIN` everywhere first.
 
 - [ ] Domain registered, zone in the same Cloudflare account, `CLOUDFLARE_API_TOKEN` scope includes it.
-- [ ] `APP_DOMAIN` replaced in `wrangler.toml`, `.github/workflows/release.yml`, `README.md` and, on the `legacy` branch, `src/lib/migration.ts`. `rg APP_DOMAIN` finds nothing afterwards.
+- [ ] `APP_DOMAIN` replaced in `wrangler.toml`, `.github/workflows/release.yml`, `README.md` and, on the `legacy` branch, `src/lib/migration.ts`. `rg APP_DOMAIN --glob '!docs/**'` finds nothing afterwards.
 - [ ] `workers_dev = false` and `preview_urls = false` on the new Worker, so there is no second public origin.
 - [ ] Cloudflare WAF rate-limit rule on `/sync/*`.
 - [ ] Workers Logs checked: invocation logs are off, and a test connection leaves no `kostos1.` value in the dashboard. If that cannot be shown, the README says so.
@@ -2619,7 +2623,7 @@ Nothing deploys until the domain is final. Replace `APP_DOMAIN` everywhere first
 - [ ] `release-legacy.yml` and its `production-legacy` environment exist, with their own Cloudflare secrets, pinned to the `legacy` branch.
 - [ ] A short message sent to each of the 4 owners: what to do, a freeze date, the retirement date (`docs/migration/owner-message-and-runbook.md`).
 - [ ] Rollback understood: `wrangler rollback` for code problems; old rooms stay until the retirement date.
-- [ ] Final `rg "PRT-"` and `rg "kostos\.(app|fi)"` and `rg "kostos\.shynewt\.com"`: only the chosen domain, the old domain in the legacy banner and runbook, and the old-format fixtures in `token.test.ts` and `sync.e2e.ts` remain.
+- [ ] Final `rg "PRT-"`, `rg "kostos\.(app|fi)"` and `rg "kostos\.shynewt\.com"` outside `docs/`: only the chosen domain, the old domain in the legacy banner, and the old-format fixtures in tests and `sync.e2e.ts` remain.
 ```
 
 - [ ] **Step 7: Verify and commit**
