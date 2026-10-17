@@ -12,13 +12,13 @@
 </script>
 
 {#if room?.handle.legacy}
-	<section class="legacy" data-legacy-banner role="status">
-		<p class="lead">This group no longer syncs.</p>
+	<section class="legacy" data-legacy-banner aria-labelledby="legacy-banner-lead">
+		<p class="lead" id="legacy-banner-lead">This group no longer syncs.</p>
 		<p class="body">
 			{LEGACY_GROUP_SUMMARY} One person does this, then shares the new invite link. The restore keeps members, categories,
 			payment methods, trips and expenses, but drops the activity log and conflict history, and everyone picks who they are again.
 		</p>
-		<p class="body"><strong>Don’t add new expenses here. They won’t carry over to the new group.</strong></p>
+		<p class="body"><strong>Don’t add expenses or record payments here. They won’t carry over to the new group.</strong></p>
 		<div class="actions">
 			<button type="button" class="btn btn-primary" onclick={exportBackup} disabled={!room.project}>Export backup</button>
 			<a class="btn" href="/restore">Restore as a new group</a>
