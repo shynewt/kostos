@@ -34,6 +34,13 @@ describe('describeSync', () => {
 		expect(describeSync(status({}), local, NOW)).toMatchObject({ state: 'local-error', label: 'Not saved here', banner: null });
 	});
 
+	it('words a refused key as a terminal problem with no retry', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'denied' }), null, NOW);
+		expect(view).toMatchObject({ state: 'error', tone: 'warn', retry: false });
+		expect(view.body).toBe('This group belongs to a different key. Ask for a fresh invite link.');
+		expect(view.banner).toBe(view.body);
+	});
+
 	it('treats the demo group as plain local storage', () => {
 		expect(describeSync(LOCAL_STATUS, null, NOW, { demo: true })).toMatchObject({ tone: 'idle', banner: null, attention: false });
 		expect(describeSync(LOCAL_STATUS, null, NOW).banner).toContain('Invite link missing');

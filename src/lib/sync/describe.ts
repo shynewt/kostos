@@ -26,7 +26,8 @@ const BANNER_TEXT: Record<SyncProblem, string> = {
 	decrypt: 'Some group data couldn’t be read. Check that your invite link is the right one.',
 	protocol: 'This server needs an update before it can sync.',
 	history: 'Older server history is incomplete. Export a backup from Settings.',
-	size: 'This group is too large to sync. Export a backup from Settings.'
+	size: 'This group is too large to sync. Export a backup from Settings.',
+	denied: 'This group belongs to a different key. Ask for a fresh invite link.'
 };
 
 function plural(count: number, one: string, many: string): string {
@@ -95,7 +96,7 @@ export function describeSync(
 			};
 		case 'error':
 			return {
-				...base, tone: 'warn', state: 'error', label: 'Sync paused', attention: true, retry: true,
+				...base, tone: 'warn', state: 'error', label: 'Sync paused', attention: true, retry: sync.problem !== 'denied',
 				headline: 'Couldn’t sync',
 				body: PROBLEM_LABELS[sync.problem ?? 'network'],
 				banner: BANNER_TEXT[sync.problem ?? 'network']

@@ -87,7 +87,7 @@ export class EncryptedSyncProvider {
 	private isCurrent(ws: WebSocket): boolean { return !this.destroyed && this.ws === ws; }
 
 	private connect(): void {
-		if (this.destroyed) return;
+		if (this.destroyed || this.denied) return;
 		if (typeof navigator !== 'undefined' && navigator.onLine === false) {
 			this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 			return;
@@ -218,6 +218,7 @@ export class EncryptedSyncProvider {
 			this.send(MSG_STEP1, Y.encodeStateVector(this.doc));
 			return;
 		}
+		if (message.type === 'denied') { this.deny(); return; }
 		if (message.type === 'error') { this.fail(message.reason === 'size' ? 'size' : 'storage'); return; }
 		if (message.type === 'ack' || message.type === 'revision') {
 			if (!Number.isSafeInteger(message.revision) || message.revision! > this.revision + 1) { this.recover('history'); return; }
@@ -341,6 +342,17 @@ export class EncryptedSyncProvider {
 		} else this.clearDeadline();
 	}
 
+	/** The server refused this key for this room. Retrying cannot change that, so every path
+	 *  that would reconnect (timers, online, foreground) stops at `denied` in `connect()`. */
+	private deny(): void {
+		this.denied = true;
+		const ws = this.ws;
+		this.ws = null;
+		this.clearTimers();
+		try { ws?.close(); } catch { /* Already closed. */ }
+		this.fail('denied', false);
+	}
+
 	private recoveries = 0;
 	private replay: Uint8Array[] = [];
 	private replayBytes = 0;
@@ -348,6 +360,7 @@ export class EncryptedSyncProvider {
 	private compacted = false;
 	/** This phone held data of its own before connecting, so it can vouch for a trimmed server history. */
 	private seeded = false;
+	private denied = false;
 	private fresh = false;
 
 	private armDeadline(ws: WebSocket): void {

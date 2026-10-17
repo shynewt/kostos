@@ -236,4 +236,22 @@ describe('verified encrypted sync', () => {
 		const snapshot = new Y.Doc(); Y.applyUpdate(snapshot, parse(await decryptPayload(key, compact.slice(9))).body);
 		expect(snapshot.getArray('expenses').length).toBe(60);
 	});
+
+	it('stops for good when the server says the key does not belong to this group', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		const ws = Socket.instances[0]; ws.open();
+		ws.control({ type: 'denied' });
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('denied'));
+		// the server closes right after the message; the message task runs first in a browser too
+		ws.close();
+		expect(provider.status).toBe('error');
+		await vi.advanceTimersByTimeAsync(120_000);
+		document.dispatchEvent(new Event('visibilitychange'));
+		events.dispatchEvent(new Event('online'));
+		provider.retry();
+		expect(Socket.instances).toHaveLength(1);
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'denied', checking: false });
+	});
 });

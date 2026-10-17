@@ -1,5 +1,5 @@
 export type SyncPhase = 'local' | 'loading' | 'connecting' | 'syncing' | 'synced' | 'offline' | 'error';
-export type SyncProblem = 'network' | 'timeout' | 'storage' | 'decrypt' | 'protocol' | 'history' | 'size';
+export type SyncProblem = 'network' | 'timeout' | 'storage' | 'decrypt' | 'protocol' | 'history' | 'size' | 'denied';
 
 export type SyncStatus = {
 	phase: SyncPhase;
@@ -21,7 +21,8 @@ export const PROBLEM_LABELS: Record<SyncProblem, string> = {
 	decrypt: 'Some group data couldn’t be read. Check that you have the correct invite link.',
 	protocol: 'This server needs an update before sync can be verified.',
 	history: 'Older server history is incomplete. Keep your existing devices and export a backup in Settings.',
-	size: 'This group is too large to sync in one message. Export a backup from Settings.'
+	size: 'This group is too large to sync in one message. Export a backup from Settings.',
+	denied: 'This group belongs to a different key. Ask for a fresh invite link.'
 };
 
 export function relativeTime(at: number | null, now: number): string {
