@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://kostos.shynewt.com
+      url: https://APP_DOMAIN
     permissions:
       contents: read
     steps:

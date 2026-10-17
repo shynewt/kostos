@@ -3,17 +3,17 @@
 <p align="center"><strong>Privacy-first group expense splitter PWA</strong>. No accounts. End-to-end encrypted. Works offline. Self-hostable.</p>
 
 <p align="center">
-  <a href="https://kostos.shynewt.com">Live demo</a> ·
+  <a href="https://APP_DOMAIN">Live demo</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#deploy">Deploy</a> ·
   <a href="#why-v2">Why v2</a>
 </p>
 
-Kostos is a small web app for splitting bills with friends, housemates, or trip groups. Create a group, share its token, log expenses, settle up. No sign-up, no email, no password. Group state syncs live across every device that holds the token, and stays readable offline once you've opened it.
+Kostos is a small web app for splitting bills with friends, housemates, or trip groups. Create a group, share its invite link, log expenses, settle up. No sign-up, no email, no password. Group state syncs live across every device that has the invite link, and stays readable offline once you've opened it.
 
 ## Features
 
-- **No accounts.** Groups are identified by a secret token that doubles as the invite link. Share the token, anyone with it joins. The server never sees the key.
+- **No accounts.** A group is a secret key, and the invite link carries it. Share the link, anyone with it joins. The server never sees the key.
 - **End-to-end encrypted sync.** Every update is AES-GCM encrypted in the browser before reaching the sync relay. The relay stores opaque ciphertext.
 - **Offline-first PWA.** Built on Y.js + IndexedDB. Add expenses on a plane; they sync the moment you come back online.
 - **Concurrent expense edits.** Each expense is counted once. If devices edit it independently, Kostos preserves both versions and asks you to review which one to use.
@@ -66,7 +66,7 @@ Screenshots are captured by `npm run screenshots` (see [Development](#developmen
 
 ## Deploy
 
-Two supported targets sharing the same static bundle and the same `/sync/<roomId>` WebSocket route.
+Two supported targets sharing the same static bundle and the same `/sync/<relay room ID>` WebSocket route.
 
 ### Cloudflare Workers (with static assets + Durable Objects)
 
@@ -76,7 +76,11 @@ wrangler login
 npm run cf:deploy
 ```
 
-`worker/index.ts` is the entry. It routes `/sync/*` to a `SyncRoom` Durable Object (in `src/lib/server/sync-do.ts`) and falls through to the static assets binding for everything else. The DO uses Hibernating WebSockets, so idle rooms cost no CPU. Configuration lives in `wrangler.toml`.
+`worker/index.ts` is the entry. It routes `/sync/*` to a `SyncRoom` Durable Object (in `src/lib/server/sync-do.ts`) and falls through to the static assets binding for everything else. The DO uses Hibernating WebSockets, so idle rooms cost no CPU. Configuration lives in `wrangler.toml`; replace `APP_DOMAIN` there with your own domain before deploying.
+
+A room is addressed by a 64-character hex ID derived from the group's secret. The first client to connect stores a hash of its access proof; any other proof is answered with a `denied` message and a 1008 close. The Node relays apply the same rule and keep the hash in `<room>.auth` next to the room log.
+
+`wrangler.toml` turns off Workers invocation logs so the access proof in the `Sec-WebSocket-Protocol` header isn't retained. Cloudflare's edge and any Logpush job you add yourself sit outside that setting, and the server sees the relay room ID and proof by design.
 
 The SQLite-backed DO works on the Workers Free plan; no Workers Paid required for typical use.
 
@@ -88,7 +92,7 @@ The SQLite-backed DO works on the Workers Free plan; no Workers Paid required fo
 ```yaml
 services:
   kostos:
-    image: ghcr.io/shynewt/kostos:2
+    image: ghcr.io/shynewt/kostos:3
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -102,10 +106,10 @@ volumes:
 Or with `docker run`:
 
 ```sh
-docker run -d -p 8080:8080 -v kostos-data:/data --restart unless-stopped ghcr.io/shynewt/kostos:2
+docker run -d -p 8080:8080 -v kostos-data:/data --restart unless-stopped ghcr.io/shynewt/kostos:3
 ```
 
-Each release publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GitHub Container Registry. `:2` follows every 2.x release. `:2.10` only gets patch releases and `:2.10.1` never changes.
+Each release publishes a multi-arch image (`linux/amd64`, `linux/arm64`) to GitHub Container Registry. `:3` follows every 3.x release. `:3.0` only gets patch releases and `:3.0.0` never changes.
 
 For HTTPS, [Caddy](https://caddyserver.com/docs/quick-starts/reverse-proxy) is the quickest way. It gets a certificate for your domain by itself and passes the sync WebSocket through:
 
@@ -127,16 +131,30 @@ npm run build
 node scripts/serve.js
 ```
 
-`scripts/serve.js` serves the static bundle and handles `/sync/<roomId>` WebSocket upgrades on the same port (default 8080). Encrypted history is appended to disk and flushed before a write is acknowledged. Set `KOSTOS_DATA_DIR` to a persistent directory (default `.kostos-data/serve`; Docker uses `/data`). Keep that directory or Docker volume across restarts and upgrades. Serve it behind an HTTPS reverse proxy.
+`scripts/serve.js` serves the static bundle and handles `/sync/<relay room ID>` WebSocket upgrades on the same port (default 8080). Encrypted history is appended to disk and flushed before a write is acknowledged. Set `KOSTOS_DATA_DIR` to a persistent directory (default `.kostos-data/serve`; Docker uses `/data`). Keep that directory or Docker volume across restarts and upgrades. Serve it behind an HTTPS reverse proxy.
+
+Abuse beyond a single room is not handled in code. Put a rate limit on `/sync/` in your reverse proxy (for example nginx `limit_req` or Traefik's `rateLimit` middleware).
+
+#### Upgrading to v3
+
+v3 changes the sync protocol, so groups move to new keys. Members' data survives through export and restore.
+
+1. Ask members to open the app online once, so their devices hold the latest data.
+2. Pull the new image (change the tag from `:2` to `:3` if you pin it) and restart. Same volume, same variables, same port, nothing else changes.
+3. Open each group on one device. v3 recognises the old format, does not try to sync it, and shows a banner with two buttons: export a backup, and restore it as a new group.
+4. Share the new invite link of each restored group. Others join that link. Only one person per group does steps 3 and 4.
+5. When everyone has moved, delete the old `*.jsonl` files from the data volume.
+
+A restore keeps members, categories, payment methods, trips and expenses. It does not keep the activity log or conflict history, and whoever restores picks "this is me" again.
 
 ## Why v2
 
 Kostos v1 was a Next.js + SQLite app where the server held every group's data. It worked, but it tied users to whatever instance hosted it and made the privacy story awkward: the operator could read every project. v2 rewrites the foundation:
 
-- **No plaintext on the server.** The relay retains encrypted updates for offline devices to catch up. Only devices with the group token can decrypt them.
+- **No plaintext on the server.** The relay retains encrypted updates for offline devices to catch up. Only devices with the group's invite link can decrypt them.
 - **PWA over webapp.** Installable on iOS and Android home screens, runs without the browser chrome, fully offline-capable.
 - **Live multi-device.** v1 needed manual refreshes between devices. v2 syncs in real time over WebSockets with Y.js CRDTs.
-- **Token-based, not session-based.** v1 used localStorage to remember "who you are" per browser. v2 makes the token the identity: same token on a new device = same group, instantly.
+- **Link-based, not session-based.** v1 used localStorage to remember "who you are" per browser. v2 makes the invite link the identity: the same link on a new device is the same group, instantly.
 - **Smaller and faster.** SvelteKit 5 + adapter-static ships ~150KB of JS gzipped. Initial paint is under a second on a 3G simulation.
 
 **Migrating from v1.** v1 lives on the [`v1` branch](https://github.com/shynewt/kostos/tree/v1) of this repo and stays available for self-hosters who don't want to migrate yet. To move a project: open v1, export the project to JSON, then drop the file on `/import` in v2. The importer maps members, categories, payment methods, and every expense. Sub-cent rounding may shift even-split balances by ±1 cent vs v1 due to integer-cent arithmetic; totals are preserved.
@@ -170,7 +188,7 @@ Scripts:
 
 - **SvelteKit 5** with runes (`$state`, `$derived`, `$effect`). Strict TypeScript.
 - **Y.js + IndexedDB** for local-first CRDT state. Project data is a single `Y.Doc` per group. Transaction-aware persistence uses the existing y-indexeddb database and stores, so installed apps keep their data.
-- **AES-GCM** key derived from the secret half of the project token, never sent to the server.
+- **AES-128-GCM** key derived with HKDF-SHA-256 from the group's secret, never sent to the server. The same secret also yields a local ID (stays on the device), a relay room ID and an access proof (the only two things the server sees).
 - **Cloudflare Durable Object** for the sync relay in production, with `acceptWebSocket()` hibernation so idle rooms cost nothing.
 - **Self-host Node server** is a small `http` + `ws` relay that speaks the same wire protocol as the Worker.
 
@@ -180,7 +198,7 @@ A socket opening does not mean expenses are current. The client waits for encryp
 
 Upgrade the relay with the app: the new client requires protocol 3 to confirm sync. Existing clients' encrypted binary updates are still accepted. Cloudflare migrates the previous KV history into SQLite without deleting the old value. If the old history reached its 1,000-message cap, Kostos reports incomplete history rather than claiming the room is current. Already-discarded data cannot be recovered from the server: keep existing devices, export a full backup from a device containing the expenses, and restore it into a new group if necessary. Restarting the old in-memory Node relay also cannot recover its former history; existing devices re-upload what they have.
 
-Both relays retain the full encrypted log. They do not prune history until a safe checkpoint protocol exists. Monitor disk/storage use for long-running deployments. Messages above 1 MiB fail explicitly and do not receive a successful acknowledgement.
+Both relays retain the full encrypted log. They do not prune history until a safe checkpoint protocol exists. Monitor disk/storage use for long-running deployments. Messages above 1 MiB fail explicitly and do not receive a successful acknowledgement. Each room is capped at 32 MiB; writes past that are refused and the app reports that the server couldn't save changes.
 
 To run the mobile sync scenarios against local Cloudflare instead of Node, build the app, run `npm run cf:dev`, and set `KOSTOS_E2E_BASE_URL` to its URL when running `npm run test:e2e -- e2e/sync.e2e.ts`. Playwright must have Chromium installed; `PLAYWRIGHT_CHROMIUM_PATH` can select an existing executable.
 

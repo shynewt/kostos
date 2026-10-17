@@ -1,10 +1,14 @@
-name = "kostos"
+name = "kostos-app"
 main = "worker/index.ts"
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat"]
 
+# no second public origin: the Worker is reachable on APP_DOMAIN only
+workers_dev = false
+preview_urls = false
+
 routes = [
-	{ pattern = "kostos.shynewt.com", custom_domain = true }
+	{ pattern = "APP_DOMAIN", custom_domain = true }
 ]
 
 [assets]
@@ -25,3 +29,7 @@ new_sqlite_classes = ["SyncRoom"]
 
 [observability]
 enabled = true
+
+# invocation logs would retain the Sec-WebSocket-Protocol header, which carries the proof
+[observability.logs]
+invocation_logs = false

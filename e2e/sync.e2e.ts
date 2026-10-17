@@ -11,6 +11,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 const PORT = 18_751;
 const BASE = process.env.KOSTOS_E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 const SHOTS = fileURLToPath(new URL('../docs/screenshots/sync/', import.meta.url));
+const LOCAL_ID = /\/p\/[0-9a-f]{32}/;
+const LEGACY_SECRET = Buffer.alloc(32, 2).toString('base64url'); // 43 characters, what v2 generated
 let server: ChildProcess;
 let browser: Browser;
 let directory: string;
@@ -50,7 +52,7 @@ async function seed(page: Page) {
 	await page.goto(`${BASE}/restore`);
 	await page.setInputFiles('input[type=file]', { name: 'lisbon.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(archive)) });
 	await page.getByRole('button', { name: 'Restore on this device' }).click();
-	await page.waitForURL(/\/p\/PRT-/); await synced(page);
+	await page.waitForURL(LOCAL_ID); await synced(page);
 	await page.evaluate(() => navigator.serviceWorker.ready);
 	await page.reload(); await synced(page);
 	const refs = await page.evaluate(() => JSON.parse(localStorage.getItem('kostos:projects')!));
@@ -65,9 +67,9 @@ async function synced(page: Page) {
 	}
 }
 async function join(page: Page, ref: { roomId: string; secret: string }) {
-	await page.goto(`${BASE}/join?room=${ref.roomId}#${ref.secret}`);
+	await page.goto(`${BASE}/join#${ref.secret}`);
 	await page.getByRole('button', { name: /Continue as Anna/ }).click();
-	await page.waitForURL(/\/p\/PRT-/); await synced(page);
+	await page.waitForURL(LOCAL_ID); await synced(page);
 	await page.evaluate(() => navigator.serviceWorker.ready);
 	await page.reload(); await synced(page);
 }
@@ -101,6 +103,47 @@ async function abortLocalWrites(page: Page) {
 				return request;
 			};
 		});
+}
+
+async function storeGroup(page: Page, secret: string): Promise<string> {
+	const roomId = `STORED-${crypto.randomUUID()}`;
+	const doc = new Y.Doc();
+	for (const [key, value] of Object.entries({ id: roomId, ...archive.project })) {
+		if (Array.isArray(value)) {
+			const array = new Y.Array<Y.Map<unknown>>();
+			for (const item of value) { const map = new Y.Map<unknown>(); for (const [k, v] of Object.entries(item)) map.set(k, v); array.push([map]); }
+			doc.getMap('project').set(key, array);
+		} else doc.getMap('project').set(key, value);
+	}
+	for (const member of archive.members) {
+		const map = new Y.Map<unknown>(); for (const [k, v] of Object.entries(member)) map.set(k, v); doc.getArray('members').push([map]);
+	}
+	for (const expense of archive.expenses) {
+		const map = new Y.Map<unknown>();
+		for (const [key, value] of Object.entries(expense)) {
+			if (Array.isArray(value)) {
+				const array = new Y.Array<Y.Map<unknown>>();
+				for (const item of value) { const child = new Y.Map<unknown>(); for (const [k, v] of Object.entries(item)) child.set(k, v); array.push([child]); }
+				map.set(key, array);
+			} else map.set(key, value);
+		}
+		doc.getArray('expenses').push([map]);
+	}
+	const update = [...Y.encodeStateAsUpdate(doc)]; doc.destroy();
+	await page.evaluate(async ({ roomId, secret, update }) => {
+		localStorage.setItem('kostos:projects', JSON.stringify([{ roomId, secret, name: 'Lisbon Crew' }]));
+		localStorage.setItem(`kostos:member_for:${roomId}`, 'anna');
+		await new Promise<void>((resolve, reject) => {
+			const request = indexedDB.open(`kostos:${roomId}`);
+			request.onupgradeneeded = () => { request.result.createObjectStore('updates', { autoIncrement: true }); request.result.createObjectStore('custom'); };
+			request.onerror = () => reject(request.error);
+			request.onsuccess = () => {
+				const tx = request.result.transaction('updates', 'readwrite'); tx.objectStore('updates').add(new Uint8Array(update));
+				tx.oncomplete = () => { request.result.close(); resolve(); }; tx.onerror = () => reject(tx.error);
+			};
+		});
+	}, { roomId, secret, update });
+	return roomId;
 }
 
 describe('mobile sync and freshness', () => {
@@ -175,8 +218,8 @@ describe('mobile sync and freshness', () => {
 	});
 	it('syncs expenses in both directions and rejoins after the original sender closes', async () => {
 		const a = await phone(); const ref = await seed(a); const b = await phone();
-		await b.goto(`${BASE}/join?room=${ref.roomId}#${Buffer.alloc(32, 9).toString('base64url')}`);
-		await b.waitForSelector('[data-sync-state="error"]', { state: 'attached' });
+		await b.goto(`${BASE}/join#${Buffer.alloc(16, 9).toString('base64url')}`);
+		await b.getByText('Group data isn’t available').waitFor();
 		await join(b, ref);
 		await add(a, ref.roomId, 'Anna groceries', '18'); await synced(a);
 		await b.goto(`${BASE}/p/${ref.roomId}/expenses`); await synced(b);
@@ -260,44 +303,7 @@ describe('mobile sync and freshness', () => {
 	});
 	it('opens the existing y-indexeddb schema without resetting saved project data', async () => {
 		const page = await phone(); await page.goto(`${BASE}/`);
-		const roomId = `LEGACY-${crypto.randomUUID()}`;
-		const secret = Buffer.alloc(32, 2).toString('base64url');
-		const doc = new Y.Doc();
-		for (const [key, value] of Object.entries({ id: roomId, ...archive.project })) {
-			if (Array.isArray(value)) {
-				const array = new Y.Array<Y.Map<unknown>>();
-				for (const item of value) { const map = new Y.Map<unknown>(); for (const [k, v] of Object.entries(item)) map.set(k, v); array.push([map]); }
-				doc.getMap('project').set(key, array);
-			} else doc.getMap('project').set(key, value);
-		}
-		for (const member of archive.members) {
-			const map = new Y.Map<unknown>(); for (const [k, v] of Object.entries(member)) map.set(k, v); doc.getArray('members').push([map]);
-		}
-		for (const expense of archive.expenses) {
-			const map = new Y.Map<unknown>();
-			for (const [key, value] of Object.entries(expense)) {
-				if (Array.isArray(value)) {
-					const array = new Y.Array<Y.Map<unknown>>();
-					for (const item of value) { const child = new Y.Map<unknown>(); for (const [k, v] of Object.entries(item)) child.set(k, v); array.push([child]); }
-					map.set(key, array);
-				} else map.set(key, value);
-			}
-			doc.getArray('expenses').push([map]);
-		}
-		const update = [...Y.encodeStateAsUpdate(doc)]; doc.destroy();
-		await page.evaluate(async ({ roomId, secret, update }) => {
-			localStorage.setItem('kostos:projects', JSON.stringify([{ roomId, secret, name: 'Lisbon Crew' }]));
-			localStorage.setItem(`kostos:member_for:${roomId}`, 'anna');
-			await new Promise<void>((resolve, reject) => {
-				const request = indexedDB.open(`kostos:${roomId}`);
-				request.onupgradeneeded = () => { request.result.createObjectStore('updates', { autoIncrement: true }); request.result.createObjectStore('custom'); };
-				request.onerror = () => reject(request.error);
-				request.onsuccess = () => {
-					const tx = request.result.transaction('updates', 'readwrite'); tx.objectStore('updates').add(new Uint8Array(update));
-					tx.oncomplete = () => { request.result.close(); resolve(); }; tx.onerror = () => reject(tx.error);
-				};
-			});
-		}, { roomId, secret, update });
+		const roomId = await storeGroup(page, Buffer.alloc(16, 2).toString('base64url'));
 		await page.goto(`${BASE}/p/${roomId}`); await synced(page);
 		expect(await page.locator('.project-name').innerText()).toContain('Lisbon Crew');
 		await page.goto(`${BASE}/p/${roomId}/people`); await synced(page);
@@ -306,5 +312,51 @@ describe('mobile sync and freshness', () => {
 		await page.goto(`${BASE}/p/${roomId}/expenses`); await synced(page);
 		expect(await page.getByText('Seafood dinner', { exact: true }).count()).toBe(1);
 	});
-
+	it('opens an old-format group offline, never syncs it, and offers export and restore', async () => {
+		const page = await phone();
+		const sockets: string[] = [];
+		page.on('websocket', (socket) => sockets.push(socket.url()));
+		await page.goto(`${BASE}/`);
+		const roomId = await storeGroup(page, LEGACY_SECRET);
+		await page.goto(`${BASE}/`);
+		await page.getByText('Old format, no longer syncs').waitFor();
+		await page.goto(`${BASE}/p/${roomId}`);
+		await page.waitForSelector('[data-legacy-banner]');
+		await page.waitForSelector('[data-sync-state="legacy"]', { state: 'attached' });
+		expect(await page.locator('.project-name').innerText()).toContain('Lisbon Crew');
+		const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export backup' }).click()]);
+		expect(download.suggestedFilename()).toMatch(/^kostos-lisbon-crew-\d{4}-\d{2}-\d{2}\.json$/);
+		await page.goto(`${BASE}/p/${roomId}/expenses`);
+		await page.getByText('Seafood dinner', { exact: true }).waitFor();
+		expect(sockets.filter((url) => url.includes('/sync/'))).toEqual([]);
+		await page.goto(`${BASE}/p/${roomId}`);
+		await page.getByRole('link', { name: 'Restore as a new group' }).click();
+		await page.waitForURL(`${BASE}/restore`);
+	});
+	it('shows an invite link that carries only the key', async () => {
+		const page = await phone(); const ref = await seed(page);
+		expect(ref.secret).toMatch(/^[A-Za-z0-9_-]{22}$/);
+		expect(ref.roomId).toMatch(/^[0-9a-f]{32}$/);
+		await page.goto(`${BASE}/p/${ref.roomId}`); await synced(page);
+		await page.getByRole('button', { name: 'Share invite' }).click();
+		expect(await page.inputValue('#share-url-display')).toBe(`${BASE}/join#${ref.secret}`);
+	});
+	it('creates a group and lands on its local ID', async () => {
+		const page = await phone(); await page.goto(`${BASE}/new`);
+		await page.fill('input[placeholder="Group name"]', 'Weekend');
+		await page.fill('input[placeholder="Your name"]', 'Anna');
+		await page.getByRole('button', { name: 'Create', exact: true }).click();
+		await page.waitForURL(LOCAL_ID); await synced(page);
+	});
+	it('rejects old invites with a message that names the old site', async () => {
+		const page = await phone();
+		await page.goto(`${BASE}/join?room=PRT-AB23-CD45#${LEGACY_SECRET}`);
+		await page.getByText('old Kostos site').waitFor();
+		expect(page.url()).toContain('/join');
+		await page.goto(`${BASE}/`);
+		await page.getByRole('button', { name: 'Join a group' }).click();
+		await page.fill('input[placeholder="Invite link or group key"]', LEGACY_SECRET);
+		await page.getByRole('button', { name: 'Continue' }).click();
+		await page.getByText('old Kostos site').waitFor();
+	});
 });

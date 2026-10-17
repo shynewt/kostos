@@ -224,7 +224,7 @@ async function main() {
 	});
 	await page.waitForSelector('text=Restore on this device');
 	await page.click('text=Restore on this device');
-	await page.waitForURL(/\/p\/PRT-/);
+	await page.waitForURL(/\/p\/[0-9a-f]{32}/);
 
 	// 3. Project home: balances hub (graph, owed/owe, tip, settle lines)
 	await page.waitForSelector('[data-page="dashboard"]');
