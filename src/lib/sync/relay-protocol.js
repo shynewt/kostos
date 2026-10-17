@@ -16,8 +16,13 @@ export function unwrapPacket(packet) {
 	return { payload, durable: !versioned || packet[4] === 1, compact };
 }
 
+/** @param {Uint8Array} bytes */
+export function toHex(bytes) {
+	return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 /** @param {Uint8Array} payload */
 export async function payloadHash(payload) {
 	const hash = await crypto.subtle.digest('SHA-256', /** @type {BufferSource} */ (payload));
-	return Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, '0')).join('');
+	return toHex(new Uint8Array(hash));
 }

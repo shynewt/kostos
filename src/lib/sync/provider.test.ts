@@ -42,6 +42,10 @@ async function start() {
 	await vi.waitFor(() => expect(Socket.instances).toHaveLength(1));
 	const ws = Socket.instances[0]; ws.open(); return ws;
 }
+// key derivation is real async crypto, so a single fake-timer tick may not show the socket yet
+async function socketsOpened(count = 1) {
+	await vi.waitFor(() => expect(Socket.instances).toHaveLength(count));
+}
 async function ready(ws: Socket, options = {}) {
 	ws.control({ type: 'ready', protocol: 3, revision: 0, durable: true, complete: true, ...options });
 	await vi.waitFor(() => expect(ws.sent.filter((v) => v instanceof Uint8Array)).toHaveLength(2));
@@ -139,6 +143,7 @@ describe('verified encrypted sync', () => {
 	});
 	it('treats a server it cannot reach as offline, and keeps saying so while retrying', async () => {
 		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
+		await socketsOpened();
 		await vi.advanceTimersByTimeAsync(6_001);
 		expect(provider.snapshot).toMatchObject({ phase: 'offline', checking: false, problem: null });
 		const seen: string[] = []; provider.onStatusChange((s) => seen.push(s.phase));
@@ -154,7 +159,7 @@ describe('verified encrypted sync', () => {
 	});
 	it('keeps waiting while a long history is still arriving', async () => {
 		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
-		await vi.advanceTimersByTimeAsync(0);
+		await socketsOpened();
 		const ws = Socket.instances[0]; ws.open();
 		const key = await deriveKey(secret);
 		const entry = await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(new Y.Doc())));
@@ -164,7 +169,7 @@ describe('verified encrypted sync', () => {
 	});
 	it('reports a timeout, not an outdated server, when an open connection goes silent', async () => {
 		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
-		await vi.advanceTimersByTimeAsync(0); Socket.instances[0].open();
+		await socketsOpened(); Socket.instances[0].open();
 		await vi.advanceTimersByTimeAsync(12_001);
 		expect(provider.snapshot.problem).toBe('timeout');
 	});
