@@ -9,8 +9,9 @@ export const MAX_ROOM_BYTES = 32 * 1024 * 1024;
  *  oldest archived entries, so a full room can always free live space and storage never grows without limit.
  *  Keep it at least MAX_ROOM_BYTES: one compaction archives up to a whole live history. */
 export const MAX_ARCHIVE_BYTES = MAX_ROOM_BYTES;
-/** Per-room ceiling on live entries, refused like MAX_ROOM_BYTES. The Node relay holds every entry in memory and a
- *  Durable Object scans them to enforce the byte cap, so tiny entries cost far more than their size suggests. */
+/** Per-room ceiling on live entries, refused like MAX_ROOM_BYTES. It bounds replay cost and the exact entry-count
+ *  query in a Durable Object, and the Node relay holds every entry in memory, so tiny entries cost far more than their
+ *  size suggests. */
 export const MAX_ROOM_ENTRIES = 100_000;
 /** "KOS3": the first four bytes of a versioned packet. A fifth flag byte follows. */
 export const PACKET_MAGIC = [75, 79, 83, 51];
