@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { RoomPersistence } from './persistence';
 import { browser } from '$app/environment';
+import { isLegacySecret } from '$lib/legacy';
 import { findProject, getCurrentMember } from '$lib/storage';
 import {
 	DEFAULT_CATEGORIES,
@@ -16,6 +17,7 @@ import {
 	type Project,
 	type Trip
 } from '$lib/types';
+import { isValidSecret } from '$lib/token';
 import { diffExpense } from './activity-diff';
 import { createSyncProvider, type EncryptedSyncProvider } from './provider';
 
@@ -27,6 +29,8 @@ function syncUrl(): string {
 	return `${scheme}://${location.host}/sync`;
 }
 
+export const DEMO_ROOM_ID = 'DEMO';
+
 export type RoomHandle = {
 	roomId: string;
 	doc: Y.Doc;
@@ -37,6 +41,8 @@ export type RoomHandle = {
 	ready: Promise<void>;
 	syncProvider?: EncryptedSyncProvider;
 	persistence?: RoomPersistence;
+	/** Made before v3: readable and exportable here, never synced. */
+	legacy: boolean;
 };
 
 type CacheEntry = {
@@ -51,7 +57,7 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 	const cached = cache.get(roomId);
 	if (cached) {
 		// A corrected invite must replace the provider using the previous key.
-		const effectiveSecret = secret ?? secretFromStorage(roomId);
+		const effectiveSecret = syncSecret(secret ?? secretFromStorage(roomId));
 		if (browser && effectiveSecret && (!cached.handle.syncProvider || cached.secret !== effectiveSecret)) {
 			cached.handle.syncProvider?.destroy();
 			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), effectiveSecret, cached.persistence) ?? undefined;
@@ -75,13 +81,11 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		ready = Promise.resolve();
 	}
 
+	const known = secret ?? secretFromStorage(roomId);
+	const effectiveSecret = syncSecret(known);
 	let syncProvider: EncryptedSyncProvider | undefined;
-	if (browser) {
-		const effectiveSecret = secret ?? secretFromStorage(roomId);
-		if (effectiveSecret) {
-			syncProvider =
-				createSyncProvider(doc, syncUrl(), effectiveSecret, persistence) ?? undefined;
-		}
+	if (browser && effectiveSecret) {
+		syncProvider = createSyncProvider(doc, syncUrl(), effectiveSecret, persistence) ?? undefined;
 	}
 
 	const handle: RoomHandle = {
@@ -93,14 +97,20 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		activity,
 		ready,
 		syncProvider,
-		persistence
+		persistence,
+		legacy: known !== undefined && isLegacySecret(known)
 	};
-	cache.set(roomId, { handle, persistence, secret: secret ?? secretFromStorage(roomId) });
+	cache.set(roomId, { handle, persistence, secret: effectiveSecret });
 	return handle;
 }
 
 function secretFromStorage(roomId: string): string | undefined {
 	return findProject(roomId)?.secret;
+}
+
+/** Only a current-format secret may reach the sync server; old groups stay local. */
+function syncSecret(secret: string | undefined): string | undefined {
+	return secret && isValidSecret(secret) ? secret : undefined;
 }
 
 export async function destroyRoom(roomId: string): Promise<void> {

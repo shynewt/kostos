@@ -50,6 +50,11 @@ describe('describeSync', () => {
 		expect(describeSync(LOCAL_STATUS, null, NOW, { demo: true }).label).toBe('Only on this phone');
 	});
 
+	it('marks an old-format group as not syncing, without a banner or retry', () => {
+		const view = describeSync(LOCAL_STATUS, null, NOW, { legacy: true });
+		expect(view).toMatchObject({ state: 'legacy', label: 'Not syncing', banner: null, retry: false, attention: true });
+	});
+
 	it('says when nothing has synced yet', () => {
 		const view = describeSync(status({ phase: 'offline', lastSyncedAt: null }), null, NOW);
 		expect(view.facts[0].value).toBe('Not yet on this phone');

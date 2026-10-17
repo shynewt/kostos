@@ -45,7 +45,7 @@ export function describeSync(
 	sync: SyncStatus,
 	local: LocalState | null,
 	now: number,
-	options: { demo?: boolean } = {}
+	options: { demo?: boolean; legacy?: boolean } = {}
 ): SyncView {
 	const pending = Math.max(sync.pendingChanges, local?.pendingChanges ?? 0);
 	const facts: SyncView['facts'] = [];
@@ -65,6 +65,13 @@ export function describeSync(
 			headline: 'Not saved on this phone',
 			body: 'Your changes may be lost if the app closes. Keep it open and try again, or export a backup from Settings.',
 			facts: []
+		};
+	}
+	if (options.legacy) {
+		return {
+			...base, tone: 'warn', state: 'legacy', label: 'Not syncing', attention: true, facts: [],
+			headline: 'This group no longer syncs',
+			body: 'It was made with an older version of Kostos and stays readable here. Export a backup and restore it as a new group to keep syncing.'
 		};
 	}
 	switch (sync.phase) {

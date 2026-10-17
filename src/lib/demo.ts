@@ -13,9 +13,7 @@ import demoArchive from './demo-seed.json';
 import { parseProjectArchive } from './io/projectArchive';
 import { archiveContents, seedRoom } from './io/restoreProject';
 import { setCurrentMember } from './storage';
-import { openRoom } from './sync/doc';
-
-const DEMO_ROOM_ID = 'DEMO';
+import { DEMO_ROOM_ID, openRoom } from './sync/doc';
 
 export async function enterDemo(): Promise<void> {
 	if (!browser) return;

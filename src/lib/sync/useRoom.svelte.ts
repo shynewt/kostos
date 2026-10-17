@@ -7,7 +7,9 @@
  * via `$effect(() => room.observe())` so cleanup happens naturally on unmount.
  */
 
+import { describeSync, type SyncView } from './describe';
 import {
+	DEMO_ROOM_ID,
 	openRoom,
 	readActivity,
 	readExpenses,
@@ -95,6 +97,10 @@ export class RoomState {
 		this.activity = readActivity(this.handle);
 		this.conflicts = readExpenseConflicts(this.handle);
 	};
+
+	syncView(now: number): SyncView {
+		return describeSync(this.sync, this.local, now, { demo: this.handle.roomId === DEMO_ROOM_ID, legacy: this.handle.legacy });
+	}
 
 	/** Attach Yjs observers + return a teardown function suitable for $effect cleanup. */
 	observe(): () => void {

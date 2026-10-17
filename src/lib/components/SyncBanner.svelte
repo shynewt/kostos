@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { fly, slide } from 'svelte/transition';
-	import { describeSync } from '$lib/sync/describe';
 	import type { RoomState } from '$lib/sync/useRoom.svelte';
 	import SyncIcon from './SyncIcon.svelte';
 
@@ -12,7 +11,7 @@
 
 	const context = getContext<{ readonly room: RoomState } | undefined>('kostos-room');
 	const room = $derived(context?.room);
-	const view = $derived(room ? describeSync(room.sync, room.local, 0, { demo: room.handle.roomId === 'DEMO' }) : null);
+	const view = $derived(room ? room.syncView(0) : null);
 	const message = $derived(view?.banner ?? null);
 
 	// A short blip shouldn't flash a banner; wait before announcing a problem.

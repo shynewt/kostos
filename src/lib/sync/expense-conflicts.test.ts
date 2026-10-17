@@ -4,7 +4,7 @@ import { addExpense, updateExpense, removeExpense, readExpenses, readExpenseConf
 import type { Expense } from '$lib/types';
 
 function handle(doc = new Y.Doc()): RoomHandle {
-	return { roomId: 'TEST', doc, project: doc.getMap('project'), members: doc.getArray('members'), expenses: doc.getArray('expenses'), activity: doc.getArray('activity'), ready: Promise.resolve() };
+	return { roomId: 'TEST', doc, project: doc.getMap('project'), members: doc.getArray('members'), expenses: doc.getArray('expenses'), activity: doc.getArray('activity'), ready: Promise.resolve(), legacy: false };
 }
 const expense = (amount = 1000): Expense => ({ id: 'dinner', amount, payments: [{ memberId: 'a', amount }], currency: 'EUR', date: 0, createdAt: 0, createdBy: 'a', splitMode: 'even', splits: [{ memberId: 'a' }, { memberId: 'b' }] });
 function devices() {

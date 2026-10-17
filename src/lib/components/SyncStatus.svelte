@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
-	import { describeSync } from '$lib/sync/describe';
 	import type { RoomState } from '$lib/sync/useRoom.svelte';
 	import SyncSheet from './SyncSheet.svelte';
 
@@ -18,7 +17,7 @@
 	let settled = $state(false);
 	let previousTone: string | null = null;
 
-	const view = $derived(room ? describeSync(room.sync, room.local, now, { demo: room.handle.roomId === 'DEMO' }) : null);
+	const view = $derived(room ? room.syncView(now) : null);
 	const text = $derived(view?.label ?? '');
 
 	$effect(() => {
