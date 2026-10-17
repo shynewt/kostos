@@ -10,9 +10,9 @@ import { frame, parse, MSG_STEP1, MSG_UPDATE } from './protocol';
 import { REMOTE_ORIGIN, LOCAL_LOAD, type RoomPersistence } from './persistence';
 import { type SyncStatus, type SyncProblem } from './status';
 import { PROOF_PREFIX } from './room-access.js';
+import { MAX_MESSAGE_BYTES } from './relay-protocol.js';
 
 export type ConnectionStatus = SyncStatus['phase'];
-const MAX_MESSAGE_BYTES = 1_048_576;
 const TRANSPORT_MAGIC = new Uint8Array([75, 79, 83, 51]); // KOS3
 const TIMEOUT_MS = 12_000;
 /** A socket that hasn't opened by now means the server is out of reach: treat it as offline. */
@@ -42,6 +42,16 @@ export class EncryptedSyncProvider {
 	private durable = false;
 	private complete = true;
 	private sessionProblem: SyncProblem | null = null;
+	/** The server refused this key; nothing reconnects after that. */
+	private denied = false;
+	private recoveries = 0;
+	private replay: Uint8Array[] = [];
+	private replayBytes = 0;
+	private replayCount = 0;
+	private compacted = false;
+	/** This phone held data of its own before connecting, so it can vouch for a trimmed server history. */
+	private seeded = false;
+	private fresh = false;
 	private revision = 0;
 	private access: RoomAccess | null = null;
 	private barrier: { id: string; version: number } | null = null;
@@ -49,7 +59,7 @@ export class EncryptedSyncProvider {
 
 	constructor(private doc: Y.Doc, private url: string, secret: string, private persistence?: RoomPersistence) {
 		this.key = deriveKey(secret);
-		const access = deriveRoomAccess(secret);
+		const accessPromise = deriveRoomAccess(secret);
 		doc.on('update', this.onUpdate);
 		this.unsubscribeLocal = persistence?.onChange((local) => {
 			this.setState({ pendingChanges: local.pendingChanges, lastSyncedAt: local.lastSyncedAt });
@@ -60,14 +70,23 @@ export class EncryptedSyncProvider {
 			document.addEventListener('visibilitychange', this.handleVisibility);
 			window.addEventListener('pageshow', this.handlePageShow);
 		}
-		void Promise.all([persistence?.ready ?? Promise.resolve(), this.key, access]).then(([, , derived]) => {
-			this.access = derived;
-			const hasData = doc.store.clients.size > 0;
-			this.seeded = hasData && !persistence?.state.partial;
-			this.fresh = !hasData;
-			this.setState({ lastSyncedAt: persistence?.state.lastSyncedAt ?? null, unverifiedSince: persistence?.state.unverifiedSince ?? Date.now() });
-			this.connect();
-		}).catch((error) => this.fail(error instanceof InsecureContextError ? 'insecure' : persistence?.state.phase === 'error' ? 'storage' : 'decrypt', false));
+		this.start(accessPromise).catch((error) => this.fail(this.startupProblem(error), false));
+	}
+
+	private async start(accessPromise: Promise<RoomAccess>): Promise<void> {
+		// waiting on all three together keeps a failure in one from leaving another unhandled
+		await Promise.all([this.persistence?.ready, this.key, accessPromise]);
+		this.access = await accessPromise;
+		const hasData = this.doc.store.clients.size > 0;
+		this.seeded = hasData && !this.persistence?.state.partial;
+		this.fresh = !hasData;
+		this.setState({ lastSyncedAt: this.persistence?.state.lastSyncedAt ?? null, unverifiedSince: this.persistence?.state.unverifiedSince ?? Date.now() });
+		this.connect();
+	}
+
+	private startupProblem(error: unknown): SyncProblem {
+		if (error instanceof InsecureContextError) return 'insecure';
+		return this.persistence?.state.phase === 'error' ? 'storage' : 'decrypt';
 	}
 
 	get status(): ConnectionStatus { return this.state.phase; }
@@ -352,16 +371,6 @@ export class EncryptedSyncProvider {
 		try { ws?.close(); } catch { /* Already closed. */ }
 		this.fail('denied', false);
 	}
-
-	private recoveries = 0;
-	private replay: Uint8Array[] = [];
-	private replayBytes = 0;
-	private replayCount = 0;
-	private compacted = false;
-	/** This phone held data of its own before connecting, so it can vouch for a trimmed server history. */
-	private seeded = false;
-	private denied = false;
-	private fresh = false;
 
 	private armDeadline(ws: WebSocket): void {
 		if (this.deadline) return;
