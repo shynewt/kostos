@@ -1,7 +1,7 @@
 /* New, restore, import and the demo all end the same way: put a group into a room. */
-import { addProject, setCurrentMember } from '$lib/storage';
+import { addProject, removeProject, setCurrentMember } from '$lib/storage';
 import { deriveLocalId } from '$lib/sync/crypto';
-import { addExpense, initProject, openRoom, type RoomHandle } from '$lib/sync/doc';
+import { addExpense, destroyRoom, initProject, openRoom, type RoomHandle } from '$lib/sync/doc';
 import { generateSecret } from '$lib/invite';
 import type { Expense, Member, Project } from '$lib/types';
 import type { ProjectArchive } from './projectArchive';
@@ -25,10 +25,17 @@ export async function createGroup({ project, members, expenses }: GroupContents,
 	const roomId = await deriveLocalId(secret);
 	// the reference goes first: if it cannot be saved, nothing has been opened or uploaded yet
 	addProject({ roomId, secret, name: project.name, emoji: project.emoji, color: project.color, lastActiveAt: Date.now() });
-	const handle = openRoom(roomId, secret);
-	await handle.ready;
-	seedRoom(handle, { ...project, id: roomId }, members, expenses);
-	if (currentMemberId) setCurrentMember(roomId, currentMemberId);
-	await handle.persistence?.flush();
+	try {
+		const handle = openRoom(roomId, secret);
+		await handle.ready;
+		seedRoom(handle, { ...project, id: roomId }, members, expenses);
+		if (currentMemberId) setCurrentMember(roomId, currentMemberId);
+		await handle.persistence?.flush();
+	} catch (error) {
+		// otherwise every retry would leave another empty group on the home list
+		await destroyRoom(roomId).catch(() => {});
+		removeProject(roomId);
+		throw error;
+	}
 	return roomId;
 }

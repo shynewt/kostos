@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { addProject, setCurrentMember } from '$lib/storage';
+import { addProject, removeProject, setCurrentMember } from '$lib/storage';
 import { deriveLocalId, INSECURE_CONTEXT_MESSAGE } from '$lib/sync/crypto';
-import { openRoom, readExpenses, readMembers, readProject } from '$lib/sync/doc';
+import { destroyRoom, openRoom, readExpenses, readMembers, readProject, type RoomHandle } from '$lib/sync/doc';
 import type { Expense, Member } from '$lib/types';
 import { parseProjectArchive } from './projectArchive';
 import { archiveContents, createGroup, seedRoom } from './createGroup';
 
 vi.mock('$lib/sync/doc', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/sync/doc')>();
-	return { ...actual, openRoom: vi.fn(actual.openRoom) };
+	return { ...actual, openRoom: vi.fn(actual.openRoom), destroyRoom: vi.fn(actual.destroyRoom) };
 });
 vi.mock('$lib/storage', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/storage')>()),
 	addProject: vi.fn(),
+	removeProject: vi.fn(),
 	setCurrentMember: vi.fn()
 }));
 
@@ -98,6 +99,27 @@ describe('createGroup', () => {
 		await expect(createGroup(contents(), 'marco')).rejects.toThrow('storage full');
 		expect(openRoom).not.toHaveBeenCalled();
 		expect(setCurrentMember).not.toHaveBeenCalled();
+	});
+
+	it('forgets the group again when the room cannot be opened or filled', async () => {
+		vi.mocked(openRoom).mockImplementationOnce(() => ({ ready: Promise.reject(new Error('IndexedDB blocked')) }) as unknown as RoomHandle);
+		await expect(createGroup(contents(), 'marco')).rejects.toThrow('IndexedDB blocked');
+		const { roomId } = vi.mocked(addProject).mock.calls[0][0];
+		expect(removeProject).toHaveBeenCalledWith(roomId);
+		expect(destroyRoom).toHaveBeenCalledWith(roomId);
+	});
+
+	it('forgets the group again when saving its contents fails, and reports that failure', async () => {
+		const actualOpenRoom = vi.mocked(openRoom).getMockImplementation()!;
+		vi.mocked(openRoom).mockImplementationOnce((roomId, secret) => {
+			const handle = actualOpenRoom(roomId, secret);
+			handle.persistence = { flush: () => Promise.reject(new Error('quota exceeded')) } as unknown as RoomHandle['persistence'];
+			return handle;
+		});
+		await expect(createGroup(contents(), 'marco')).rejects.toThrow('quota exceeded');
+		const { roomId } = vi.mocked(addProject).mock.calls[0][0];
+		expect(removeProject).toHaveBeenCalledWith(roomId);
+		expect(destroyRoom).toHaveBeenCalledWith(roomId);
 	});
 
 	it('says why when the page has no crypto.subtle, and saves nothing', async () => {
