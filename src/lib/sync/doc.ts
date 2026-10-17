@@ -16,7 +16,7 @@ import {
 	type Project,
 	type Trip
 } from '$lib/types';
-import { isValidSecret } from '$lib/invite';
+import { isLegacySecret } from '$lib/legacy';
 import { diffExpense } from './activity-diff';
 import { createSyncProvider, type EncryptedSyncProvider } from './provider';
 
@@ -106,8 +106,8 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 /** Only a current-format secret may reach the sync server; old groups stay local. */
 function resolveRoomSecret(roomId: string, secret?: string): { syncSecret: string | undefined; legacy: boolean } {
 	const known = secret ?? findProject(roomId)?.secret;
-	const valid = known !== undefined && isValidSecret(known);
-	return { syncSecret: valid ? known : undefined, legacy: known !== undefined && !valid };
+	const legacy = known !== undefined && isLegacySecret(known);
+	return { syncSecret: legacy ? undefined : known, legacy };
 }
 
 export async function destroyRoom(roomId: string): Promise<void> {
