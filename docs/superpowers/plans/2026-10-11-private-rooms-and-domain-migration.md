@@ -294,6 +294,7 @@ git commit -m "feat(sync): add shared room access rules"
 - Modify: `src/lib/sync/relay-protocol.js` (add `toHex`, make `payloadHash` use it)
 - Modify: `src/lib/sync/crypto.ts`
 - Modify: `src/lib/sync/crypto.test.ts`
+- Modify: `src/lib/sync/provider.test.ts` (fake-timer tests wait for the socket)
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
@@ -333,7 +334,17 @@ import { toHex } from './relay-protocol.js';
 ```
 
 2. In `secretFromSeed`, change `new Uint8Array(32)` to `new Uint8Array(16)` so no test fixture is an old-format secret.
-3. Append:
+3. `deriveKey` is real async crypto from this task on, so three fake-timer tests in `src/lib/sync/provider.test.ts` stop seeing the socket after a single tick. Add this helper above `ready()`:
+
+```ts
+// key derivation is real async crypto, so a single fake-timer tick may not show the socket yet
+async function socketsOpened(count = 1) {
+	await vi.waitFor(() => expect(Socket.instances).toHaveLength(count));
+}
+```
+
+and use it in the three tests: in 'treats a server it cannot reach as offline' add `await socketsOpened();` before `await vi.advanceTimersByTimeAsync(6_001);`; in 'keeps waiting while a long history is still arriving' replace `await vi.advanceTimersByTimeAsync(0);` with `await socketsOpened();`; in 'reports a timeout, not an outdated server, when an open connection goes silent' replace `await vi.advanceTimersByTimeAsync(0); Socket.instances[0].open();` with `await socketsOpened(); Socket.instances[0].open();`.
+4. Append to `crypto.test.ts`:
 
 ```ts
 describe('secret derivations', () => {
@@ -481,15 +492,15 @@ function base64UrlDecode(input: string): Uint8Array {
 
 - [ ] **Step 4: Run tests and types**
 
-Run: `npx vitest run src/lib/sync/crypto.test.ts src/lib/sync/room-access.test.ts`
+Run: `npx vitest run src/lib/sync/crypto.test.ts src/lib/sync/room-access.test.ts src/lib/sync/provider.test.ts`
 Expected: PASS.
-Run: `npm run check`
-Expected: no errors. No caller changes yet; `deriveKey` keeps its signature.
+Run: `npm run check` and `npm test`
+Expected: no errors and a fully green suite (302 tests at this point). No caller changes yet; `deriveKey` keeps its signature. Only commit once both are green.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/sync/relay-protocol.js src/lib/sync/crypto.ts src/lib/sync/crypto.test.ts
+git add src/lib/sync/relay-protocol.js src/lib/sync/crypto.ts src/lib/sync/crypto.test.ts src/lib/sync/provider.test.ts
 git commit -m "feat(sync): derive key, local id, relay room id and proof from the secret with HKDF"
 ```
 
@@ -521,15 +532,7 @@ In `src/lib/sync/provider.test.ts`:
 
 3. Use a current-format secret: line 25 becomes `const secret = btoa(String.fromCharCode(...new Uint8Array(16).fill(1))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');`
 4. Replace all five `new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret)` (lines 41, 141, 150, 156, 166) with `new EncryptedSyncProvider(doc, 'ws://test', secret)`.
-5. Key and room derivation are real async crypto now, so a single fake-timer tick may not be enough to see the socket. Add a helper below `start()`:
-
-```ts
-async function socketsOpened(count = 1) {
-	await vi.waitFor(() => expect(Socket.instances).toHaveLength(count));
-}
-```
-
-and use it in the three fake-timer tests that assumed a tick: in 'treats a server it cannot reach as offline' add `await socketsOpened();` before `await vi.advanceTimersByTimeAsync(6_001);`; in 'keeps waiting while a long history is still arriving' and 'reports a timeout, not an outdated server, when an open connection goes silent' replace `await vi.advanceTimersByTimeAsync(0);` with `await socketsOpened();`.
+5. The `socketsOpened()` helper already exists (added in Task 2). If another fake-timer test races the derivation, give it a `socketsOpened()` too; do not lengthen timeouts.
 6. Add inside `describe('verified encrypted sync', ...)`:
 
 ```ts
