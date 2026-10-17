@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LEGACY_GROUP_SUMMARY } from '$lib/legacy';
-import { describeSync } from './describe';
+import { describeSync, syncLine } from './describe';
 import { LOCAL_STATUS, type SyncStatus } from './status';
 
 const NOW = new Date('2026-10-05T12:00:00').getTime();
@@ -67,5 +67,19 @@ describe('describeSync', () => {
 	it('says when nothing has synced yet', () => {
 		const view = describeSync(status({ phase: 'offline', lastSyncedAt: null }), null, NOW);
 		expect(view.facts[0].value).toBe('Not yet on this phone');
+	});
+});
+
+describe('syncLine', () => {
+	const secret = 'AAECAwQFBgcICQoLDA0ODw';
+
+	it('says when a group last synced', () => {
+		expect(syncLine({ secret, lastSyncedAt: NOW - 5 * 60_000 }, NOW)).toBe('Synced 5 minutes ago');
+		expect(syncLine({ secret }, NOW)).toBe('Not synced yet');
+	});
+
+	it('says a group that cannot sync no longer does, in words short enough for a phone', () => {
+		const line = syncLine({ secret: 'x'.repeat(43), lastSyncedAt: NOW }, NOW);
+		expect(line).toBe('No longer syncs');
 	});
 });

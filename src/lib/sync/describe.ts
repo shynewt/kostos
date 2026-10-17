@@ -1,4 +1,4 @@
-import { LEGACY_GROUP_SUMMARY } from '$lib/legacy';
+import { isLegacySecret, LEGACY_GROUP_SUMMARY } from '$lib/legacy';
 import { INSECURE_CONTEXT_MESSAGE } from './crypto';
 import type { LocalState } from './persistence';
 import { PROBLEM_LABELS, relativeTime, type SyncProblem, type SyncStatus } from './status';
@@ -45,6 +45,12 @@ export function formatClock(at: number, now: number): string {
 	const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 	if (new Date(now).toDateString() === date.toDateString()) return time;
 	return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+}
+
+/** The home list's sync line for one saved group. */
+export function syncLine(project: { secret: string; lastSyncedAt?: number | null }, now: number = Date.now()): string {
+	if (isLegacySecret(project.secret)) return 'No longer syncs';
+	return project.lastSyncedAt ? `Synced ${relativeTime(project.lastSyncedAt, now)}` : 'Not synced yet';
 }
 
 export function describeSync(

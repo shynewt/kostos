@@ -319,7 +319,7 @@ describe('mobile sync and freshness', () => {
 		await page.goto(`${BASE}/`);
 		const roomId = await storeGroup(page, LEGACY_SECRET);
 		await page.goto(`${BASE}/`);
-		await page.getByText('Old format, no longer syncs').waitFor();
+		await page.getByText('No longer syncs').waitFor();
 		await page.goto(`${BASE}/p/${roomId}`);
 		await page.waitForSelector('[data-legacy-banner]');
 		await page.waitForSelector('[data-sync-state="legacy"]', { state: 'attached' });

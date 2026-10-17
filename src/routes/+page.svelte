@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { relativeTime } from '$lib/sync/status';
+	import { syncLine } from '$lib/sync/describe';
 	import { version } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { enterDemo } from '$lib/demo';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import { formatAmount } from '$lib/money';
-	import { isLegacySecret } from '$lib/legacy';
 	import { listProjects, type ProjectRef } from '$lib/storage';
 	import { invitePath, inviteError, parseInvite, SECRET_LENGTH } from '$lib/invite';
 
@@ -209,7 +208,7 @@
 							<span class="col project-text">
 								<span class="project-name">{p.name}</span>
 								<span class="dim project-meta">
-									{#if isLegacySecret(p.secret)}Old format, no longer syncs{:else}{p.lastSyncedAt ? `Synced ${relativeTime(p.lastSyncedAt, Date.now())}` : 'Not synced yet'}{/if}{#if p.lastActiveAt}<span class="meta-sep">·</span>{relativeDay(p.lastActiveAt)}{/if}
+									{syncLine(p)}{#if p.lastActiveAt}<span class="meta-sep">·</span>{relativeDay(p.lastActiveAt)}{/if}
 								</span>
 							</span>
 							{#if p.net !== undefined && p.netSymbol}
