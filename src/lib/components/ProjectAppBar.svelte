@@ -103,7 +103,7 @@
 			<QrCode value={shareUrl} size={200} />
 			<p class="dim mono qr-caption">SCAN TO JOIN</p>
 		</div>
-		<input id="share-url-display" class="share-url-display" value={shareUrl} readonly />
+		<input id="share-url-display" class="share-url-display" aria-label="Invite link" value={shareUrl} readonly />
 		<p class="dim share-hint">
 			Anyone with this link can join the group. The key sits after the # in the link, so the server never receives it.
 		</p>
