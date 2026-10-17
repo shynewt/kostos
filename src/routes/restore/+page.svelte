@@ -2,10 +2,7 @@
 	import { goto } from '$app/navigation';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { parseProjectArchive, type ProjectArchive } from '$lib/io/projectArchive';
-	import { addProject, setCurrentMember } from '$lib/storage';
-	import { addExpense, initProject, openRoom } from '$lib/sync/doc';
-	import { generateRoomId, generateSecret } from '$lib/token';
-	import type { Project } from '$lib/types';
+	import { archiveContents, createGroup } from '$lib/io/restoreProject';
 
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let archive = $state<ProjectArchive | null>(null);
@@ -50,49 +47,7 @@
 		restoring = true;
 		parseError = null;
 		try {
-			const roomId = generateRoomId();
-			const secret = generateSecret();
-			const a = archive;
-
-			const project: Project = {
-				id: roomId,
-				name: a.project.name,
-				description: a.project.description,
-				emoji: a.project.emoji,
-				color: a.project.color,
-				currency: a.project.currency,
-				currencySymbol: a.project.currencySymbol,
-				defaultSplit: a.project.defaultSplit,
-				splitDefault: a.project.splitDefault,
-				autoFetchRates: a.project.autoFetchRates,
-				paymentMethodsEnabled: a.project.paymentMethodsEnabled,
-				categories: a.project.categories,
-				paymentMethods: a.project.paymentMethods,
-				trips: a.project.trips ?? [],
-				createdAt: a.project.createdAt
-			};
-
-			const handle = openRoom(roomId, secret);
-			await handle.ready;
-			initProject(handle, project, a.members);
-
-			// Seed expenses inside a single transaction so the IndexedDB write is one shot
-			// and Yjs only fires observers once.
-			handle.doc.transact(() => {
-				for (const e of a.expenses) addExpense(handle, e);
-			});
-
-			addProject({
-				roomId,
-				secret,
-				name: project.name,
-				emoji: project.emoji,
-				color: project.color,
-				lastActiveAt: Date.now()
-			});
-			setCurrentMember(roomId, youMemberId);
-
-			await handle.persistence?.flush();
+			const roomId = await createGroup(archiveContents(archive), youMemberId);
 			await goto(`/p/${roomId}`);
 		} catch (error) {
 			parseError = error instanceof Error ? error.message : 'Could not save the group on this device';

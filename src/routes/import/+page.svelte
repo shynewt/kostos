@@ -2,9 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { currencyDecimals } from '$lib/currencies';
 	import { isV1Export, mapV1ToV2, type ImportResult } from '$lib/import/v1';
-	import { addProject } from '$lib/storage';
-	import { addExpense, initProject, openRoom } from '$lib/sync/doc';
-	import { generateRoomId, generateSecret } from '$lib/token';
+	import { createGroup } from '$lib/io/restoreProject';
 
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 	let parsed = $state<ImportResult | null>(null);
@@ -64,26 +62,8 @@
 		if (!parsed || busy) return;
 		busy = true;
 		try {
-			const roomId = generateRoomId();
-			const secret = generateSecret();
-			const handle = openRoom(roomId, secret);
-			await handle.ready;
-
-			// Tag the project header with the freshly minted roomId so v2 keys match.
-			initProject(handle, { ...parsed.project, id: roomId }, parsed.members);
-			for (const e of parsed.expenses) addExpense(handle, e);
-
-			addProject({
-				roomId,
-				secret,
-				name: parsed.project.name,
-				emoji: parsed.project.emoji,
-				color: parsed.project.color,
-				lastActiveAt: Date.now()
-			});
-
-			await handle.persistence?.flush();
-		await goto(`/p/${roomId}`);
+			const roomId = await createGroup(parsed, null);
+			await goto(`/p/${roomId}`);
 		} catch (err) {
 			busy = false;
 			const message = err instanceof Error ? err.message : String(err);

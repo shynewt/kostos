@@ -6,9 +6,8 @@
 	import CurrencyPicker from '$lib/components/CurrencyPicker.svelte';
 	import EmojiTilePicker from '$lib/components/EmojiTilePicker.svelte';
 	import { CURRENCY_PRESETS, type CurrencyPreset } from '$lib/currencies';
-	import { addProject, setCurrentMember } from '$lib/storage';
-	import { generateId, initProject, openRoom } from '$lib/sync/doc';
-	import { generateRoomId, generateSecret } from '$lib/token';
+	import { createGroup } from '$lib/io/restoreProject';
+	import { generateId } from '$lib/sync/doc';
 	import {
 		DEFAULT_CATEGORIES,
 		DEFAULT_PAYMENT_METHODS,
@@ -19,8 +18,6 @@
 
 	type DraftMember = { id: string; name: string };
 
-	const roomId = generateRoomId();
-	const secret = generateSecret();
 	const creatorId = generateId();
 
 	let emoji = $state('🏠');
@@ -102,8 +99,7 @@
 				otherMembers.push(m);
 			}
 
-			const project: Project = {
-				id: roomId,
+			const project: Omit<Project, 'id'> = {
 				name: name.trim(),
 				description: description.trim() || undefined,
 				emoji,
@@ -117,21 +113,7 @@
 				createdAt: Date.now()
 			};
 
-			const handle = openRoom(roomId, secret);
-			await handle.ready;
-			initProject(handle, project, [creator, ...otherMembers]);
-
-			addProject({
-				roomId,
-				secret,
-				name: project.name,
-				emoji: project.emoji,
-				color: project.color,
-				lastActiveAt: Date.now()
-			});
-			setCurrentMember(roomId, creator.id);
-
-			await handle.persistence?.flush();
+			const roomId = await createGroup({ project, members: [creator, ...otherMembers], expenses: [] }, creator.id);
 			await goto(`/p/${roomId}`);
 		} catch (error) {
 			createError = error instanceof Error ? error.message : 'Could not save the group on this device';
@@ -269,12 +251,6 @@
 				<div class="av av-sm add-bubble">+</div>
 				<span class="add-label">Add another</span>
 			</button>
-		</div>
-
-		<div class="card token-card">
-			<div class="eyebrow" style="margin-bottom: 8px;">Your share token will be</div>
-			<span class="token-pill">{roomId}</span>
-			<p class="dim token-hint">Generated locally; can be regenerated later.</p>
 		</div>
 
 		{#if createError}<p role="alert" class="dim">{createError}</p>{/if}
@@ -431,18 +407,6 @@
 	.add-label {
 		font-size: 14px;
 		font-weight: 500;
-	}
-
-	.token-card {
-		margin-top: 14px;
-		background: transparent;
-		border: 1px dashed var(--line-2);
-	}
-
-	.token-hint {
-		font-size: 11px;
-		font-family: var(--font-mono);
-		margin: 8px 0 0;
 	}
 
 	.submit-btn {
