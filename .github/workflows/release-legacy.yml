@@ -1,0 +1,59 @@
+name: Release legacy
+
+# Deploys the `legacy` branch to the old Worker. The old site keeps its v2 protocol
+# until its retirement date; never publish a GitHub release from `legacy`, or the
+# Docker workflow would tag it as latest.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-legacy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build + deploy the legacy branch to Cloudflare
+    runs-on: ubuntu-latest
+    environment:
+      name: production-legacy
+      url: https://kostos.shynewt.com
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the legacy branch
+        uses: actions/checkout@v4
+        with:
+          ref: legacy
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Refuse to ship placeholders
+        run: |
+          test -f src/lib/migration.ts
+          if grep -nE "^export const (APP_HOST|RETIREMENT_DATE) = '[A-Z_]+';" src/lib/migration.ts; then
+            echo "Set APP_HOST and RETIREMENT_DATE in src/lib/migration.ts first"
+            exit 1
+          fi
+
+      - name: Type-check
+        run: npm run check
+
+      - name: Test
+        run: npm test
+
+      - name: Build static bundle
+        run: npm run build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
