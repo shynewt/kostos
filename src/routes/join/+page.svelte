@@ -6,12 +6,14 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import { addProject, setCurrentMember } from '$lib/storage';
+	import { deriveLocalId } from '$lib/sync/crypto';
 	import {
 		addMember,
 		generateId,
 		openRoom
 	} from '$lib/sync/doc';
 	import type { Member, Project } from '$lib/types';
+	import { isOldInvite, isValidSecret, OLD_INVITE_MESSAGE } from '$lib/token';
 	import { setContext } from 'svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
@@ -19,8 +21,20 @@
 
 	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'invalid';
 
-	const roomId = $derived((page.url.searchParams.get('room') ?? '').toUpperCase());
-	const secret = $derived(page.url.hash.startsWith('#') ? page.url.hash.slice(1) : '');
+	const secret = $derived.by(() => {
+		const hash = page.url.hash.startsWith('#') ? page.url.hash.slice(1) : '';
+		return isValidSecret(hash) ? hash : '';
+	});
+	const oldInvite = $derived(isOldInvite(`${page.url.search}${page.url.hash}`));
+	let roomId = $state('');
+	$effect(() => {
+		const current = secret;
+		roomId = '';
+		if (!current) return;
+		let stale = false;
+		void deriveLocalId(current).then((id) => { if (!stale) roomId = id; });
+		return () => { stale = true; };
+	});
 
 	let status = $state<Status>('parsing');
 	let project = $state<Project | null>(null);
@@ -34,7 +48,8 @@
 	setContext('kostos-room', { get room() { return room; } });
 	$effect(() => room?.observe());
 	$effect(() => {
-		if (!room) { status = 'invalid'; return; }
+		if (!secret) { status = 'invalid'; return; }
+		if (!room) { status = 'parsing'; return; }
 		project = room.project;
 		members = room.members;
 		if (project && !room.checking) {
@@ -118,7 +133,11 @@
 	<div class="scroll">
 		{#if status === 'invalid'}
 			<EmptyCard>
-				<p>This invite link is missing the room or the secret. Ask the sender to share the full link from their <strong>Share</strong> button.</p>
+				{#if oldInvite}
+					<p>{OLD_INVITE_MESSAGE}</p>
+				{:else}
+					<p>This invite link is missing the group key. Ask the sender to share the full link from their <strong>Share</strong> button.</p>
+				{/if}
 				<a href="/" class="btn btn-block back-btn">Back</a>
 			</EmptyCard>
 		{:else if status === 'parsing' || status === 'syncing'}
@@ -126,13 +145,13 @@
 				<div class="loading-pulse" aria-hidden="true"></div>
 				<p class="dim mono loading-label">Reaching the group…</p>
 				<p class="dim loading-hint">
-					Decrypting with your secret token. The server never sees the contents.
+					Decrypting with your group key. The server never sees the contents.
 				</p>
 			</div>
 		{:else if status === 'empty'}
 			<EmptyCard>
 				<p>
-					Group data isn’t available for <strong>{roomId}</strong> yet. Check your connection and use the full invite link shared by your group.
+					Group data isn’t available yet. Check your connection and use the full invite link shared by your group.
 				</p>
 				<div class="row gap-8 retry-row">
 					<a href="/" class="btn">Cancel</a>
@@ -151,7 +170,7 @@
 					<div class="col">
 						<div class="eyebrow">Joining</div>
 						<div class="h2 hero-title">{project.name}</div>
-						<div class="dim mono hero-meta">{members.length} {members.length === 1 ? 'member' : 'members'} · {roomId}</div>
+						<div class="dim mono hero-meta">{members.length} {members.length === 1 ? 'member' : 'members'}</div>
 					</div>
 				</div>
 			</section>

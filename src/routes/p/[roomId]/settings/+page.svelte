@@ -329,7 +329,7 @@
 				<span>Forget this project on this device</span>
 			</button>
 			<p class="dim sign-out-hint">
-				Your data stays in the group. Rejoin with the token to restore it.
+				Your data stays in the group. Rejoin with the invite link to restore it.
 			</p>
 			<p class="dim version-line">Kostos v{version}</p>
 		</div>

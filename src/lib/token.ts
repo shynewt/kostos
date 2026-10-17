@@ -1,87 +1,56 @@
-/* Project-token helpers.
- *
- * A project is identified by a pair: `roomId.secret`.
- *  - `roomId` is sent to the sync server so it can route to the right Y.Doc.
- *  - `secret` is the key used to encrypt updates client-side; it must NEVER leave the client.
- *
- * The full token is shared as a URL with the secret in the fragment, e.g.
- *     https://kostos.app/join?room=PRT-4F2K-9XBA#<base64url-secret>
- * Browsers don't send `#...` in requests, so even if the share URL leaks through a referer
- * header the secret is preserved.
- *
- * The UI surfaces the short `roomId` (the design's `PRT-XXXX-XXXX` style) as a glanceable label;
- * the full URL is what users actually share.
+/* Invites. A group's invite is its secret: 16 random bytes as 22 base64url characters, shared as
+ *     https://<host>/join#<secret>
+ * Browsers don't send `#...` in requests, so the secret stays out of server logs and referers.
+ * Every other identifier (key, local ID, relay room ID, proof) is derived from it in sync/crypto.ts.
  */
+import { isLegacySecret } from './legacy';
+import { base64UrlEncode } from './sync/crypto';
 
-const ROOM_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // base32-ish, ambiguity-free
+export type ParsedToken = { secret: string };
 
-export type ParsedToken = { roomId: string; secret: string };
+const SECRET_BYTES = 16;
+const SECRET_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
-/** Build a fresh random room id of the form `PRT-XXXX-XXXX`. */
-export function generateRoomId(): string {
-	const random = new Uint8Array(8);
-	crypto.getRandomValues(random);
-	const chars = Array.from(random, (b) => ROOM_ALPHABET[b % ROOM_ALPHABET.length]);
-	return `PRT-${chars.slice(0, 4).join('')}-${chars.slice(4, 8).join('')}`;
-}
+export const OLD_INVITE_MESSAGE = 'That invite comes from the old Kostos site and no longer works. Ask your group for a new invite link.';
+export const INVALID_INVITE_MESSAGE = 'That does not look right. Paste the full invite link or the 22 character group key.';
 
-/** Build a fresh random secret as base64url-encoded 32 bytes. */
 export function generateSecret(): string {
-	const bytes = new Uint8Array(32);
+	const bytes = new Uint8Array(SECRET_BYTES);
 	crypto.getRandomValues(bytes);
-	return base64url(bytes);
+	return base64UrlEncode(bytes);
 }
 
-/** Accept `roomId.secret`, the share URL (`/join?room=ROOM#SECRET`), or the older
- *  `/join#roomId.secret` form. */
+export function isValidSecret(value: string): boolean {
+	return SECRET_PATTERN.test(value);
+}
+
+/** Accepts the share link (`/join#SECRET`) or the bare secret. */
 export function parseToken(raw: string): ParsedToken | null {
-	const input = extractCandidate(raw);
-	if (!input) return null;
+	const key = keyOf(extractCandidate(raw));
+	return isValidSecret(key) ? { secret: key } : null;
+}
 
-	if (input.includes('://') || input.startsWith('/') || input.includes('?room=')) {
-		const absolute = input.includes('://') || input.startsWith('/') ? input : `https://${input}`;
-		let url: URL;
-		try {
-			url = new URL(absolute, 'https://placeholder.invalid');
-		} catch {
-			return null;
-		}
-		const hash = url.hash.slice(1);
-		const room = url.searchParams.get('room');
-		if (room) return pair(room, hash);
-		return splitDotted(hash);
-	}
+/** Invites from before v3: `?room=` links, `ROOM.SECRET` pairs and bare 43 character keys. */
+export function isOldInvite(raw: string): boolean {
+	const candidate = extractCandidate(raw);
+	if (candidate.includes('room=')) return true;
+	const key = keyOf(candidate);
+	return isLegacySecret(key.includes('.') ? key.slice(key.indexOf('.') + 1) : key);
+}
 
-	return splitDotted(input);
+export function inviteError(raw: string): string {
+	return isOldInvite(raw) ? OLD_INVITE_MESSAGE : INVALID_INVITE_MESSAGE;
+}
+
+function keyOf(candidate: string): string {
+	const hash = candidate.indexOf('#');
+	return hash === -1 ? candidate : candidate.slice(hash + 1);
 }
 
 /** Chat apps paste links with surrounding text, `<...>` wrappers, a sentence's final period,
- *  or without the scheme. None of those characters can appear in a room id or secret. */
+ *  or without the scheme. None of those characters can appear in a secret. */
 function extractCandidate(raw: string): string {
 	const words = raw.trim().split(/\s+/);
-	const word = words.find((w) => w.includes('room=')) ?? words[words.length - 1] ?? '';
+	const word = words.find((w) => w.includes('#') || w.includes('room=')) ?? words[words.length - 1] ?? '';
 	return word.replace(/^[<(]+/, '').replace(/[.,;:!?)>]+$/, '');
-}
-
-function splitDotted(input: string): ParsedToken | null {
-	const dot = input.indexOf('.');
-	if (dot === -1) return null;
-	return pair(input.slice(0, dot), input.slice(dot + 1));
-}
-
-const ROOM_PATTERN = new RegExp(`^PRT-[${ROOM_ALPHABET}]{4}-[${ROOM_ALPHABET}]{4}$`);
-// at least 16 bytes of base64url; generated secrets are 32 bytes (43 chars)
-const SECRET_PATTERN = /^[A-Za-z0-9_-]{22,}$/;
-
-function pair(roomId: string, secret: string): ParsedToken | null {
-	const room = roomId.trim().toUpperCase();
-	const key = secret.trim();
-	if (!ROOM_PATTERN.test(room) || !SECRET_PATTERN.test(key)) return null;
-	return { roomId: room, secret: key };
-}
-
-function base64url(bytes: Uint8Array): string {
-	let bin = '';
-	for (const b of bytes) bin += String.fromCharCode(b);
-	return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }

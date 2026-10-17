@@ -13,7 +13,7 @@ const paymentMethods: PaymentMethodItem[] = [
 ];
 
 const project: Project = {
-	id: 'PRT-AAAA-BBBB',
+	id: 'room-1',
 	name: 'Lisbon Weekend',
 	description: 'June trip',
 	emoji: '🏖',

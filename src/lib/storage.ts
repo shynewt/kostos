@@ -21,9 +21,9 @@ const KEY = {
 } as const;
 
 export type ProjectRef = {
-	/** Short, human-readable room id shown in the UI (e.g. `PRT-4F2K-9XBA`). */
+	/** Local ID of the group: its `/p/<id>` route, storage key and IndexedDB name. Derived from the secret (32 hex characters); groups from before v3 keep their old short name. Never sent to the server. */
 	roomId: string;
-	/** Secret half of the token. Lives only in the URL fragment + localStorage; never sent to the server. */
+	/** The group's only shared value. Lives in the invite link's fragment and in localStorage; the server never sees it. */
 	secret: string;
 	/** Display name the user gave the project. */
 	name: string;

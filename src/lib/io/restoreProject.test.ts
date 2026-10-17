@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addProject, setCurrentMember } from '$lib/storage';
+import { deriveLocalId } from '$lib/sync/crypto';
 import { openRoom, readExpenses, readMembers, readProject } from '$lib/sync/doc';
 import type { Expense, Member } from '$lib/types';
 import { parseProjectArchive } from './projectArchive';
@@ -61,7 +62,9 @@ describe('createGroup', () => {
 		const roomId = await createGroup(contents(), 'marco');
 		const saved = vi.mocked(addProject).mock.calls[0][0];
 		expect(saved).toMatchObject({ roomId, name: 'Lisbon' });
-		expect(saved.secret).toMatch(/^[A-Za-z0-9_-]+$/);
+		expect(saved.secret).toHaveLength(22);
+		expect(roomId).toMatch(/^[0-9a-f]{32}$/);
+		expect(roomId).toBe(await deriveLocalId(saved.secret));
 		expect(setCurrentMember).toHaveBeenCalledWith(roomId, 'marco');
 		expect(readProject(openRoom(roomId))?.id).toBe(roomId);
 		expect(readExpenses(openRoom(roomId))).toHaveLength(1);

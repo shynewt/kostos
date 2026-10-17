@@ -8,7 +8,7 @@ const status = (patch: Partial<SyncStatus>): SyncStatus => ({ ...LOCAL_STATUS, p
 describe('describeSync', () => {
 	it('stays quiet when up to date', () => {
 		const view = describeSync(status({}), null, NOW);
-		expect(view).toMatchObject({ tone: 'ok', label: null, banner: null, attention: false, retry: false });
+		expect(view).toMatchObject({ tone: 'ok', label: 'Up to date', banner: null, attention: false, retry: false });
 	});
 
 	it('names pending changes while syncing', () => {
@@ -37,6 +37,10 @@ describe('describeSync', () => {
 	it('treats the demo group as plain local storage', () => {
 		expect(describeSync(LOCAL_STATUS, null, NOW, { demo: true })).toMatchObject({ tone: 'idle', banner: null, attention: false });
 		expect(describeSync(LOCAL_STATUS, null, NOW).banner).toContain('Invite link missing');
+	});
+
+	it('labels the demo group as local only', () => {
+		expect(describeSync(LOCAL_STATUS, null, NOW, { demo: true }).label).toBe('Only on this phone');
 	});
 
 	it('says when nothing has synced yet', () => {

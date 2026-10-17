@@ -6,7 +6,7 @@
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import { formatAmount } from '$lib/money';
 	import { listProjects, type ProjectRef } from '$lib/storage';
-	import { parseToken } from '$lib/token';
+	import { inviteError, parseToken } from '$lib/token';
 
 	let projects = $state<ProjectRef[]>([]);
 	let tokenInputOpen = $state(false);
@@ -34,11 +34,11 @@
 		event.preventDefault();
 		const parsed = parseToken(token);
 		if (!parsed) {
-			error = 'That token does not look right. Paste the full invite link, or `ROOM.SECRET`.';
+			error = inviteError(token);
 			return;
 		}
 		error = null;
-		goto(`/join?room=${encodeURIComponent(parsed.roomId)}#${parsed.secret}`);
+		goto(`/join#${parsed.secret}`);
 	}
 
 	function relativeDay(ts: number | undefined): string {
@@ -56,7 +56,7 @@
 	<title>Kostos · Group expense splitter, no accounts needed</title>
 	<meta
 		name="description"
-		content="Kostos is a free group expense splitter. Share a token, split bills with friends, sync live across devices. No accounts, end-to-end encrypted, open source, works offline."
+		content="Kostos is a free group expense splitter. Share an invite link, split bills with friends, sync live across devices. No accounts, end-to-end encrypted, open source, works offline."
 	/>
 	{#if !hasProjects}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -65,7 +65,7 @@
 			'@type': 'SoftwareApplication',
 			name: 'Kostos',
 			description:
-				'Free open-source group expense splitter. Share a token, split bills with friends, sync live across devices. No accounts, end-to-end encrypted, works offline.',
+				'Free open-source group expense splitter. Share an invite link, split bills with friends, sync live across devices. No accounts, end-to-end encrypted, works offline.',
 			applicationCategory: 'FinanceApplication',
 			operatingSystem: 'Web, iOS, Android',
 			offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
@@ -88,7 +88,7 @@
 					name: 'Do I need an account?',
 					acceptedAnswer: {
 						'@type': 'Answer',
-						text: 'No. Each group is identified by a secret token. Share the token to invite others; anyone with it joins the group. No email, no password, no sign-up.'
+						text: 'No. Each group is identified by a secret key. Share the invite link to bring others in; anyone with it joins the group. No email, no password, no sign-up.'
 					}
 				},
 				{
@@ -96,7 +96,7 @@
 					name: 'How is my data protected?',
 					acceptedAnswer: {
 						'@type': 'Answer',
-						text: 'Every sync message is AES-GCM encrypted in your browser before it reaches the sync server. The server only stores opaque ciphertext and never has access to the secret token.'
+						text: 'Every sync message is AES-GCM encrypted in your browser before it reaches the sync server. The server only stores opaque ciphertext and never has access to the group key.'
 					}
 				},
 				{
@@ -120,7 +120,7 @@
 					name: 'Can multiple people use the same group from different devices?',
 					acceptedAnswer: {
 						'@type': 'Answer',
-						text: 'Yes. Anyone with the shared project token can join from another device. Expenses, settlements, and member changes sync live between every device that holds the token.'
+						text: 'Yes. Anyone with the invite link can join from another device. Expenses, settlements, and member changes sync live between every device that holds the group key.'
 					}
 				}
 			]
@@ -153,14 +153,14 @@
 
 		{#snippet tokenForm()}
 			<form class="card token-form" onsubmit={onJoinSubmit}>
-				<div class="eyebrow" style="margin-bottom: 8px;">Paste a group token</div>
+				<div class="eyebrow" style="margin-bottom: 8px;">Paste an invite link or group key</div>
 				<div class="input-wrap">
 					<input
 						class="input token-input"
-						placeholder="PRT-XXXX-XXXX"
+						placeholder="Invite link or group key"
 						bind:value={token}
 						autocomplete="off"
-						autocapitalize="characters"
+						autocapitalize="off"
 						spellcheck="false"
 						aria-invalid={error ? 'true' : 'false'}
 					/>
@@ -176,7 +176,7 @@
 						</svg>
 					</button>
 				</div>
-				<div class="dim hint">OR PASTE A FULL LINK FROM YOUR INVITE</div>
+				<div class="dim hint">PASTE THE LINK, OR JUST THE 22 CHARACTERS AFTER THE #</div>
 				{#if error}
 					<div class="error" role="alert">{error}</div>
 				{/if}
@@ -247,7 +247,7 @@
 					onclick={() => (tokenInputOpen = !tokenInputOpen)}
 				>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-					<span>Join with token</span>
+					<span>Join with invite link</span>
 				</button>
 			</div>
 
@@ -291,7 +291,7 @@
 						<h3 class="value-title">End-to-end encrypted by default</h3>
 						<p class="dim value-sub">
 							Every sync message is AES-GCM encrypted in your browser before it leaves. The sync
-							server only sees opaque ciphertext; the secret token never touches the network.
+							server only sees opaque ciphertext; the group key is never sent to it.
 						</p>
 					</div>
 				</div>
@@ -302,7 +302,7 @@
 					<div class="col">
 						<h3 class="value-title">No accounts, no email, no sign-up</h3>
 						<p class="dim value-sub">
-							A group is just a shareable token. Send it; everyone joins. No password reset emails,
+							A group is just a shareable invite link. Send it; everyone joins. No password reset emails,
 							no profile to maintain, no third-party identity provider.
 						</p>
 					</div>
@@ -314,7 +314,7 @@
 					<div class="col">
 						<h3 class="value-title">Live sync across every device, works offline</h3>
 						<p class="dim value-sub">
-							Every device with the token sees the same expenses and balances in real time. Add a
+							Every device with the group key sees the same expenses and balances in real time. Add a
 							bill on a plane; it saves locally and syncs the moment you're back online.
 						</p>
 					</div>
@@ -358,14 +358,14 @@
 							<h3 class="how-title">Create a group</h3>
 							<p class="dim how-body">
 								Pick a name, an emoji, a currency, and the people involved. The app generates a
-								secret token for the group locally on your device.
+								secret key for the group locally on your device.
 							</p>
 						</div>
 					</li>
 					<li>
 						<span class="how-step">2</span>
 						<div>
-							<h3 class="how-title">Share the token</h3>
+							<h3 class="how-title">Share the invite link</h3>
 							<p class="dim how-body">
 								Send the share link to anyone you want in the group. They open it, pick their
 								member, and join. Multiple devices per person are fine.
@@ -396,16 +396,16 @@
 				<details class="faq-item">
 					<summary><h3>Do I need an account?</h3></summary>
 					<p>
-						No. Each group is identified by a secret token. Share the token to invite others;
-						anyone who has it joins the group. No email, no password, no sign-up.
+						No. Each group is identified by a secret key. Share the invite link to bring others in;
+						anyone with it joins the group. No email, no password, no sign-up.
 					</p>
 				</details>
 				<details class="faq-item">
 					<summary><h3>How is my data protected?</h3></summary>
 					<p>
 						Every sync message is AES-GCM encrypted in your browser before it reaches the sync
-						server. The server only stores opaque ciphertext and never has access to the secret
-						token, so it cannot read your expenses even if compromised.
+						server. The server only stores opaque ciphertext and never has access to the group
+						key, so it cannot read your expenses even if compromised.
 					</p>
 				</details>
 				<details class="faq-item">
@@ -428,8 +428,8 @@
 				<details class="faq-item">
 					<summary><h3>Can multiple people use the same group from different devices?</h3></summary>
 					<p>
-						Yes. Anyone with the shared token can join from another device. Expenses, settlements,
-						and member changes sync live between every device that holds the token, with
+						Yes. Anyone with the invite link can join from another device. Expenses, settlements,
+						and member changes sync live between every device that holds the group key, with
 						conflict-free merging powered by Y.js CRDTs.
 					</p>
 				</details>

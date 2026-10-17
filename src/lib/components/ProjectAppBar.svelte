@@ -19,7 +19,7 @@
 	const shareUrl = $derived.by(() => {
 		const stored = findProject(roomId);
 		if (!stored) return null;
-		return `${location.origin}/join?room=${encodeURIComponent(roomId)}#${stored.secret}`;
+		return `${location.origin}/join#${stored.secret}`;
 	});
 
 	async function copyShareUrl() {
@@ -82,7 +82,7 @@
 {#if showShare}
 	<section class="card share-card">
 		<div class="row between" style="margin-bottom: 10px;">
-			<span class="eyebrow">Invite token</span>
+			<span class="eyebrow">Invite link</span>
 			<button class="btn btn-ghost copy-btn" type="button" onclick={copyShareUrl} disabled={!shareUrl}>
 				{#if copied}
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
@@ -93,7 +93,6 @@
 				{/if}
 			</button>
 		</div>
-		<span class="token-pill">{roomId}</span>
 		{#if shareUrl}
 			<div class="qr-wrap">
 				<QrCode value={shareUrl} size={200} />
@@ -102,7 +101,7 @@
 			<input id="share-url-display" class="share-url-display" value={shareUrl} readonly />
 		{/if}
 		<p class="dim share-hint">
-			Anyone with this link joins instantly; the secret lives in the URL fragment so the server never sees it.
+			Anyone with this link can join the group. The key sits after the # in the link, so the server never receives it.
 		</p>
 	</section>
 {/if}

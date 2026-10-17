@@ -1,7 +1,8 @@
 /* New, restore, import and the demo all end the same way: put a project into a room. */
 import { addProject, setCurrentMember } from '$lib/storage';
+import { deriveLocalId } from '$lib/sync/crypto';
 import { addExpense, initProject, openRoom, type RoomHandle } from '$lib/sync/doc';
-import { generateRoomId, generateSecret } from '$lib/token';
+import { generateSecret } from '$lib/token';
 import type { Expense, Member, Project } from '$lib/types';
 import type { ProjectArchive } from './projectArchive';
 
@@ -21,7 +22,7 @@ export function seedRoom(handle: RoomHandle, project: Project, members: Member[]
 
 export async function createGroup({ project, members, expenses }: GroupContents, currentMemberId: string | null): Promise<string> {
 	const secret = generateSecret();
-	const roomId = generateRoomId();
+	const roomId = await deriveLocalId(secret);
 	const handle = openRoom(roomId, secret);
 	await handle.ready;
 	seedRoom(handle, { ...project, id: roomId }, members, expenses);

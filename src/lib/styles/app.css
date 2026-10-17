@@ -524,21 +524,6 @@ select {
   margin: 0 auto 14px;
 }
 
-/* Token display */
-.token-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: var(--bg-2);
-  border: 1px dashed var(--line-2);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--ink);
-  letter-spacing: 0.04em;
-}
-
 /* Category icon tiles */
 .cat-tile {
   width: 40px;

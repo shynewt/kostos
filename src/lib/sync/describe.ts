@@ -7,8 +7,8 @@ export type SyncView = {
 	tone: SyncTone;
 	/** Machine-readable state, exposed as data-sync-state. */
 	state: string;
-	/** Short text for the app bar line; null means "show the room code". */
-	label: string | null;
+	/** Short text for the app bar line under the group name. */
+	label: string;
 	headline: string;
 	body: string;
 	facts: { label: string; value: string }[];
@@ -69,7 +69,7 @@ export function describeSync(
 	switch (sync.phase) {
 		case 'local':
 			if (options.demo) {
-				return { ...base, tone: 'idle', state: 'local', label: null, headline: 'Only on this phone', body: 'The demo group never leaves your device.', facts: [] };
+				return { ...base, tone: 'idle', state: 'local', label: 'Only on this phone', headline: 'Only on this phone', body: 'The demo group never leaves your device.', facts: [] };
 			}
 			return {
 				...base, tone: 'warn', state: 'local', label: 'Invite needed', attention: true, facts: [],
@@ -79,7 +79,7 @@ export function describeSync(
 			};
 		case 'synced':
 			return {
-				...base, tone: 'ok', state: 'synced', label: null,
+				...base, tone: 'ok', state: 'synced', label: 'Up to date',
 				headline: 'Up to date',
 				body: 'This phone has everything the group has sent. Changes made offline on other phones appear when they reconnect.'
 			};
