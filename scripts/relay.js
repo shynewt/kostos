@@ -1,11 +1,10 @@
-/* Shared Node relay: complete append-only encrypted history, serialized room
- * operations, and acknowledgements after fsync. KOSTOS_DATA_DIR should be on a
- * persistent volume in Docker. Nothing is ever trimmed. MAX_ROOM_BYTES caps live
- * history: the payload bytes a new client replays, not the archive of entries a
- * compaction replaced; MAX_ROOM_ENTRIES caps how many there are. This relay
- * cannot compact, so both caps are permanent. The
- * first proof to connect claims a room, and the claim lives next to its log in
- * <room hash>.auth.
+/* Shared Node relay: one append-only encrypted log per room on disk. Connections and writes are
+ * serialized per room, and an acknowledgement is sent only after the entry is fsynced.
+ * KOSTOS_DATA_DIR should be on a persistent volume in Docker.
+ *
+ * The log is never compacted or trimmed. A room that reaches MAX_ROOM_BYTES or MAX_ROOM_ENTRIES
+ * refuses further writes for good; a backup restored as a new group is the way out.
+ * The first proof to connect claims a room, and the claim lives next to its log in <room hash>.auth.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, truncate, unlink } from 'node:fs/promises';
@@ -137,6 +136,39 @@ export function createRelay(directory) {
 			ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_CLOSE_REASON);
 		}).finally(() => { room.pending--; evictIfIdle(room); });
 	}
+	/** Sends a payload, and for a stored entry its new revision, to every other open socket. A socket that
+	 *  fails to take it is cut loose and reconnects for a fresh replay.
+	 *  @param {ReturnType<typeof makeRoom>} room @param {import('ws').WebSocket} sender @param {Buffer} payload @param {number} [revision] */
+	function broadcast(room, sender, payload, revision) {
+		for (const peer of room.sockets) {
+			if (peer === sender || peer.readyState !== peer.OPEN) continue;
+			try {
+				peer.send(payload);
+				if (revision !== undefined) control(peer, { type: 'revision', revision });
+			} catch { peer.terminate(); }
+		}
+	}
+	/** Appends one entry to the room's log and fsyncs it, then records it in memory.
+	 *  @param {ReturnType<typeof makeRoom>} room @param {string} hash @param {Buffer} payload @returns {Promise<number>} its revision */
+	async function appendToLog(room, hash, payload) {
+		const file = await open(room.file, 'a');
+		try {
+			const { size } = await file.stat();
+			try {
+				await file.writeFile(`${JSON.stringify({ hash, data: payload.toString('base64') })}\n`);
+				await file.sync();
+			} catch (error) {
+				// a partial line would swallow the next append
+				await file.truncate(size).catch(() => {});
+				throw error;
+			}
+		} finally { await file.close(); }
+		room.history.push({ hash, payload });
+		room.bytes += payload.length;
+		const revision = room.history.length;
+		room.hashes.set(hash, revision);
+		return revision;
+	}
 	/** The first proof to connect claims the room; every later connection must match it.
 	 *  @param {ReturnType<typeof makeRoom>} room @param {string} proof */
 	async function authorize(room, proof) {
@@ -167,21 +199,21 @@ export function createRelay(directory) {
 			for (const entry of activeRoom.history) ws.send(entry.payload);
 			control(ws, { type: 'ready', protocol: PROTOCOL_VERSION, revision: activeRoom.history.length, durable: true, complete: true });
 		});
-		ws.on('message', (data, binary) => {
-			if (!binary) {
-				const text = data.toString();
-				if (text === 'ping') { if (ws.readyState === ws.OPEN) ws.send('pong'); return; }
-				let message;
-				try { message = JSON.parse(text); } catch { return; }
-				if (!message || typeof message !== 'object') return;
-				if (message.type === 'barrier' && typeof message.id === 'string' && message.id.length <= MAX_BARRIER_ID_LENGTH) {
-					enqueue(activeRoom, ws, async () => {
-						if (!admitted) return;
-						control(ws, { type: 'caught-up', id: message.id, revision: activeRoom.history.length });
-					});
-				}
-				return;
+		/** @param {string} text */
+		function handleControl(text) {
+			if (text === 'ping') { if (ws.readyState === ws.OPEN) ws.send('pong'); return; }
+			let message;
+			try { message = JSON.parse(text); } catch { return; }
+			if (!message || typeof message !== 'object') return;
+			if (message.type === 'barrier' && typeof message.id === 'string' && message.id.length <= MAX_BARRIER_ID_LENGTH) {
+				enqueue(activeRoom, ws, async () => {
+					if (!admitted) return;
+					control(ws, { type: 'caught-up', id: message.id, revision: activeRoom.history.length });
+				});
 			}
+		}
+		/** @param {import('ws').RawData} data */
+		function handleWrite(data) {
 			enqueue(activeRoom, ws, async () => {
 				if (!admitted) return;
 				const packet = data instanceof Buffer ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]);
@@ -191,13 +223,7 @@ export function createRelay(directory) {
 				// The disk log numbers revisions by position, so it can't splice in a snapshot. Ignore it.
 				if (decoded.compact !== undefined) return;
 				const payload = Buffer.from(decoded.payload);
-				if (!decoded.durable) {
-					for (const peer of activeRoom.sockets) {
-						if (peer === ws || peer.readyState !== peer.OPEN) continue;
-						try { peer.send(payload); } catch { peer.terminate(); }
-					}
-					return;
-				}
+				if (!decoded.durable) { broadcast(activeRoom, ws, payload); return; }
 				const hash = await payloadHash(payload);
 				const existing = activeRoom.hashes.get(hash);
 				if (existing) { control(ws, { type: 'ack', hash, revision: existing }); return; }
@@ -206,30 +232,12 @@ export function createRelay(directory) {
 					ws.close(INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON);
 					return;
 				}
-				const file = await open(activeRoom.file, 'a');
-				try {
-					const { size } = await file.stat();
-					try {
-						await file.writeFile(`${JSON.stringify({ hash, data: payload.toString('base64') })}\n`);
-						await file.sync();
-					} catch (error) {
-						// a partial line would swallow the next append
-						await file.truncate(size).catch(() => {});
-						throw error;
-					}
-				} finally { await file.close(); }
-				activeRoom.history.push({ hash, payload });
-				activeRoom.bytes += payload.length;
-				const revision = activeRoom.history.length;
-				activeRoom.hashes.set(hash, revision);
-				for (const peer of activeRoom.sockets) {
-					if (peer === ws || peer.readyState !== peer.OPEN) continue;
-					try { peer.send(payload); control(peer, { type: 'revision', revision }); }
-					catch { peer.terminate(); }
-				}
+				const revision = await appendToLog(activeRoom, hash, payload);
+				broadcast(activeRoom, ws, payload, revision);
 				control(ws, { type: 'ack', hash, revision });
 			});
-		});
+		}
+		ws.on('message', (data, binary) => { if (binary) handleWrite(data); else handleControl(data.toString()); });
 	}
 	// resolves once every room has finished the writes it already accepted
 	attach.drain = () => Promise.all([...rooms.values()].map((room) => room.tail));
