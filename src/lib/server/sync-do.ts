@@ -1,7 +1,8 @@
 /// <reference types="@cloudflare/workers-types" />
 /* One encrypted append-only log per group. The server never sees document
- * plaintext. SQL rows avoid a growing single KV value and are never trimmed;
- * compaction moves replaced rows to an archive. MAX_ROOM_BYTES caps live
+ * plaintext. SQL rows avoid a growing single KV value. Live rows are only ever
+ * replaced by a compaction, which moves them to an archive capped at
+ * MAX_ARCHIVE_BYTES (the oldest archived rows go first). MAX_ROOM_BYTES caps live
  * history, the payload bytes a new client replays, so compacting frees room;
  * MAX_ROOM_ENTRIES caps how many live entries there are.
  * Acknowledgements are sent only after a transactional write; replay and
@@ -166,22 +167,33 @@ export class SyncRoom extends DurableObject {
 		});
 	}
 
-	/** Compaction is rare, so summing the archive here is cheaper than keeping a running total honest. */
-	private archiveWouldOverflow(addedBytes: number): boolean {
-		const archived = this.ctx.storage.sql.exec<{ bytes: number }>('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM archive').one().bytes;
-		return archived + addedBytes > MAX_ARCHIVE_BYTES;
+	/** The archive is recovery-only and never replayed, so its oldest rows make room for new ones. A
+	 *  compaction can archive at most MAX_ROOM_BYTES (the live cap), which MAX_ARCHIVE_BYTES never undercuts. */
+	private trimArchive(incomingBytes: number): void {
+		const sql = this.ctx.storage.sql;
+		const archived = sql.exec<{ bytes: number }>('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM archive').one().bytes;
+		let toFree = archived + incomingBytes - MAX_ARCHIVE_BYTES;
+		if (toFree <= 0) return;
+		let lastDropped = 0;
+		for (const row of sql.exec<{ id: number; bytes: number }>('SELECT id, length(payload) AS bytes FROM archive ORDER BY id')) {
+			lastDropped = row.id;
+			toFree -= row.bytes;
+			if (toFree <= 0) break;
+		}
+		sql.exec('DELETE FROM archive WHERE id <= ?', lastDropped);
 	}
 
 	/** Replace entries up to `through` with one snapshot at the same seq, so revision numbers and
-	 *  everything after `through` stay as they are. Late, redundant, over-cap or archive-overflowing requests are ignored. */
+	 *  everything after `through` stay as they are. Late, redundant and over-cap requests are ignored. */
 	private compact(ws: WebSocket, through: number, payload: Uint8Array): void {
 		if (through < 1 || through > this.revision()) return;
 		const { n: covered, bytes: coveredBytes } = this.ctx.storage.sql
 			.exec<{ n: number; bytes: number }>('SELECT COUNT(*) AS n, COALESCE(SUM(length(payload)), 0) AS bytes FROM messages WHERE seq <= ?', through).one();
-		if (covered < 2 || this.exceedsCap(payload.byteLength - coveredBytes) || this.archiveWouldOverflow(coveredBytes)) return;
+		if (covered < 2 || this.exceedsCap(payload.byteLength - coveredBytes)) return;
 		const hash = `snapshot:${through}:${Date.now()}`;
 		this.ctx.storage.transactionSync(() => {
-			this.ctx.storage.sql.exec('INSERT INTO archive (seq, hash, payload, archived_at) SELECT seq, hash, payload, ? FROM messages WHERE seq <= ?', Date.now(), through);
+			this.trimArchive(coveredBytes);
+			this.ctx.storage.sql.exec('INSERT INTO archive (seq, hash, payload, archived_at) SELECT seq, hash, payload, ? FROM messages WHERE seq <= ? ORDER BY seq', Date.now(), through);
 			this.ctx.storage.sql.exec('DELETE FROM messages WHERE seq <= ?', through);
 			this.ctx.storage.sql.exec('INSERT INTO messages (seq, hash, payload) VALUES (?, ?, ?)', through, hash, payload);
 		});

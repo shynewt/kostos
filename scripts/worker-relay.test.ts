@@ -1,15 +1,17 @@
 /* Exercise the production Durable Object inside the same Workers runtime used
  * by Wrangler, including legacy KV migration and a cold storage restart. */
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, rm, readFile, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
+import { DatabaseSync } from 'node:sqlite';
 import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_ENTRIES } from '../src/lib/sync/relay-protocol.js';
+import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_ENTRIES, payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { proofHash } from '../src/lib/sync/room-access.js';
 import { joinRoom, largePacket, openSocket, packet, packetsFillingTheCap, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 
 const room = (name: string) => createHash('sha256').update(name).digest('hex');
@@ -259,14 +261,6 @@ describe('room storage cap', () => {
 	}, 60_000);
 });
 
-async function bytesOnDisk(folder: string): Promise<number> {
-	let total = 0;
-	for (const entry of await readdir(folder, { withFileTypes: true, recursive: true })) {
-		if (entry.isFile()) total += (await stat(join(entry.parentPath, entry.name))).size;
-	}
-	return total;
-}
-
 describe('compaction', () => {
 	it('ignores a snapshot that would replace a single entry', async () => {
 		const device = await connect('single-entry');
@@ -281,26 +275,50 @@ describe('compaction', () => {
 	});
 });
 
+/** Reads a room's SQLite file while the runtime keeps running. The room is found by the proof that claimed it. */
+async function readRoom(proof: string) {
+	const claim = await proofHash(proof);
+	for (const entry of await readdir(join(directory, 'storage'), { withFileTypes: true, recursive: true })) {
+		if (!entry.isFile() || !entry.name.endsWith('.sqlite') || entry.name === 'metadata.sqlite') continue;
+		const database = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly: true });
+		try {
+			if ((database.prepare('SELECT proof_hash FROM room_auth').get() as { proof_hash: string } | undefined)?.proof_hash !== claim) continue;
+			const archive = database.prepare('SELECT seq, hash, length(payload) AS bytes FROM archive ORDER BY id').all() as { seq: number; hash: string; bytes: number }[];
+			const live = database.prepare('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM messages').get() as { bytes: number };
+			const pages = database.prepare('PRAGMA page_count').get() as { page_count: number };
+			const page = database.prepare('PRAGMA page_size').get() as { page_size: number };
+			return { archive, archiveBytes: archive.reduce((total, row) => total + row.bytes, 0), liveBytes: live.bytes, databaseBytes: pages.page_count * page.page_size };
+		} catch { continue; } finally { database.close(); }
+	}
+	throw new Error('No room database found for that proof');
+}
+
 describe('room archive ceiling', () => {
-	it('stops archiving once the archive is full, so alternating writes and compactions cannot grow storage forever', async () => {
-		const diskBefore = await bytesOnDisk(join(directory, 'storage'));
-		const device = await connect('archive-bound');
-		let compactions = 0;
-		let refusedAtCycle = -1;
-		for (let cycle = 1; cycle <= 60 && refusedAtCycle < 0; cycle++) {
-			device.ws.send(largePacket());
+	const proof = 'R'.repeat(43);
+
+	it('drops the oldest archived entries to make room, so compacting always works and storage stays bounded', async () => {
+		const device = await connect('archive-bound', proof);
+		const written: Buffer[] = [];
+		const cycles = 40;
+		for (let cycle = 1; cycle <= cycles; cycle++) {
+			const update = largePacket();
+			written.push(update);
+			device.ws.send(update);
 			await until(() => device.controls.some((m) => m.type === 'ack' && m.revision === cycle));
 			// a single entry is not worth compacting, so the first cycle only writes
 			if (cycle === 1) continue;
 			device.ws.send(snapshot(cycle, 200));
-			device.ws.send(JSON.stringify({ type: 'barrier', id: `cycle-${cycle}` }));
-			await until(() => device.controls.some((m) => m.type === 'caught-up' && m.id === `cycle-${cycle}`));
-			if (device.controls.filter((m) => m.type === 'compacted').length > compactions) compactions++;
-			else refusedAtCycle = cycle;
+			await until(() => device.controls.filter((m) => m.type === 'compacted').length === cycle - 1);
 		}
-		expect(refusedAtCycle).toBeGreaterThan(0);
-		const grown = await bytesOnDisk(join(directory, 'storage')) - diskBefore;
-		expect(grown).toBeLessThan(MAX_ARCHIVE_BYTES + 8 * 1024 * 1024);
+		const { archive, archiveBytes, databaseBytes } = await readRoom(proof);
+		expect(archiveBytes).toBeLessThanOrEqual(MAX_ARCHIVE_BYTES);
+		expect(archiveBytes).toBeGreaterThan(MAX_ARCHIVE_BYTES - MAX_MESSAGE_BYTES);
+		const archivedHashes = archive.map((row) => row.hash);
+		expect(archivedHashes).not.toContain(await payloadHash(written[0].subarray(5)));
+		expect(archivedHashes).toContain(await payloadHash(written[cycles - 2].subarray(5)));
+		expect(archivedHashes).toContain(await payloadHash(written[cycles - 1].subarray(5)));
+		// freed pages get reused; the write-ahead log is not counted since SQLite decides when to checkpoint it
+		expect(databaseBytes).toBeLessThan(MAX_ARCHIVE_BYTES + 8 * 1024 * 1024);
 		expect(device.ws.readyState).toBe(WebSocket.OPEN);
 	}, 120_000);
 });
