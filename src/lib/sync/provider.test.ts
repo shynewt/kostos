@@ -4,6 +4,7 @@ import { EncryptedSyncProvider } from './provider';
 import { deriveKey, deriveRoomAccess, decryptPayload, encryptPayload } from './crypto';
 import { frame, parse, MSG_UPDATE } from './protocol';
 import { payloadHash } from './relay-protocol.js';
+import { ROOM_FULL_MESSAGE } from './room-access.js';
 
 class Socket {
 	static OPEN = 1;
@@ -253,6 +254,35 @@ describe('verified encrypted sync', () => {
 		provider.retry();
 		expect(Socket.instances).toHaveLength(1);
 		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'denied', checking: false });
+	});
+
+	it('keeps a startup failure on screen when the device comes back online', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		vi.stubGlobal('navigator', { onLine: false });
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('insecure'));
+		vi.stubGlobal('navigator', { onLine: true });
+		events.dispatchEvent(new Event('online'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'insecure', checking: false });
+	});
+
+	it('says the group is full and waits minutes, not seconds, before replaying it again', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'full' }));
+		await vi.advanceTimersByTimeAsync(3 * 60_000);
+		expect(Socket.instances).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(3 * 60_000);
+		expect(Socket.instances.length).toBeGreaterThan(1);
+	});
+
+	it('still reports a real storage failure as storage', async () => {
+		const ws = await start();
+		ws.control({ type: 'error', reason: 'storage' });
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('storage'));
 	});
 
 	it('reports a plain HTTP origin instead of a wrong invite link', async () => {

@@ -22,16 +22,16 @@ export type SyncView = {
 	attention: boolean;
 };
 
+// problems missing here read the same in the banner as in the status sheet
 const BANNER_TEXT: Record<SyncProblem, string> = {
+	...PROBLEM_LABELS,
 	network: 'Can’t reach the group. Your changes are saved here.',
 	timeout: 'The server is slow to answer. Your changes are saved here.',
 	storage: 'The server couldn’t store your latest changes. They’re saved here. If this keeps happening, export a backup from Settings.',
 	decrypt: 'Some group data couldn’t be read. Check that your invite link is the right one.',
 	protocol: 'This server needs an update before it can sync.',
 	history: 'Older server history is incomplete. Export a backup from Settings.',
-	size: 'This group is too large to sync. Export a backup from Settings.',
-	denied: 'This group belongs to a different key. Ask for a fresh invite link.',
-	insecure: INSECURE_CONTEXT_MESSAGE
+	size: 'This group is too large to sync. Export a backup from Settings.'
 };
 
 /** Retrying cannot change these, so the status offers no retry button. */

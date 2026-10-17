@@ -48,6 +48,14 @@ describe('describeSync', () => {
 		expect(view.banner).toContain('export a backup from Settings');
 	});
 
+	it('tells a full group to move to a new one, in the status and the banner', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'full' }), null, NOW);
+		expect(view).toMatchObject({ state: 'error', retry: true });
+		expect(view.body).toContain('This group is full');
+		expect(view.body).toContain('restore it as a new group');
+		expect(view.banner).toBe(view.body);
+	});
+
 	it('words a plain HTTP origin as terminal and names the fix', () => {
 		const view = describeSync(status({ phase: 'error', problem: 'insecure' }), null, NOW);
 		expect(view).toMatchObject({ state: 'error', retry: false });
