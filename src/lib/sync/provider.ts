@@ -9,8 +9,8 @@ import { decryptPayload, deriveKey, deriveRoomAccess, encryptPayload, InsecureCo
 import { frame, parse, MSG_STEP1, MSG_UPDATE } from './protocol';
 import { REMOTE_ORIGIN, LOCAL_LOAD, type RoomPersistence } from './persistence';
 import { type SyncStatus, type SyncProblem } from './status';
-import { PROOF_PREFIX, ROOM_FULL_MESSAGE } from './room-access.js';
-import { MAX_MESSAGE_BYTES, PACKET_MAGIC } from './relay-protocol.js';
+import { PROOF_PREFIX, ROOM_FULL_MESSAGE, SIZE_ERROR_MESSAGE } from './room-access.js';
+import { MAX_MESSAGE_BYTES, PACKET_MAGIC, PROTOCOL_VERSION, payloadHash } from './relay-protocol.js';
 
 export type ConnectionStatus = SyncStatus['phase'];
 const TIMEOUT_MS = 12_000;
@@ -182,10 +182,7 @@ export class EncryptedSyncProvider {
 	 *  their data stays on screen, the status says so, and the phone keeps trying on its own. */
 	private unreachable(): void {
 		if (this.destroyed) return;
-		const ws = this.ws;
-		this.ws = null;
-		this.clearTimers();
-		try { ws?.close(); } catch { /* Already closed. */ }
+		this.closeSocket();
 		this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		this.scheduleReconnect();
 	}
@@ -195,10 +192,7 @@ export class EncryptedSyncProvider {
 	private recover(problem: SyncProblem): void {
 		if (this.recoveries >= 3) { this.fail(problem); return; }
 		this.recoveries++;
-		const ws = this.ws;
-		this.ws = null;
-		this.clearTimers();
-		try { ws?.close(); } catch { /* Already closed. */ }
+		this.closeSocket();
 		this.connect();
 	}
 
@@ -223,7 +217,7 @@ export class EncryptedSyncProvider {
 		try { message = JSON.parse(data); } catch { return; }
 		if (!message || typeof message !== 'object') return;
 		if (message.type === 'ready') {
-			if (message.protocol !== 3 || !Number.isSafeInteger(message.revision)) { this.fail('protocol', false); return; }
+			if (message.protocol !== PROTOCOL_VERSION || !Number.isSafeInteger(message.revision)) { this.fail('protocol', false); return; }
 			this.supported = this.replayed = true;
 			this.durable = message.durable === true;
 			this.complete = message.complete === true;
@@ -280,7 +274,7 @@ export class EncryptedSyncProvider {
 	}
 
 	private serverErrorProblem(reason: string | undefined): SyncProblem {
-		if (reason === 'size') return 'size';
+		if (reason === SIZE_ERROR_MESSAGE.reason) return 'size';
 		return reason === ROOM_FULL_MESSAGE.reason ? 'full' : 'storage';
 	}
 
@@ -306,9 +300,9 @@ export class EncryptedSyncProvider {
 			packet[4] = durable ? 1 : 0;
 			packet.set(encrypted, 5);
 			if (durable) {
-				const hash = await crypto.subtle.digest('SHA-256', encrypted as BufferSource);
+				const hash = await payloadHash(encrypted);
 				if (!this.isCurrent(ws)) return;
-				this.pending.add(Array.from(new Uint8Array(hash), (v) => v.toString(16).padStart(2, '0')).join(''));
+				this.pending.add(hash);
 			}
 			ws.send(packet);
 		}).catch(() => { if (this.isCurrent(ws)) this.fail('storage'); }).finally(() => {
@@ -364,10 +358,7 @@ export class EncryptedSyncProvider {
 		// a failure that will not reconnect has to stay visible, or nothing clears it when the device is back online
 		this.setState({ phase: reconnect && navigator.onLine === false ? 'offline' : 'error', checking: false, problem, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		if (reconnect) {
-			const ws = this.ws;
-			this.ws = null;
-			this.clearTimers();
-			try { ws?.close(); } catch { /* Already closed. */ }
+			this.closeSocket();
 			this.scheduleReconnect();
 		} else this.clearDeadline();
 	}
@@ -376,11 +367,15 @@ export class EncryptedSyncProvider {
 	 *  that would reconnect (timers, online, foreground) stops at `denied` in `connect()`. */
 	private deny(): void {
 		this.denied = true;
+		this.closeSocket();
+		this.fail('denied', false);
+	}
+
+	private closeSocket(): void {
 		const ws = this.ws;
 		this.ws = null;
 		this.clearTimers();
 		try { ws?.close(); } catch { /* Already closed. */ }
-		this.fail('denied', false);
 	}
 
 	private armDeadline(ws: WebSocket): void {
@@ -416,10 +411,7 @@ export class EncryptedSyncProvider {
 		if (this.destroyed) return;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = null;
-		const ws = this.ws;
-		this.ws = null;
-		this.clearTimers();
-		try { ws?.close(); } catch { /* Already closed. */ }
+		this.closeSocket();
 		this.connect();
 	};
 	/** Network and foreground events. A held group keeps its scheduled retry instead of replaying now. */
@@ -434,10 +426,8 @@ export class EncryptedSyncProvider {
 		this.destroyed = true;
 		this.doc.off('update', this.onUpdate);
 		this.unsubscribeLocal?.();
-		this.clearTimers();
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-		this.ws?.close();
-		this.ws = null;
+		this.closeSocket();
 		this.listeners.clear();
 		if (typeof window !== 'undefined') {
 			window.removeEventListener('online', this.reconnectUnlessHeld);

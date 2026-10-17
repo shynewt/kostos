@@ -8,14 +8,20 @@ export const PROOF_PREFIX = 'kostos1.';
  *  HTTP upgrade is invisible to browser JavaScript, so this is how a client learns it was refused. */
 export const DENIED_MESSAGE = { type: 'denied' };
 export const DENIED_CLOSE_CODE = 1008;
+export const DENIED_CLOSE_REASON = 'Unauthorized';
 /** Close code for any server-side failure; the client reconnects. */
 export const INTERNAL_ERROR_CLOSE_CODE = 1011;
 /** Sent instead of an acknowledgement when a write could not be stored; the socket then closes with INTERNAL_ERROR_CLOSE_CODE. */
 export const STORAGE_ERROR_MESSAGE = { type: 'error', reason: 'storage' };
+export const STORAGE_CLOSE_REASON = 'Could not persist sync data';
 /** Sent instead of STORAGE_ERROR_MESSAGE when the room refuses a write because it reached its size or entry
  *  limit. Unlike a storage failure, retrying the same write cannot succeed until the room is compacted. */
 export const ROOM_FULL_MESSAGE = { type: 'error', reason: 'full' };
 export const ROOM_FULL_CLOSE_REASON = 'Room storage limit reached';
+/** Sent just before closing a socket with SIZE_CLOSE_CODE, after it sent a malformed or oversized packet. */
+export const SIZE_ERROR_MESSAGE = { type: 'error', reason: 'size' };
+export const SIZE_CLOSE_CODE = 1009;
+export const SIZE_CLOSE_REASON = 'Invalid message size';
 
 export const SYNC_PATH_PREFIX = '/sync/';
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;

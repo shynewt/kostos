@@ -15,9 +15,6 @@ export const MAX_ROOM_ENTRIES = 100_000;
 export const PACKET_MAGIC = [75, 79, 83, 51];
 export const PROTOCOL_VERSION = 3;
 export const MAX_BARRIER_ID_LENGTH = 80;
-/** Sent just before closing a socket with SIZE_CLOSE_CODE, after it sent a malformed or oversized packet. */
-export const SIZE_ERROR_MESSAGE = { type: 'error', reason: 'size' };
-export const SIZE_CLOSE_CODE = 1009;
 
 /** @param {Uint8Array} packet */
 export function unwrapPacket(packet) {
@@ -27,9 +24,9 @@ export function unwrapPacket(packet) {
 	const compact = versioned && packet[4] === 2 && packet.length >= 9
 		? new DataView(packet.buffer, packet.byteOffset, packet.byteLength).getUint32(5)
 		: undefined;
-	if (versioned && packet[4] === 2 && compact === undefined) throw new Error('Invalid message size');
+	if (versioned && packet[4] === 2 && compact === undefined) throw new Error('Invalid packet');
 	const payload = versioned ? packet.slice(compact === undefined ? 5 : 9) : packet;
-	if (packet.length > MAX_MESSAGE_BYTES || payload.length < 28) throw new Error('Invalid message size');
+	if (packet.length > MAX_MESSAGE_BYTES || payload.length < 28) throw new Error('Invalid packet');
 	return { payload, durable: !versioned || packet[4] === 1, compact };
 }
 

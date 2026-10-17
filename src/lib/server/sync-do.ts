@@ -9,11 +9,11 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
-	MAX_ARCHIVE_BYTES, MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
-	unwrapPacket, payloadHash
+	MAX_ARCHIVE_BYTES, MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, unwrapPacket, payloadHash
 } from '../sync/relay-protocol.js';
 import {
-	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON, ROOM_FULL_MESSAGE, STORAGE_ERROR_MESSAGE,
+	DENIED_CLOSE_CODE, DENIED_CLOSE_REASON, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON, ROOM_FULL_MESSAGE,
+	SIZE_CLOSE_CODE, SIZE_CLOSE_REASON, SIZE_ERROR_MESSAGE, STORAGE_CLOSE_REASON, STORAGE_ERROR_MESSAGE,
 	hashesEqual, parseProofProtocol, proofHash
 } from '../sync/room-access.js';
 
@@ -98,7 +98,7 @@ export class SyncRoom extends DurableObject {
 				// not hibernatable on purpose: this socket never joins the room, so no handler ever sees its messages
 				server.accept();
 				this.control(server, DENIED_MESSAGE);
-				server.close(DENIED_CLOSE_CODE, 'Unauthorized');
+				server.close(DENIED_CLOSE_CODE, DENIED_CLOSE_REASON);
 				return new Response(null, { status: 101, webSocket: client, headers });
 			}
 			this.ctx.acceptWebSocket(server);
@@ -134,7 +134,7 @@ export class SyncRoom extends DurableObject {
 				}
 				let decoded;
 				try { decoded = unwrapPacket(new Uint8Array(message)); }
-				catch { this.control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, 'Invalid message size'); return; }
+				catch { this.control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, SIZE_CLOSE_REASON); return; }
 				const { payload, durable, compact } = decoded;
 				if (compact !== undefined) {
 					this.compact(ws, compact, payload);
@@ -161,7 +161,7 @@ export class SyncRoom extends DurableObject {
 				this.control(ws, { type: 'ack', hash, revision });
 			} catch (error) {
 				this.logFailure(error);
-				try { this.control(ws, STORAGE_ERROR_MESSAGE); ws.close(INTERNAL_ERROR_CLOSE_CODE, 'Could not persist sync data'); } catch { /* Closed peer. */ }
+				try { this.control(ws, STORAGE_ERROR_MESSAGE); ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_CLOSE_REASON); } catch { /* Closed peer. */ }
 			}
 		});
 	}

@@ -11,11 +11,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, truncate, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import {
-	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
-	unwrapPacket, payloadHash
+	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, unwrapPacket, payloadHash
 } from '../src/lib/sync/relay-protocol.js';
 import {
-	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON, ROOM_FULL_MESSAGE, STORAGE_ERROR_MESSAGE,
+	DENIED_CLOSE_CODE, DENIED_CLOSE_REASON, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON, ROOM_FULL_MESSAGE,
+	SIZE_CLOSE_CODE, SIZE_CLOSE_REASON, SIZE_ERROR_MESSAGE, STORAGE_CLOSE_REASON, STORAGE_ERROR_MESSAGE,
 	hashesEqual, isProofHash, proofHash
 } from '../src/lib/sync/room-access.js';
 
@@ -134,7 +134,7 @@ export function createRelay(directory) {
 			console.error(`[kostos] room ${room.label} storage failure: ${error.code ?? error.message}`);
 			room.loaded = false;
 			control(ws, STORAGE_ERROR_MESSAGE);
-			ws.close(INTERNAL_ERROR_CLOSE_CODE, 'Could not persist sync data');
+			ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_CLOSE_REASON);
 		}).finally(() => { room.pending--; evictIfIdle(room); });
 	}
 	/** The first proof to connect claims the room; every later connection must match it.
@@ -158,7 +158,7 @@ export function createRelay(directory) {
 		enqueue(activeRoom, ws, async () => {
 			if (!(await authorize(activeRoom, proof))) {
 				control(ws, DENIED_MESSAGE);
-				ws.close(DENIED_CLOSE_CODE, 'Unauthorized');
+				ws.close(DENIED_CLOSE_CODE, DENIED_CLOSE_REASON);
 				return;
 			}
 			admitted = true;
@@ -187,7 +187,7 @@ export function createRelay(directory) {
 				const packet = data instanceof Buffer ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]);
 				let decoded;
 				try { decoded = unwrapPacket(packet); }
-				catch { control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, 'Invalid message size'); return; }
+				catch { control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, SIZE_CLOSE_REASON); return; }
 				// The disk log numbers revisions by position, so it can't splice in a snapshot. Ignore it.
 				if (decoded.compact !== undefined) return;
 				const payload = Buffer.from(decoded.payload);
