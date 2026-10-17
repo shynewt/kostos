@@ -106,13 +106,13 @@ export class EncryptedSyncProvider {
 	private isCurrent(ws: WebSocket): boolean { return !this.destroyed && this.ws === ws; }
 
 	private connect(): void {
-		if (this.destroyed || this.denied) return;
+		const access = this.access;
+		// no access means startup failed or hasn't finished; neither can be retried from here
+		if (this.destroyed || this.denied || !access) return;
 		if (typeof navigator !== 'undefined' && navigator.onLine === false) {
 			this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 			return;
 		}
-		const access = this.access;
-		if (!access) return;
 		this.supported = this.replayed = this.durable = false;
 		this.complete = true;
 		this.sessionProblem = null;

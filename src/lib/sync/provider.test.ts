@@ -266,6 +266,30 @@ describe('verified encrypted sync', () => {
 		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'insecure', checking: false });
 	});
 
+	it('keeps a startup failure on screen when the device goes offline', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('insecure'));
+		vi.stubGlobal('navigator', { onLine: false });
+		events.dispatchEvent(new Event('offline'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'insecure' });
+		vi.stubGlobal('navigator', { onLine: true });
+		events.dispatchEvent(new Event('online'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'insecure' });
+	});
+
+	it('does not pretend to retry a local storage failure at startup', async () => {
+		const ready = Promise.reject(new Error('blocked'));
+		ready.catch(() => {});
+		const persistence = { ready, state: { phase: 'error', pendingChanges: 0, lastSyncedAt: null, unverifiedSince: null }, onChange: () => () => {}, invalidate: () => {} };
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret, persistence as never);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('storage'));
+		provider.retry();
+		events.dispatchEvent(new Event('online'));
+		expect(Socket.instances).toHaveLength(0);
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'storage', checking: false });
+	});
+
 	it('says the group is full and waits minutes, not seconds, before replaying it again', async () => {
 		vi.useFakeTimers();
 		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
