@@ -42,6 +42,12 @@ describe('describeSync', () => {
 		expect(view.banner).toBe(view.body);
 	});
 
+	it('points to a backup when the server cannot store changes', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'storage' }), null, NOW);
+		expect(view.body).toContain('export a backup from Settings');
+		expect(view.banner).toContain('export a backup from Settings');
+	});
+
 	it('words a plain HTTP origin as terminal and names the fix', () => {
 		const view = describeSync(status({ phase: 'error', problem: 'insecure' }), null, NOW);
 		expect(view).toMatchObject({ state: 'error', retry: false });

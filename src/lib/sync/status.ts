@@ -19,7 +19,7 @@ export const LOCAL_STATUS: SyncStatus = {
 export const PROBLEM_LABELS: Record<SyncProblem, string> = {
 	network: 'The sync server could not be reached. We’ll keep trying.',
 	timeout: 'The sync server is taking too long to respond. We’ll keep trying.',
-	storage: 'The server couldn’t save your changes. They still need to sync.',
+	storage: 'The server couldn’t save your changes. They still need to sync. If this keeps happening, export a backup from Settings.',
 	decrypt: 'Some group data couldn’t be read. Check that you have the correct invite link.',
 	protocol: 'This server needs an update before sync can be verified.',
 	history: 'Older server history is incomplete. Keep your existing devices and export a backup in Settings.',
