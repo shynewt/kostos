@@ -18,7 +18,10 @@ import {
 	hashesEqual, parseProofProtocol, proofHash
 } from '../sync/room-access.js';
 
-type Entry = { seq: number; hash: string; payload: ArrayBuffer };
+type Entry = { payload: ArrayBuffer };
+
+/** The old KV history held at most this many entries, so a full one may have lost older ones. */
+const LEGACY_HISTORY_LIMIT = 1000;
 
 /** Running payload totals in sync_meta: summing rows bills a read per row, so writes adjust these instead. */
 const LIVE_BYTES = 'live_bytes';
@@ -52,7 +55,7 @@ export class SyncRoom extends DurableObject {
 			for (let i = 0; i < old.length; i++) {
 				storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', `legacy:${i}`, old[i]);
 			}
-			storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', ?), ('migrated', 1)", old.length < 1000 ? 1 : 0);
+			storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', ?), ('migrated', 1)", old.length < LEGACY_HISTORY_LIMIT ? 1 : 0);
 		});
 	}
 
@@ -125,7 +128,7 @@ export class SyncRoom extends DurableObject {
 			}
 			this.ctx.acceptWebSocket(server);
 			try {
-				for (const entry of this.ctx.storage.sql.exec<Entry>('SELECT seq, hash, payload FROM messages ORDER BY seq')) server.send(entry.payload);
+				for (const entry of this.ctx.storage.sql.exec<Entry>('SELECT payload FROM messages ORDER BY seq')) server.send(entry.payload);
 				const complete = this.ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'complete'").one().value === 1;
 				this.control(server, { type: 'ready', protocol: PROTOCOL_VERSION, revision: this.revision(), durable: true, complete });
 			} catch (error) {
@@ -140,53 +143,50 @@ export class SyncRoom extends DurableObject {
 		await this.initialized;
 		await this.serialized(async () => {
 			try {
-				if (typeof message === 'string') {
-					let control;
-					try { control = JSON.parse(message); } catch { return; }
-					if (!control || typeof control !== 'object') return;
-					if (control.type === 'complete') {
-						// A device that holds the data vouches for a history the old server trimmed.
-						this.ctx.storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', 1) ON CONFLICT(key) DO UPDATE SET value = 1");
-						return;
-					}
-					if (control.type === 'barrier' && typeof control.id === 'string' && control.id.length <= MAX_BARRIER_ID_LENGTH) {
-						this.control(ws, { type: 'caught-up', id: control.id, revision: this.revision() });
-					}
-					return;
-				}
-				let decoded;
-				try { decoded = unwrapPacket(new Uint8Array(message)); }
-				catch { this.control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, SIZE_CLOSE_REASON); return; }
-				const { payload, durable, compact } = decoded;
-				if (compact !== undefined) {
-					this.compact(ws, compact, payload);
-					return;
-				}
-				if (!durable) {
-					this.broadcast(ws, payload);
-					return;
-				}
-				const hash = await payloadHash(payload);
-				let revision = this.ctx.storage.sql.exec<{ seq: number }>('SELECT seq FROM messages WHERE hash = ?', hash).toArray()[0]?.seq;
-				if (revision === undefined) {
-					if (this.atEntryLimit() || this.exceedsCap(payload.byteLength)) {
-						this.control(ws, ROOM_FULL_MESSAGE);
-						ws.close(INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON);
-						return;
-					}
-					revision = this.ctx.storage.transactionSync(() => {
-						this.ctx.storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', hash, payload);
-						this.addBytes(LIVE_BYTES, payload.byteLength);
-						return this.revision();
-					});
-					this.broadcast(ws, payload, revision);
-				}
-				this.control(ws, { type: 'ack', hash, revision });
+				if (typeof message === 'string') this.handleControl(ws, message);
+				else await this.handleWrite(ws, message);
 			} catch (error) {
 				this.logFailure(error);
 				try { this.control(ws, STORAGE_ERROR_MESSAGE); ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_CLOSE_REASON); } catch { /* Closed peer. */ }
 			}
 		});
+	}
+
+	private handleControl(ws: WebSocket, text: string): void {
+		let message;
+		try { message = JSON.parse(text); } catch { return; }
+		if (!message || typeof message !== 'object') return;
+		if (message.type === 'complete') {
+			// A device that holds the data vouches for a history the old server trimmed.
+			this.ctx.storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', 1) ON CONFLICT(key) DO UPDATE SET value = 1");
+		} else if (message.type === 'barrier' && typeof message.id === 'string' && message.id.length <= MAX_BARRIER_ID_LENGTH) {
+			this.control(ws, { type: 'caught-up', id: message.id, revision: this.revision() });
+		}
+	}
+
+	private async handleWrite(ws: WebSocket, packet: ArrayBuffer): Promise<void> {
+		let decoded;
+		try { decoded = unwrapPacket(new Uint8Array(packet)); }
+		catch { this.control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, SIZE_CLOSE_REASON); return; }
+		const { payload, durable, compact } = decoded;
+		if (compact !== undefined) { this.compact(ws, compact, payload); return; }
+		if (!durable) { this.broadcast(ws, payload); return; }
+		const hash = await payloadHash(payload);
+		let revision = this.ctx.storage.sql.exec<{ seq: number }>('SELECT seq FROM messages WHERE hash = ?', hash).toArray()[0]?.seq;
+		if (revision === undefined) {
+			if (this.atEntryLimit() || this.exceedsCap(payload.byteLength)) {
+				this.control(ws, ROOM_FULL_MESSAGE);
+				ws.close(INTERNAL_ERROR_CLOSE_CODE, ROOM_FULL_CLOSE_REASON);
+				return;
+			}
+			revision = this.ctx.storage.transactionSync(() => {
+				this.ctx.storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', hash, payload);
+				this.addBytes(LIVE_BYTES, payload.byteLength);
+				return this.revision();
+			});
+			this.broadcast(ws, payload, revision);
+		}
+		this.control(ws, { type: 'ack', hash, revision });
 	}
 
 	/** The archive is recovery-only and never replayed, so its oldest rows make room for new ones. A
