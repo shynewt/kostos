@@ -12,7 +12,7 @@ Fields:
 Checklist:
 
 - [ ] Domain registered, zone in the same Cloudflare account, `CLOUDFLARE_API_TOKEN` scope includes it.
-- [ ] `APP_DOMAIN` replaced in the route pattern of `wrangler.toml` and the `production` environment `url:` of `.github/workflows/release.yml`. `rg -n APP_DOMAIN wrangler.toml` finds nothing, and `rg -n "url: https://APP_DOMAIN" .github/workflows/release.yml` finds nothing (those are the two things the Release workflow's guard checks). Edit only these two spots, never a global search-and-replace: the guard builds its search word from two pieces on purpose, and a blanket replace would rewrite the guard itself.
+- [ ] `APP_DOMAIN` replaced in the route pattern of `wrangler.toml` and the `production` environment `url:` of `.github/workflows/release.yml`. `rg -n APP_DOMAIN wrangler.toml` finds nothing, and `rg -n "url: https://APP_DOMAIN" .github/workflows/release.yml` finds nothing (those are the two things the Release workflow's guard checks). Edit only these two spots rather than running a global search-and-replace, which would also rewrite the placeholders in the commands on this page. (The guard itself survives a global replace; it builds its search word from two pieces.)
 - [ ] The README live demo link points at the real domain: `rg -n "https://APP_DOMAIN" README.md` finds nothing.
 - [ ] On the `legacy` branch, `src/lib/migration.ts` sets real values for `APP_HOST` and `RETIREMENT_DATE`: `rg -n "= '(APP_DOMAIN|RETIREMENT_DATE)'" src/lib/migration.ts` finds nothing.
 - [ ] `workers_dev = false` and `preview_urls = false` on the new Worker, so there is no second public origin.
