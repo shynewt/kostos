@@ -1,12 +1,12 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRelay } from './relay.js';
-import { joinRoom, openSocket, PROOF, terminateOpenSockets, until } from './test-helpers.js';
-import { MAX_MESSAGE_BYTES, payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { joinRoom, largePacket, openSocket, packet, PROOF, snapshot, terminateOpenSockets, until } from './test-helpers.js';
+import { payloadHash } from '../src/lib/sync/relay-protocol.js';
 import { parseProofProtocol } from '../src/lib/sync/room-access.js';
 
 const ROOM = 'a'.repeat(64);
@@ -57,11 +57,12 @@ const proofOf = (request: { headers: Record<string, string | string[] | undefine
 
 let server: WebSocketServer;
 let directory: string;
-async function start(dir?: string) {
+let attach: ReturnType<typeof createRelay>;
+async function start(dir?: string, onConnection?: (ws: WebSocket) => void) {
 	directory = dir ?? await mkdtemp(join(tmpdir(), 'kostos-relay-'));
 	server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
-	const attach = createRelay(directory);
-	server.on('connection', (ws, request) => attach(ws, ROOM, proofOf(request)));
+	attach = createRelay(directory);
+	server.on('connection', (ws, request) => { attach(ws, ROOM, proofOf(request)); onConnection?.(ws); });
 	await new Promise<void>((resolve) => server.once('listening', resolve));
 	return `ws://127.0.0.1:${(server.address() as { port: number }).port}`;
 }
@@ -74,21 +75,14 @@ afterEach(async () => {
 	if (server) await stop();
 	if (directory) await rm(directory, { recursive: true, force: true });
 });
-function packet(seed: number, durable = true) {
-	const out = Buffer.alloc(45); out.set([75, 79, 83, 51, durable ? 1 : 0]); out.writeUInt32BE(seed, 8); return out;
-}
 
 beforeEach(() => { fsSpy.calls.length = 0; });
 
 describe('durable encrypted relay', () => {
 	it('drain waits for queued writes so a shutdown cannot cut one off', async () => {
-		directory = await mkdtemp(join(tmpdir(), 'kostos-relay-'));
-		server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
-		const attach = createRelay(directory);
 		let received = 0;
-		server.on('connection', (ws, request) => { attach(ws, ROOM, proofOf(request)); ws.on('message', (_data, binary) => { if (binary) received++; }); });
-		await new Promise<void>((resolve) => server.once('listening', resolve));
-		const sender = await joinRoom(`ws://127.0.0.1:${(server.address() as { port: number }).port}`);
+		const url = await start(undefined, (ws) => ws.on('message', (_data, binary) => { if (binary) received++; }));
+		const sender = await joinRoom(url);
 		for (let i = 0; i < 200; i++) sender.ws.send(packet(i));
 		await until(() => received === 200);
 		await attach.drain();
@@ -140,7 +134,7 @@ describe('durable encrypted relay', () => {
 		const url = await start(); const a = await joinRoom(url);
 		a.ws.send(packet(1));
 		await until(() => a.controls.some((m) => m.type === 'ack'));
-		const snap = Buffer.alloc(60); snap.set([75, 79, 83, 51, 2]); snap.writeUInt32BE(1, 5); a.ws.send(snap);
+		a.ws.send(snapshot(1, 60));
 		a.ws.send(JSON.stringify({ type: 'barrier', id: 'x' }));
 		await until(() => a.controls.some((m) => m.type === 'caught-up'));
 		expect(a.controls.at(-1)).toMatchObject({ revision: 1 });
@@ -222,10 +216,9 @@ describe('durable encrypted relay', () => {
 	});
 	it('refuses writes past the room storage cap and keeps what was acknowledged', async () => {
 		const url = await start(); const sender = await joinRoom(url);
-		const large = () => Buffer.concat([Buffer.from([75, 79, 83, 51, 1]), randomBytes(MAX_MESSAGE_BYTES - 5)]);
 		let acknowledged = 0;
 		for (let i = 0; i < 40 && !sender.controls.some((m) => m.type === 'error'); i++) {
-			sender.ws.send(large());
+			sender.ws.send(largePacket());
 			await until(() => sender.controls.some((m) => m.type === 'ack' && m.revision === acknowledged + 1) || sender.controls.some((m) => m.type === 'error'));
 			if (!sender.controls.some((m) => m.type === 'error')) acknowledged++;
 		}

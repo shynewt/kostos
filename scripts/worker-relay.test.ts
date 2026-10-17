@@ -1,6 +1,6 @@
 /* Exercise the production Durable Object inside the same Workers runtime used
  * by Wrangler, including legacy KV migration and a cold storage restart. */
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MAX_MESSAGE_BYTES } from '../src/lib/sync/relay-protocol.js';
-import { joinRoom, openSocket, PROOF, proofProtocol, terminateOpenSockets, until } from './test-helpers.js';
+import { joinRoom, largePacket, openSocket, packet, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 
 const room = (name: string) => createHash('sha256').update(name).digest('hex');
 
@@ -66,12 +66,12 @@ describe('Cloudflare Durable Object sync', () => {
 	});
 	it('commits, fans out, acknowledges and establishes the same barrier as Node', async () => {
 		const a = await connect('live'); const b = await connect('live');
-		const packet = Buffer.alloc(45); packet.set([75, 79, 83, 51, 1]);
-		a.ws.send(packet); a.ws.send(JSON.stringify({ type: 'barrier', id: 'done' }));
+		const update = packet();
+		a.ws.send(update); a.ws.send(JSON.stringify({ type: 'barrier', id: 'done' }));
 		await until(() => a.controls.some((m) => m.type === 'caught-up'));
 		expect(a.controls.find((m) => m.type === 'ack')).toMatchObject({ revision: 1 });
 		expect(a.controls.at(-1)).toEqual({ type: 'caught-up', id: 'done', revision: 1 });
-		expect(b.binary).toEqual([packet.subarray(5)]);
+		expect(b.binary).toEqual([update.subarray(5)]);
 		expect(b.controls.at(-1)).toEqual({ type: 'revision', revision: 1 });
 	});
 	it('replays after a cold restart with all peers gone and preserves the migration marker', async () => {
@@ -94,12 +94,12 @@ describe('Cloudflare Durable Object sync', () => {
 	});
 	it('replaces a long history with a snapshot, keeping revision numbers and later entries', async () => {
 		const a = await connect('compact');
-		for (let i = 0; i < 5; i++) { const p = Buffer.alloc(45); p.set([75, 79, 83, 51, 1]); p.writeUInt32BE(i, 8); a.ws.send(p); }
+		for (let i = 0; i < 5; i++) a.ws.send(packet(i));
 		await until(() => a.controls.some((m) => m.type === 'ack' && m.revision === 5));
-		const snap = Buffer.alloc(60); snap.set([75, 79, 83, 51, 2]); snap.writeUInt32BE(5, 5); snap.write('snapshot', 20);
+		const snap = snapshot(5, 60);
 		a.ws.send(snap);
 		await until(() => a.controls.some((m) => m.type === 'compacted'));
-		const later = Buffer.alloc(45); later.set([75, 79, 83, 51, 1]); later.writeUInt32BE(99, 8); a.ws.send(later);
+		a.ws.send(packet(99));
 		await until(() => a.controls.some((m) => m.type === 'ack' && m.revision === 6));
 		const b = await connect('compact');
 		expect(b.binary).toHaveLength(2);
@@ -110,7 +110,6 @@ describe('Cloudflare Durable Object sync', () => {
 
 describe('room access', () => {
 	const upgrade = { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': proofProtocol(PROOF) };
-	const packet = (seed: number) => { const out = Buffer.alloc(45); out.set([75, 79, 83, 51, 1]); out.writeUInt32BE(seed, 8); return out; };
 
 	it('answers 400 for a relay room ID that is not 64 lowercase hex, before any Durable Object runs', async () => {
 		for (const bad of ['SMALL', 'PRT-AAAA-BBBB', room('x').toUpperCase(), room('x').slice(1), `${room('x')}0`, '%2F']) {
@@ -165,22 +164,17 @@ describe('room access', () => {
 });
 
 describe('room storage cap', () => {
-	const largePacket = () => Buffer.concat([Buffer.from([75, 79, 83, 51, 1]), randomBytes(MAX_MESSAGE_BYTES - 5)]);
-	const smallPacket = (seed: number) => { const out = Buffer.alloc(45); out.set([75, 79, 83, 51, 1]); out.writeUInt32BE(seed, 8); return out; };
-	const snapshot = (through: number, size: number) => {
-		const out = Buffer.alloc(size); out.set([75, 79, 83, 51, 2]); out.writeUInt32BE(through, 5); return out;
-	};
 	const hasType = (peer: { controls: Record<string, unknown>[] }, type: string) => peer.controls.some((m) => m.type === type);
 
 	/** Writes until the room refuses. Returns what was stored, in order, and leaves the closed socket behind. */
 	async function fillToCap(name: string, leading: Buffer[] = []) {
 		const full = await connect(name);
 		const stored: Buffer[] = [];
-		for (const packet of [...leading, ...Array.from({ length: 40 }, largePacket)]) {
-			full.ws.send(packet);
+		for (const update of [...leading, ...Array.from({ length: 40 }, largePacket)]) {
+			full.ws.send(update);
 			await until(() => full.controls.some((m) => m.type === 'ack' && m.revision === stored.length + 1) || hasType(full, 'error'));
 			if (hasType(full, 'error')) break;
-			stored.push(packet);
+			stored.push(update);
 		}
 		expect(full.controls.at(-1)).toEqual({ type: 'error', reason: 'storage' });
 		expect(await full.closed).toBe(1011);
@@ -215,7 +209,7 @@ describe('room storage cap', () => {
 	}, 60_000);
 
 	it('ignores a snapshot that would push the live history past the cap', async () => {
-		const stored = await fillToCap('snapshot-overflow', [smallPacket(1), smallPacket(2)]);
+		const stored = await fillToCap('snapshot-overflow', [packet(1), packet(2)]);
 		const device = await connect('snapshot-overflow');
 		device.ws.send(snapshot(2, MAX_MESSAGE_BYTES));
 		device.ws.send(JSON.stringify({ type: 'barrier', id: 'after' }));

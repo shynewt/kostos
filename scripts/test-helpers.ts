@@ -1,5 +1,7 @@
 /* Shared by the relay tests: polling, proof values and a WebSocket that records what it receives. */
+import { randomBytes } from 'node:crypto';
 import WebSocket from 'ws';
+import { MAX_MESSAGE_BYTES, PACKET_MAGIC } from '../src/lib/sync/relay-protocol.js';
 import { PROOF_PREFIX } from '../src/lib/sync/room-access.js';
 
 export const PROOF = 'P'.repeat(43);
@@ -12,6 +14,27 @@ export async function until(check: () => boolean, timeoutMs = 15_000) {
 		if (Date.now() > deadline) throw new Error(`Timed out after ${timeoutMs}ms waiting for a condition`);
 		await new Promise((resolve) => setTimeout(resolve, 5));
 	}
+}
+
+/** A 45 byte versioned packet; `seed` makes its payload (and so its hash) unique. */
+export function packet(seed = 0, durable = true) {
+	const out = Buffer.alloc(45);
+	out.set([...PACKET_MAGIC, durable ? 1 : 0]);
+	out.writeUInt32BE(seed, 8);
+	return out;
+}
+
+/** A durable packet at the transport size limit, filled with random bytes. */
+export function largePacket() {
+	return Buffer.concat([Buffer.from([...PACKET_MAGIC, 1]), randomBytes(MAX_MESSAGE_BYTES - 5)]);
+}
+
+/** A request to replace every entry up to revision `through`; `size` is the whole packet. */
+export function snapshot(through: number, size: number) {
+	const out = Buffer.alloc(size);
+	out.set([...PACKET_MAGIC, 2]);
+	out.writeUInt32BE(through, 5);
+	return out;
 }
 
 export type Control = Record<string, unknown>;

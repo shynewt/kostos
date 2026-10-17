@@ -139,9 +139,8 @@ for (const { script, port, probes, withoutProof } of relays) {
 		for (const [path, expected] of Object.entries(probes)) {
 			it(`survives a malformed frame on ${path}`, async () => {
 				expect(await sendBadFrame(port, path)).toBe(expected);
-				await new Promise((resolve) => setTimeout(resolve, 100));
+				expect(await pingPong(port), relay!.stderr()).toBe('pong');
 				expect(relay!.child.exitCode, relay!.stderr()).toBeNull();
-				expect(await pingPong(port)).toBe('pong');
 			});
 		}
 
