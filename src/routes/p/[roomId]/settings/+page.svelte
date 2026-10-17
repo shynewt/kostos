@@ -9,6 +9,7 @@
 	import SettingsNavRow from '$lib/components/SettingsNavRow.svelte';
 	import SplitDefaultCard from '$lib/components/SplitDefaultCard.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
+	import { plural } from '$lib/plural';
 	import { getCurrentMember, removeProject, setCurrentMember } from '$lib/storage';
 	import { updateMember, updateProject } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
@@ -261,7 +262,7 @@
 
 			<div class="section-head">
 				<div class="eyebrow">Data</div>
-				<span class="dim mono section-count">{expenses.length} expenses</span>
+				<span class="dim mono section-count">{plural(expenses.length, 'expense', 'expenses')}</span>
 			</div>
 			<div class="card data-card">
 				<button type="button" class="data-row" onclick={exportJson}>
@@ -273,7 +274,7 @@
 					</span>
 					<span class="col data-text">
 						<span class="data-title">Export backup (JSON)</span>
-						<span class="data-sub">Full lossless copy. Restore from "New project".</span>
+						<span class="data-sub">Full copy. To restore it, tap New group, then Restore instead.</span>
 					</span>
 				</button>
 				<hr class="hairline" />

@@ -3,6 +3,7 @@
 	import { currencyDecimals } from '$lib/currencies';
 	import { isV1Export, mapV1ToV2, type ImportResult } from '$lib/import/v1';
 	import { createGroup } from '$lib/io/restoreProject';
+	import { plural } from '$lib/plural';
 
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 	let parsed = $state<ImportResult | null>(null);
@@ -142,7 +143,7 @@
 				<div class="eyebrow">Ready to import</div>
 				<div class="h2 project-name">{parsed.project.name}</div>
 				<div class="dim mono preview-meta">
-					{parsed.project.currency} · {parsed.stats.memberCount} members · {parsed.stats.expenseCount} expenses
+					{parsed.project.currency} · {plural(parsed.stats.memberCount, 'member', 'members')} · {plural(parsed.stats.expenseCount, 'expense', 'expenses')}
 				</div>
 
 				<div class="stats-row">
