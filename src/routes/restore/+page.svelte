@@ -142,7 +142,7 @@
 			</div>
 
 			<div class="section-head">
-				<div class="eyebrow">Which member is you?</div>
+				<div class="eyebrow">Which member are you?</div>
 			</div>
 			<div class="card members-card">
 				{#each archive.members as m, i (m.id)}
