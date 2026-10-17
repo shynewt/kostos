@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import FormError from '$lib/components/FormError.svelte';
 	import MemberPicker from '$lib/components/MemberPicker.svelte';
 	import { parseProjectArchive, type ProjectArchive } from '$lib/io/projectArchive';
@@ -11,6 +11,14 @@
 	let parseError = $state<string | null>(null);
 	let restoring = $state(false);
 	let youMemberId = $state<string | null>(null);
+
+	// Cancel returns to wherever the user came from (/new, or a legacy group's banner)
+	let arrivedByLink = false;
+	afterNavigate(({ type }) => { arrivedByLink = type !== 'enter'; });
+	function cancel() {
+		if (arrivedByLink) history.back();
+		else goto('/');
+	}
 
 	const canRestore = $derived(archive !== null && youMemberId !== null);
 
@@ -72,7 +80,7 @@
 <div class="screen" data-page="restore">
 	<header class="app-bar">
 		<div class="row gap-8" style="flex: 1;">
-			<button class="icon-btn" aria-label="Cancel" onclick={() => goto('/new')}>
+			<button class="icon-btn" aria-label="Cancel" onclick={cancel}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
 					<path d="M6 6l12 12M18 6L6 18" />
 				</svg>
