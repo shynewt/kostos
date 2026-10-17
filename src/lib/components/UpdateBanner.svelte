@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { UPDATE_NOTICE_TEXT } from '$lib/migration';
 
 	/* Service-worker update prompt (vite-pwa "prompt for update" recipe).
 	 *
@@ -60,10 +61,6 @@
 		if (!triggerUpdate) return;
 		await triggerUpdate();
 	}
-
-	function dismiss() {
-		needRefresh = false;
-	}
 </script>
 
 {#if needRefresh}
@@ -74,8 +71,7 @@
 				<path d="M5 20h14" />
 			</svg>
 		</span>
-		<span class="update-text">A new version of Kostos is ready.</span>
-		<button type="button" class="dismiss-btn" onclick={dismiss}>Later</button>
+		<span class="update-text">{UPDATE_NOTICE_TEXT}</span>
 		<button type="button" class="update-btn" onclick={onUpdate} disabled={updating}>
 			{updating ? 'Updating…' : 'Update'}
 		</button>
@@ -119,19 +115,6 @@
 		font-size: 14px;
 		font-weight: 500;
 		color: var(--ink);
-	}
-
-	.dismiss-btn {
-		flex-shrink: 0;
-		border: 0;
-		background: transparent;
-		color: var(--ink-2);
-		padding: 9px 10px;
-		font: inherit;
-		font-size: 13px;
-		border-radius: 999px;
-		cursor: pointer;
-		-webkit-tap-highlight-color: transparent;
 	}
 
 	.update-btn {

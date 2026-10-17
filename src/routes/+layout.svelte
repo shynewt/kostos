@@ -12,6 +12,7 @@
 	import '$lib/styles/app.css';
 
 	import MathToolbar from '$lib/components/MathToolbar.svelte';
+	import MigrationBanner from '$lib/components/MigrationBanner.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	const isProd = !import.meta.env.DEV;
@@ -25,6 +26,7 @@
 	{/if}
 </svelte:head>
 
+<MigrationBanner />
 {@render children()}
 <MathToolbar />
 <UpdateBanner />

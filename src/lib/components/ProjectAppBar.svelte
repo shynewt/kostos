@@ -1,4 +1,5 @@
 <script lang="ts">
+	import MoveGroupCard from './MoveGroupCard.svelte';
 	import SyncBanner from './SyncBanner.svelte';
 	import SyncStatus from './SyncStatus.svelte';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
@@ -78,6 +79,7 @@
 	</div>
 </header>
 <SyncBanner conflicts />
+<MoveGroupCard />
 
 {#if showShare}
 	<section class="card share-card">
