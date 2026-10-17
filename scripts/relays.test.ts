@@ -9,15 +9,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
+import { openSocket, PROOF, proofProtocol, until } from './test-helpers.js';
 
 const ROOM = 'a'.repeat(64);
-const PROOF = 'P'.repeat(43);
-const PROOF_PROTOCOL = `kostos1.${PROOF}`;
 
 const UPGRADE_BASE =
 	'Host: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n' +
 	'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n';
-const UPGRADE_HEADERS = `${UPGRADE_BASE}Sec-WebSocket-Protocol: ${PROOF_PROTOCOL}\r\n\r\n`;
+const UPGRADE_HEADERS = `${UPGRADE_BASE}Sec-WebSocket-Protocol: ${proofProtocol(PROOF)}\r\n\r\n`;
 const UPGRADE_WITHOUT_PROOF = `${UPGRADE_BASE}\r\n`;
 
 // an unmasked client frame, which the protocol forbids; ws raises an 'error' on it
@@ -93,7 +92,7 @@ function sendBadFrame(port: number, path: string, headers = UPGRADE_HEADERS): Pr
 
 function pingPong(port: number): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/${ROOM}`, [PROOF_PROTOCOL]);
+		const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/${ROOM}`, [proofProtocol(PROOF)]);
 		const timer = setTimeout(() => {
 			ws.terminate();
 			reject(new Error('no pong'));
@@ -110,23 +109,6 @@ function pingPong(port: number): Promise<string> {
 			reject(err);
 		});
 	});
-}
-
-async function until(check: () => boolean) {
-	const deadline = Date.now() + STEP_TIMEOUT_MS;
-	while (!check()) {
-		if (Date.now() > deadline) throw new Error('Relay did not respond');
-		await new Promise((resolve) => setTimeout(resolve, 5));
-	}
-}
-
-function dial(port: number, proof: string) {
-	const ws = new WebSocket(`ws://127.0.0.1:${port}/sync/${ROOM}`, [`kostos1.${proof}`]);
-	const controls: Record<string, unknown>[] = [];
-	const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
-	ws.on('message', (data, binary) => { if (!binary && data.toString() !== 'pong') controls.push(JSON.parse(data.toString())); });
-	ws.on('error', () => {});
-	return { ws, controls, closed };
 }
 
 const relays: { script: string; port: number; probes: Record<string, Probe>; withoutProof: Probe }[] = [
@@ -168,9 +150,10 @@ for (const { script, port, probes, withoutProof } of relays) {
 			expect(await pingPong(port)).toBe('pong');
 		});
 		it('tells a client with the wrong proof it was denied, then closes it', async () => {
-			const owner = await dial(port, PROOF);
-			await until(() => owner.controls.length > 0);
-			const intruder = await dial(port, 'Q'.repeat(43));
+			const url = `ws://127.0.0.1:${port}/sync/${ROOM}`;
+			const owner = await openSocket(url, PROOF);
+			await until(() => owner.controls.length > 0, STEP_TIMEOUT_MS);
+			const intruder = await openSocket(url, 'Q'.repeat(43));
 			expect(await intruder.closed).toBe(1008);
 			expect(intruder.controls).toEqual([{ type: 'denied' }]);
 			owner.ws.terminate();

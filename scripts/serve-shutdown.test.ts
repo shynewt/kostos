@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import WebSocket from 'ws';
+import { openSocket, terminateOpenSockets } from './test-helpers.js';
 
 const SERVE = fileURLToPath(new URL('./serve.js', import.meta.url));
 let child: ChildProcess | undefined;
@@ -23,6 +23,7 @@ async function startServer(port: number) {
 }
 
 afterEach(async () => {
+	terminateOpenSockets();
 	child?.kill('SIGKILL');
 	child = undefined;
 	if (directory) await rm(directory, { recursive: true, force: true });
@@ -31,9 +32,7 @@ afterEach(async () => {
 describe('serve.js shutdown', () => {
 	it('exits cleanly and quickly on SIGTERM, telling connected clients to reconnect', async () => {
 		await startServer(18_762);
-		const ws = new WebSocket(`ws://127.0.0.1:18762/sync/${'b'.repeat(64)}`, [`kostos1.${'P'.repeat(43)}`]);
-		await new Promise<void>((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-		const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+		const { closed } = await openSocket(`ws://127.0.0.1:18762/sync/${'b'.repeat(64)}`);
 		const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
 			child!.once('exit', (code, signal) => resolve({ code, signal }))
 		);

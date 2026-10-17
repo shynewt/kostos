@@ -6,18 +6,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
-import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MAX_MESSAGE_BYTES } from '../src/lib/sync/relay-protocol.js';
+import { joinRoom, openSocket, PROOF, proofProtocol, terminateOpenSockets, until } from './test-helpers.js';
 
-const PROOF = 'P'.repeat(43);
 const room = (name: string) => createHash('sha256').update(name).digest('hex');
 
 let mf: Miniflare;
 let directory: string;
 let scriptPath: string;
 let script: string;
-const clients: WebSocket[] = [];
 const legacyScript = `export class SyncRoom {
  constructor(ctx) { this.ctx = ctx; }
  async fetch(request) {
@@ -42,25 +40,18 @@ beforeAll(async () => {
 	await mf.setOptions({ ...options(), script });
 	await mf.ready;
 }, 30_000);
-afterAll(async () => { for (const client of clients) client.terminate(); await mf?.dispose(); await rm(directory, { recursive: true, force: true }); });
+afterAll(async () => {
+	terminateOpenSockets();
+	await mf?.dispose();
+	await rm(directory, { recursive: true, force: true });
+});
 async function open(name: string, proof = PROOF) {
-	const url = await mf.ready;
-	const ws = new WebSocket(`ws://${url.host}/sync/${room(name)}`, [`kostos1.${proof}`]); clients.push(ws);
-	const binary: Buffer[] = [];
-	const controls: Record<string, unknown>[] = [];
-	const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
-	ws.on('message', (data, isBinary) => { if (isBinary) binary.push(Buffer.from(data as Buffer)); else controls.push(JSON.parse(data.toString())); });
-	await new Promise<void>((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-	return { ws, binary, controls, closed };
+	const { host } = await mf.ready;
+	return openSocket(`ws://${host}/sync/${room(name)}`, proof);
 }
 async function connect(name: string, proof = PROOF) {
-	const peer = await open(name, proof);
-	await until(() => peer.controls.some((m) => m.type === 'ready'));
-	return peer;
-}
-async function until(check: () => boolean) {
-	const deadline = Date.now() + 10_000;
-	while (!check()) { if (Date.now() > deadline) throw new Error('Worker did not respond'); await new Promise((r) => setTimeout(r, 5)); }
+	const { host } = await mf.ready;
+	return joinRoom(`ws://${host}/sync/${room(name)}`, proof);
 }
 
 describe('Cloudflare Durable Object sync', () => {
@@ -83,7 +74,7 @@ describe('Cloudflare Durable Object sync', () => {
 		expect(b.controls.at(-1)).toEqual({ type: 'revision', revision: 1 });
 	});
 	it('replays after a cold restart with all peers gone and preserves the migration marker', async () => {
-		for (const client of clients.splice(0)) client.terminate();
+		terminateOpenSockets();
 		await mf.dispose(); mf = new Miniflare({ ...options(), script }); await mf.ready;
 		const live = await connect('live');
 		expect(live.binary).toHaveLength(1);
@@ -117,7 +108,7 @@ describe('Cloudflare Durable Object sync', () => {
 });
 
 describe('room access', () => {
-	const upgrade = { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': `kostos1.${PROOF}` };
+	const upgrade = { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': proofProtocol(PROOF) };
 	const packet = (seed: number) => { const out = Buffer.alloc(45); out.set([75, 79, 83, 51, 1]); out.writeUInt32BE(seed, 8); return out; };
 
 	it('answers 400 for a relay room ID that is not 64 lowercase hex, before any Durable Object runs', async () => {
@@ -130,13 +121,13 @@ describe('room access', () => {
 	it('answers 401 when no proof, or a malformed one, is offered', async () => {
 		const bare = await mf.dispatchFetch(`http://local/sync/${room('open')}`, { headers: { Upgrade: 'websocket' } });
 		expect(bare.status).toBe(401);
-		const malformed = await mf.dispatchFetch(`http://local/sync/${room('open')}`, { headers: { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': 'kostos1.short' } });
+		const malformed = await mf.dispatchFetch(`http://local/sync/${room('open')}`, { headers: { Upgrade: 'websocket', 'Sec-WebSocket-Protocol': proofProtocol('short') } });
 		expect(malformed.status).toBe(401);
 	});
 
 	it('echoes the proof subprotocol so browsers accept the upgrade', async () => {
 		const owner = await connect('echo');
-		expect(owner.ws.protocol).toBe(`kostos1.${PROOF}`);
+		expect(owner.ws.protocol).toBe(proofProtocol(PROOF));
 	});
 
 	it('tells a different proof it was denied, closes it with 1008 and ignores what it sends', async () => {
@@ -147,7 +138,7 @@ describe('room access', () => {
 		intruder.ws.send(packet(2));
 		await until(() => intruder.controls.length > 0);
 		expect(intruder.controls).toEqual([{ type: 'denied' }]);
-		expect(intruder.ws.protocol).toBe(`kostos1.${'Q'.repeat(43)}`);
+		expect(intruder.ws.protocol).toBe(proofProtocol('Q'.repeat(43)));
 		expect(await intruder.closed).toBe(1008);
 		expect(intruder.binary).toHaveLength(0);
 		const reader = await connect('claimed');
@@ -157,7 +148,7 @@ describe('room access', () => {
 
 	it('keeps the claim across a cold restart', async () => {
 		await connect('restart');
-		for (const client of clients.splice(0)) client.terminate();
+		terminateOpenSockets();
 		await mf.dispose(); mf = new Miniflare({ ...options(), script }); await mf.ready;
 		const intruder = await open('restart', 'Q'.repeat(43));
 		await until(() => intruder.controls.length > 0);
