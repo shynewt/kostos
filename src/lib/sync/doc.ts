@@ -114,12 +114,15 @@ export async function destroyRoom(roomId: string): Promise<void> {
 	const entry = cache.get(roomId);
 	if (!entry) return;
 	if (entry.handle.syncProvider) entry.handle.syncProvider.destroy();
-	if (entry.persistence) {
-		await entry.persistence.destroy();
-		await entry.persistence.clearData();
+	try {
+		if (entry.persistence) {
+			await entry.persistence.destroy();
+			await entry.persistence.clearData();
+		}
+	} finally {
+		entry.handle.doc.destroy();
+		cache.delete(roomId);
 	}
-	entry.handle.doc.destroy();
-	cache.delete(roomId);
 }
 
 export function readProject(handle: RoomHandle): Project | null {
