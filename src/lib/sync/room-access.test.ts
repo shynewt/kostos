@@ -3,7 +3,6 @@ import {
 	hashesEqual,
 	isProofHash,
 	parseProofProtocol,
-	parseRoomId,
 	parseSyncRequest,
 	PROOF_PREFIX,
 	proofHash,
@@ -14,30 +13,14 @@ import {
 const room = 'a1'.repeat(32);
 const proof = 'A'.repeat(43);
 
-describe('parseRoomId', () => {
-	it('accepts exactly 64 lowercase hex characters', () => {
-		expect(parseRoomId(room)).toBe(room);
-	});
-
-	it('rejects old room names, uppercase, wrong lengths and non-hex', () => {
-		expect(parseRoomId('PRT-AB23-CD45')).toBeNull();
-		expect(parseRoomId(room.toUpperCase())).toBeNull();
-		expect(parseRoomId(room.slice(1))).toBeNull();
-		expect(parseRoomId(`${room}0`)).toBeNull();
-		expect(parseRoomId('g'.repeat(64))).toBeNull();
-		expect(parseRoomId(`${room.slice(1)}\n`)).toBeNull();
-		expect(parseRoomId('')).toBeNull();
-	});
-});
-
 describe('relayRoomIdFromPath', () => {
 	it('reads the room ID after the sync prefix', () => {
 		expect(relayRoomIdFromPath(`${SYNC_PATH_PREFIX}${room}`)).toBe(room);
 		expect(relayRoomIdFromPath(`/sync/${room.replace('a', '%61')}`)).toBe(room);
 	});
 
-	it('returns null for other paths, bad escapes and invalid room IDs', () => {
-		for (const bad of ['/', `/${room}`, '/sync', '/sync/', '/sync/%ZZ', `/sync/${room}/extra`, `/sync/${room.toUpperCase()}`, '/sync/PRT-AAAA-BBBB']) {
+	it('returns null for other paths, bad escapes and room IDs that are not exactly 64 lowercase hex characters', () => {
+		for (const bad of ['/', `/${room}`, '/sync', '/sync/', '/sync/%ZZ', `/sync/${room}/extra`, `/sync/${room.toUpperCase()}`, '/sync/PRT-AAAA-BBBB', `/sync/${room.slice(1)}`, `/sync/${room}0`, `/sync/${'g'.repeat(64)}`, `/sync/${room.slice(1)}%0A`]) {
 			expect(relayRoomIdFromPath(bad), bad).toBeNull();
 		}
 	});

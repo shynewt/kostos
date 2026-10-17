@@ -7,9 +7,12 @@
  * barriers are serialized with writes, including across WebSocket hibernation.
  */
 import { DurableObject } from 'cloudflare:workers';
-import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../sync/relay-protocol.js';
 import {
-	DENIED_CLOSE_CODE, DENIED_MESSAGE, STORAGE_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
+	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
+	unwrapPacket, payloadHash
+} from '../sync/relay-protocol.js';
+import {
+	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
 	hashesEqual, parseProofProtocol, proofHash
 } from '../sync/room-access.js';
 
@@ -91,9 +94,9 @@ export class SyncRoom extends DurableObject {
 			try {
 				for (const entry of this.ctx.storage.sql.exec<Entry>('SELECT seq, hash, payload FROM messages ORDER BY seq')) server.send(entry.payload);
 				const complete = this.ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'complete'").one().value === 1;
-				this.control(server, { type: 'ready', protocol: 3, revision: this.revision(), durable: true, complete });
+				this.control(server, { type: 'ready', protocol: PROTOCOL_VERSION, revision: this.revision(), durable: true, complete });
 			} catch {
-				server.close(1011, 'Could not replay sync history');
+				server.close(INTERNAL_ERROR_CLOSE_CODE, 'Could not replay sync history');
 			}
 			return new Response(null, { status: 101, webSocket: client, headers });
 		});
@@ -112,14 +115,14 @@ export class SyncRoom extends DurableObject {
 						this.ctx.storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', 1) ON CONFLICT(key) DO UPDATE SET value = 1");
 						return;
 					}
-					if (control.type === 'barrier' && typeof control.id === 'string' && control.id.length <= 80) {
+					if (control.type === 'barrier' && typeof control.id === 'string' && control.id.length <= MAX_BARRIER_ID_LENGTH) {
 						this.control(ws, { type: 'caught-up', id: control.id, revision: this.revision() });
 					}
 					return;
 				}
 				let decoded;
 				try { decoded = unwrapPacket(new Uint8Array(message)); }
-				catch { this.control(ws, { type: 'error', reason: 'size' }); ws.close(1009, 'Invalid message size'); return; }
+				catch { this.control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, 'Invalid message size'); return; }
 				const { payload, durable, compact } = decoded;
 				if (compact !== undefined) {
 					this.compact(ws, compact, payload);
@@ -134,7 +137,7 @@ export class SyncRoom extends DurableObject {
 				if (revision === undefined) {
 					if (this.exceedsCap(payload.byteLength)) {
 						this.control(ws, STORAGE_ERROR_MESSAGE);
-						ws.close(STORAGE_CLOSE_CODE, STORAGE_FULL_REASON);
+						ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_FULL_REASON);
 						return;
 					}
 					revision = this.ctx.storage.transactionSync(() => {
@@ -145,7 +148,7 @@ export class SyncRoom extends DurableObject {
 				}
 				this.control(ws, { type: 'ack', hash, revision });
 			} catch {
-				try { this.control(ws, STORAGE_ERROR_MESSAGE); ws.close(STORAGE_CLOSE_CODE, 'Could not persist sync data'); } catch { /* Closed peer. */ }
+				try { this.control(ws, STORAGE_ERROR_MESSAGE); ws.close(INTERNAL_ERROR_CLOSE_CODE, 'Could not persist sync data'); } catch { /* Closed peer. */ }
 			}
 		});
 	}
@@ -172,13 +175,13 @@ export class SyncRoom extends DurableObject {
 			try {
 				peer.send(payload);
 				if (revision !== undefined) this.control(peer, { type: 'revision', revision });
-			} catch { try { peer.close(1011, 'Reconnect to receive updates'); } catch { /* Closed peer. */ } }
+			} catch { try { peer.close(INTERNAL_ERROR_CLOSE_CODE, 'Reconnect to receive updates'); } catch { /* Closed peer. */ } }
 		}
 	}
 	async webSocketClose(ws: WebSocket, code: number, reason: string): Promise<void> {
 		try { ws.close(code, reason); } catch { /* Already closed. */ }
 	}
 	async webSocketError(ws: WebSocket): Promise<void> {
-		try { ws.close(1011, 'Reconnect to sync'); } catch { /* Already closed. */ }
+		try { ws.close(INTERNAL_ERROR_CLOSE_CODE, 'Reconnect to sync'); } catch { /* Already closed. */ }
 	}
 }

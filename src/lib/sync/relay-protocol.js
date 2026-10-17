@@ -4,11 +4,17 @@ export const MAX_MESSAGE_BYTES = 1_048_576;
  *  compaction replaced. Past it a room refuses writes (the `storage` error) instead of dropping history.
  *  A Durable Object room recovers by compacting; a Node relay cannot compact, so its cap is permanent. */
 export const MAX_ROOM_BYTES = 32 * 1024 * 1024;
-const MAGIC = [75, 79, 83, 51];
+/** "KOS3": the first four bytes of a versioned packet. A fifth flag byte follows. */
+export const PACKET_MAGIC = [75, 79, 83, 51];
+export const PROTOCOL_VERSION = 3;
+export const MAX_BARRIER_ID_LENGTH = 80;
+/** Sent just before closing a socket with SIZE_CLOSE_CODE, after it sent a malformed or oversized packet. */
+export const SIZE_ERROR_MESSAGE = { type: 'error', reason: 'size' };
+export const SIZE_CLOSE_CODE = 1009;
 
 /** @param {Uint8Array} packet */
 export function unwrapPacket(packet) {
-	const versioned = packet.length >= 5 && MAGIC.every((byte, i) => packet[i] === byte);
+	const versioned = packet.length >= 5 && PACKET_MAGIC.every((byte, i) => packet[i] === byte);
 	if (versioned && packet[4] !== 0 && packet[4] !== 1 && packet[4] !== 2) throw new Error('Invalid transport flag');
 	// Flag 2: a snapshot replacing every entry up to the 32-bit revision that follows.
 	const compact = versioned && packet[4] === 2 && packet.length >= 9

@@ -9,9 +9,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, truncate, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import {
-	DENIED_CLOSE_CODE, DENIED_MESSAGE, STORAGE_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
+	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
+	unwrapPacket, payloadHash
+} from '../src/lib/sync/relay-protocol.js';
+import {
+	DENIED_CLOSE_CODE, DENIED_MESSAGE, INTERNAL_ERROR_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
 	hashesEqual, isProofHash, proofHash
 } from '../src/lib/sync/room-access.js';
 
@@ -118,7 +121,7 @@ export function createRelay(directory) {
 			console.error(`[kostos] room ${room.label} storage failure: ${error.code ?? error.message}`);
 			room.loaded = false;
 			control(ws, STORAGE_ERROR_MESSAGE);
-			ws.close(STORAGE_CLOSE_CODE, 'Could not persist sync data');
+			ws.close(INTERNAL_ERROR_CLOSE_CODE, 'Could not persist sync data');
 		}).finally(() => { room.pending--; evictIfIdle(room); });
 	}
 	/** The first proof to connect claims the room; every later connection must match it.
@@ -149,7 +152,7 @@ export function createRelay(directory) {
 			if (ws.readyState !== ws.OPEN) return;
 			activeRoom.sockets.add(ws);
 			for (const entry of activeRoom.history) ws.send(entry.payload);
-			control(ws, { type: 'ready', protocol: 3, revision: activeRoom.history.length, durable: true, complete: true });
+			control(ws, { type: 'ready', protocol: PROTOCOL_VERSION, revision: activeRoom.history.length, durable: true, complete: true });
 		});
 		ws.on('message', (data, binary) => {
 			if (!binary) {
@@ -158,7 +161,7 @@ export function createRelay(directory) {
 				let message;
 				try { message = JSON.parse(text); } catch { return; }
 				if (!message || typeof message !== 'object') return;
-				if (message.type === 'barrier' && typeof message.id === 'string' && message.id.length <= 80) {
+				if (message.type === 'barrier' && typeof message.id === 'string' && message.id.length <= MAX_BARRIER_ID_LENGTH) {
 					enqueue(activeRoom, ws, async () => {
 						if (!admitted) return;
 						control(ws, { type: 'caught-up', id: message.id, revision: activeRoom.history.length });
@@ -171,7 +174,7 @@ export function createRelay(directory) {
 				const packet = data instanceof Buffer ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]);
 				let decoded;
 				try { decoded = unwrapPacket(packet); }
-				catch { control(ws, { type: 'error', reason: 'size' }); ws.close(1009, 'Invalid message size'); return; }
+				catch { control(ws, SIZE_ERROR_MESSAGE); ws.close(SIZE_CLOSE_CODE, 'Invalid message size'); return; }
 				// The disk log numbers revisions by position, so it can't splice in a snapshot. Ignore it.
 				if (decoded.compact !== undefined) return;
 				const payload = Buffer.from(decoded.payload);
@@ -187,7 +190,7 @@ export function createRelay(directory) {
 				if (existing) { control(ws, { type: 'ack', hash, revision: existing }); return; }
 				if (activeRoom.bytes + payload.length > MAX_ROOM_BYTES) {
 					control(ws, STORAGE_ERROR_MESSAGE);
-					ws.close(STORAGE_CLOSE_CODE, STORAGE_FULL_REASON);
+					ws.close(INTERNAL_ERROR_CLOSE_CODE, STORAGE_FULL_REASON);
 					return;
 				}
 				const file = await open(activeRoom.file, 'a');

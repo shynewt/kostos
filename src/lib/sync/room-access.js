@@ -8,9 +8,10 @@ export const PROOF_PREFIX = 'kostos1.';
  *  HTTP upgrade is invisible to browser JavaScript, so this is how a client learns it was refused. */
 export const DENIED_MESSAGE = { type: 'denied' };
 export const DENIED_CLOSE_CODE = 1008;
-/** Sent instead of an acknowledgement when a write could not be stored; the socket then closes with STORAGE_CLOSE_CODE. */
+/** Close code for any server-side failure; the client reconnects. */
+export const INTERNAL_ERROR_CLOSE_CODE = 1011;
+/** Sent instead of an acknowledgement when a write could not be stored; the socket then closes with INTERNAL_ERROR_CLOSE_CODE. */
 export const STORAGE_ERROR_MESSAGE = { type: 'error', reason: 'storage' };
-export const STORAGE_CLOSE_CODE = 1011;
 export const STORAGE_FULL_REASON = 'Room storage limit reached';
 
 export const SYNC_PATH_PREFIX = '/sync/';
@@ -18,7 +19,7 @@ const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/;
 const PROOF_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /** @param {string} raw @returns {string | null} the relay room ID, or null unless it is 64 lowercase hex characters */
-export function parseRoomId(raw) {
+function parseRoomId(raw) {
 	return SHA256_HEX_PATTERN.test(raw) ? raw : null;
 }
 
