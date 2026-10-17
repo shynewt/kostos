@@ -54,10 +54,6 @@
 
 <svelte:head>
 	<title>Kostos · Group expense splitter, no accounts needed</title>
-	<meta
-		name="description"
-		content="Kostos is a free group expense splitter. Share an invite link, split bills, sync live across devices. No accounts, end-to-end encrypted, works offline."
-	/>
 	{#if !hasProjects}
 		<!-- eslint-disable-next-line svelte/no-at-html-tags -->
 		{@html `<script type="application/ld+json">${JSON.stringify({
