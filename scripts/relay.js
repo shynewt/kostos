@@ -54,11 +54,13 @@ export function createRelay(directory) {
 		const name = createHash('sha256').update(id).digest('hex');
 		const stem = resolve(directory, name);
 		const room = {
+			id,
 			label: name.slice(0, 8),
 			/** @type {Set<import('ws').WebSocket>} */ sockets: new Set(),
 			/** @type {{hash: string, payload: Buffer}[]} */ history: [],
 			/** @type {Map<string, number>} */ hashes: new Map(),
 			tail: Promise.resolve(),
+			pending: 0,
 			file: `${stem}.jsonl`,
 			authFile: `${stem}.auth`,
 			/** @type {string | null} */ authHash: null,
@@ -101,14 +103,21 @@ export function createRelay(directory) {
 		room.bytes = history.reduce((total, entry) => total + entry.payload.length, 0);
 		room.loaded = true;
 	}
+	/** Unauthenticated clients can mint rooms freely, so an idle one must not stay in memory;
+	 *  its history reloads from disk on the next connection.
+	 *  @param {ReturnType<typeof makeRoom>} room */
+	function evictIfIdle(room) {
+		if (room.sockets.size === 0 && room.pending === 0 && rooms.get(room.id) === room) rooms.delete(room.id);
+	}
 	/** @param {ReturnType<typeof makeRoom>} room @param {import('ws').WebSocket} ws @param {() => Promise<void>} work */
 	function enqueue(room, ws, work) {
+		room.pending++;
 		room.tail = room.tail.then(async () => { await load(room); await work(); }).catch((error) => {
 			console.error(`[kostos] room ${room.label} storage failure: ${error.code ?? error.message}`);
 			room.loaded = false;
 			control(ws, STORAGE_ERROR_MESSAGE);
 			ws.close(STORAGE_CLOSE_CODE, 'Could not persist sync data');
-		});
+		}).finally(() => { room.pending--; evictIfIdle(room); });
 	}
 	/** The first proof to connect claims the room; every later connection must match it.
 	 *  @param {ReturnType<typeof makeRoom>} room @param {string} proof */
@@ -125,8 +134,9 @@ export function createRelay(directory) {
 		// Set once the proof is accepted and kept after the socket closes, so a write sent just
 		// before closing is still stored. Socket-set membership can't tell those cases apart.
 		let admitted = false;
-		ws.on('error', () => { activeRoom.sockets.delete(ws); ws.terminate(); });
-		ws.on('close', () => activeRoom.sockets.delete(ws));
+		const release = () => { activeRoom.sockets.delete(ws); evictIfIdle(activeRoom); };
+		ws.on('error', () => { release(); ws.terminate(); });
+		ws.on('close', release);
 		enqueue(activeRoom, ws, async () => {
 			if (!(await authorize(activeRoom, proof))) {
 				control(ws, DENIED_MESSAGE);

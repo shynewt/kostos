@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRelay } from './relay.js';
 import { joinRoom, openSocket, PROOF, terminateOpenSockets, until } from './test-helpers.js';
@@ -19,6 +19,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('node:fs/promises')>();
 	return {
 		...actual,
+		readFile: async (path: string, ...rest: unknown[]) => {
+			fsSpy.calls.push(`read ${path}`);
+			return (actual.readFile as (...args: unknown[]) => Promise<unknown>)(path, ...rest);
+		},
 		rename: async (from: string, to: string) => {
 			fsSpy.calls.push(`rename ${to}`);
 			return actual.rename(from, to);
@@ -73,6 +77,8 @@ afterEach(async () => {
 function packet(seed: number, durable = true) {
 	const out = Buffer.alloc(45); out.set([75, 79, 83, 51, durable ? 1 : 0]); out.writeUInt32BE(seed, 8); return out;
 }
+
+beforeEach(() => { fsSpy.calls.length = 0; });
 
 describe('durable encrypted relay', () => {
 	it('drain waits for queued writes so a shutdown cannot cut one off', async () => {
@@ -178,12 +184,34 @@ describe('durable encrypted relay', () => {
 		expect(peer.controls).toEqual([{ type: 'error', reason: 'storage' }]);
 	});
 	it('syncs the data directory after renaming the claim into place', async () => {
-		fsSpy.calls.length = 0;
 		await joinRoom(await start());
 		const renamed = fsSpy.calls.indexOf(`rename ${directory}/${ROOM_STEM}.auth`);
 		expect(renamed).toBeGreaterThanOrEqual(0);
 		expect(fsSpy.calls.indexOf(`sync ${directory}`)).toBeGreaterThan(renamed);
 	});
+	it('forgets an idle room and loads it from disk again on the next connection', async () => {
+		const url = await start(); const first = await joinRoom(url);
+		first.ws.send(packet(1));
+		await until(() => first.controls.some((m) => m.type === 'ack'));
+		first.ws.close();
+		await until(() => server.clients.size === 0);
+		const second = await joinRoom(url);
+		expect(second.binary).toHaveLength(1);
+		expect(fsSpy.calls.filter((call) => call === `read ${directory}/${ROOM_STEM}.jsonl`)).toHaveLength(2);
+	});
+	it('keeps a room in memory while writes from a closed socket are still queued', async () => {
+		const url = await start(); const sender = await joinRoom(url);
+		for (let i = 0; i < 200; i++) sender.ws.send(packet(i));
+		sender.ws.close();
+		await sender.closed;
+		const reader = await joinRoom(url);
+		expect(reader.binary).toHaveLength(200);
+		reader.ws.send(packet(5));
+		reader.ws.send(JSON.stringify({ type: 'barrier', id: 'end' }));
+		await until(() => reader.controls.some((m) => m.type === 'caught-up'));
+		expect(reader.controls.find((m) => m.type === 'ack')).toMatchObject({ revision: 6 });
+		expect(reader.controls.at(-1)).toMatchObject({ type: 'caught-up', revision: 200 });
+	}, 30_000);
 	it('keeps an update from a socket that closes straight after sending it', async () => {
 		const url = await start(); const sender = await joinRoom(url);
 		for (let i = 0; i < 20; i++) sender.ws.send(packet(i));
