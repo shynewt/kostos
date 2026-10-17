@@ -55,6 +55,10 @@ export class SyncRoom extends DurableObject {
 		return this.ctx.storage.sql.exec<{ revision: number }>('SELECT COALESCE(MAX(seq), 0) AS revision FROM messages').one().revision;
 	}
 	private control(ws: WebSocket, message: object): void { ws.send(JSON.stringify(message)); }
+	// same label as the Node relay: a short prefix of the already-hashed room name, never a proof
+	private logFailure(error: unknown): void {
+		console.error(`[kostos] room ${this.ctx.id.toString().slice(0, 8)} storage failure: ${error instanceof Error ? error.message : error}`);
+	}
 
 	/** Whether live history (the rows a new client replays, not the archive) would pass MAX_ROOM_BYTES after
 	 *  growing by `deltaBytes`. The database size bounds live bytes from above for free, so the exact sum,
@@ -102,7 +106,8 @@ export class SyncRoom extends DurableObject {
 				for (const entry of this.ctx.storage.sql.exec<Entry>('SELECT seq, hash, payload FROM messages ORDER BY seq')) server.send(entry.payload);
 				const complete = this.ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'complete'").one().value === 1;
 				this.control(server, { type: 'ready', protocol: PROTOCOL_VERSION, revision: this.revision(), durable: true, complete });
-			} catch {
+			} catch (error) {
+				this.logFailure(error);
 				server.close(INTERNAL_ERROR_CLOSE_CODE, 'Could not replay sync history');
 			}
 			return new Response(null, { status: 101, webSocket: client, headers });
@@ -154,7 +159,8 @@ export class SyncRoom extends DurableObject {
 					this.broadcast(ws, payload, revision);
 				}
 				this.control(ws, { type: 'ack', hash, revision });
-			} catch {
+			} catch (error) {
+				this.logFailure(error);
 				try { this.control(ws, STORAGE_ERROR_MESSAGE); ws.close(INTERNAL_ERROR_CLOSE_CODE, 'Could not persist sync data'); } catch { /* Closed peer. */ }
 			}
 		});

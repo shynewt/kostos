@@ -160,6 +160,24 @@ for (const { script, port, probes, withoutProof } of relays) {
 	});
 }
 
+describe('sync-server.js close reason', () => {
+	let relay: Relay | undefined;
+	const port = 18_734;
+	beforeAll(async () => {
+		relay = await startRelay('./sync-server.js', port);
+	});
+	afterAll(() => stopRelay(relay));
+
+	it.each([
+		['a missing proof', `/sync/${ROOM}`, []],
+		['a missing room', '/', [proofProtocol(PROOF)]]
+	])('closes %s with 1008 and says what was missing', async (_label, path, protocols) => {
+		const ws = new WebSocket(`ws://127.0.0.1:${port}${path}`, protocols);
+		const closed = await new Promise<{ code: number; reason: string }>((resolve) => ws.once('close', (code, reason) => resolve({ code, reason: reason.toString() })));
+		expect(closed).toEqual({ code: 1008, reason: 'Missing room or proof' });
+	});
+});
+
 describe('serve.js http', () => {
 	let relay: Relay | undefined;
 	const port = 18_733;

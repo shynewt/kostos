@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readdir, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { Readable } from 'node:stream';
 import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
@@ -21,12 +22,12 @@ const legacyScript = `export class SyncRoom {
  constructor(ctx) { this.ctx = ctx; }
  async fetch(request) {
   const params = new URL(request.url).searchParams;
-  const entries = Number(params.get('entries'));
-  if (entries) {
+  if (params.has('entries')) {
    // a legacy value over 2 MB can't be stored, so fill the v3 table directly
    const sql = this.ctx.storage.sql;
    sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, hash TEXT UNIQUE NOT NULL, payload BLOB NOT NULL)');
-   this.ctx.storage.transactionSync(() => { for (let i = 0; i < entries; i++) sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', 'seed:' + i, new ArrayBuffer(28)); });
+   this.ctx.storage.transactionSync(() => { for (let i = 0; i < Number(params.get('entries')); i++) sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', 'seed:' + i, new ArrayBuffer(28)); });
+   if (params.has('refuseInserts')) sql.exec("CREATE TRIGGER refuse_inserts BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'database is broken'); END");
    return new Response('seeded');
   }
   const count = Number(params.get('count'));
@@ -35,8 +36,9 @@ const legacyScript = `export class SyncRoom {
  }
 }
 export default {fetch(request,env) { const room = new URL(request.url).pathname.split('/').pop(); return env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName(room)).fetch(request); }};`;
+const runtimeLog: string[] = [];
 function options() {
-	return { name: 'kostos-relay-test', modules: true, compatibilityDate: '2025-05-01', host: '127.0.0.1', port: 0, durableObjects: { SYNC_ROOM: { className: 'SyncRoom', useSQLite: true } }, durableObjectsPersist: join(directory, 'storage') };
+	return { handleRuntimeStdio: (stdout: Readable, stderr: Readable) => { for (const stream of [stdout, stderr]) stream.on('data', (chunk: Buffer) => runtimeLog.push(chunk.toString())); }, name: 'kostos-relay-test', modules: true, compatibilityDate: '2025-05-01', host: '127.0.0.1', port: 0, durableObjects: { SYNC_ROOM: { className: 'SyncRoom', useSQLite: true } }, durableObjectsPersist: join(directory, 'storage') };
 }
 beforeAll(async () => {
 	directory = await mkdtemp(join(tmpdir(), 'kostos-worker-'));
@@ -47,6 +49,7 @@ beforeAll(async () => {
 	await mf.ready;
 	await mf.dispatchFetch(`http://local/sync/${room('small')}?count=3`);
 	await mf.dispatchFetch(`http://local/sync/${room('capped')}?count=1000`);
+	await mf.dispatchFetch(`http://local/sync/${room('broken')}?entries=0&refuseInserts`);
 	await mf.dispatchFetch(`http://local/sync/${room('one-below-entry-cap')}?entries=${MAX_ROOM_ENTRIES - 1}`);
 	await mf.setOptions({ ...options(), script });
 	await mf.ready;
@@ -115,6 +118,19 @@ describe('Cloudflare Durable Object sync', () => {
 		expect(b.binary).toHaveLength(2);
 		expect(b.binary[0]).toEqual(snap.subarray(9));
 		expect(b.controls.at(-1)).toMatchObject({ type: 'ready', revision: 6 });
+	});
+});
+
+describe('storage failures', () => {
+	it('tells the client, and logs why without leaking the proof', async () => {
+		const sender = await connect('broken');
+		sender.ws.send(packet(1));
+		expect(await sender.closed).toBe(1011);
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'storage' });
+		await until(() => runtimeLog.join('').includes('storage failure'));
+		const logged = runtimeLog.join('');
+		expect(logged).toMatch(/\[kostos\] room [0-9a-f]{8} storage failure: .*database is broken/);
+		expect(logged).not.toContain(PROOF);
 	});
 });
 

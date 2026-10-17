@@ -12,7 +12,7 @@ const wss = new WebSocketServer({ port: PORT, host: HOST, maxPayload: MAX_MESSAG
 wss.on('connection', (ws, req) => {
 	ws.on('error', () => ws.terminate());
 	const sync = parseSyncRequest(req.url, req.headers['sec-websocket-protocol']);
-	if (!sync) { ws.close(1008, 'missing room'); return; }
+	if (!sync) { ws.close(1008, 'Missing room or proof'); return; }
 	attachRelay(ws, sync.relayRoomId, sync.proof);
 });
 wss.on('listening', () => console.log(`Kostos sync relay listening on ws://${HOST}:${PORT}`));
