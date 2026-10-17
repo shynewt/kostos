@@ -1992,11 +1992,12 @@ async function connect(url: string, proof = PROOF) {
 	it('keeps an update from a socket that closes straight after sending it', async () => {
 		const url = await start(); const sender = await connect(url);
 		await until(() => sender.controls.some((m) => m.type === 'ready'));
-		sender.ws.send(packet(1)); sender.ws.close();
+		for (let i = 0; i < 20; i++) sender.ws.send(packet(i));
+		sender.ws.close();
 		await sender.closed;
 		const receiver = await connect(url);
 		await until(() => receiver.controls.some((m) => m.type === 'ready'));
-		expect(receiver.binary).toHaveLength(1);
+		expect(receiver.binary).toHaveLength(20);
 	});
 	it('refuses writes past the room storage cap and keeps what was acknowledged', async () => {
 		const url = await start(); const sender = await connect(url);
@@ -2017,7 +2018,7 @@ async function connect(url: string, proof = PROOF) {
 	}, 60_000);
 ```
 
-The "keeps an update from a socket that closes" test passes against the old relay too; it exists to pin the behavior the `admitted` flag must preserve. The others fail first. Also update the two other `attach(ws, 'ROOM')` mentions if any remain (`rg -n "'ROOM'" scripts`).
+The "keeps an update from a socket that closes" test passes against the old relay too; it exists to pin the behavior the `admitted` flag must preserve. It sends 20 updates so most of them are still queued when the `close` event fires; with a single update the write runs before `close` and the test cannot tell the flag from socket-set membership. The others fail first. Also update the two other `attach(ws, 'ROOM')` mentions if any remain (`rg -n "'ROOM'" scripts`).
 
 `scripts/relays.test.ts`:
 
