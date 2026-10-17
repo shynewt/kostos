@@ -1,0 +1,16 @@
+.git
+.github
+.vscode
+node_modules
+.svelte-kit
+.wrangler
+build
+dev-dist
+.output
+.kostos-data
+.env
+.env.*
+!.env.example
+.envrc
+docs
+e2e
