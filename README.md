@@ -78,7 +78,7 @@ npm run cf:deploy
 
 `worker/index.ts` is the entry. It routes `/sync/*` to a `SyncRoom` Durable Object (in `src/lib/server/sync-do.ts`) and falls through to the static assets binding for everything else. The DO uses Hibernating WebSockets, so idle rooms cost no CPU.
 
-Configuration lives in `wrangler.toml`. The Worker is named `kostos-app` and has its own Durable Object namespace, so rooms on an older Worker are left alone and do not move. `workers_dev` and `preview_urls` are off, which means the only public address is your custom domain, and that domain's zone has to be on your Cloudflare account. Before deploying, replace `APP_DOMAIN` in the route pattern of `wrangler.toml`. If you deploy through `.github/workflows/release.yml`, also replace it in the `url:` of the `production` environment; the workflow refuses to run while either one is still a placeholder. Edit only those two spots (the guard builds its search word from two pieces on purpose, so a global search-and-replace would break it).
+Configuration lives in `wrangler.toml`. The Worker is named `kostos-app` and has its own Durable Object namespace, so rooms on an older Worker are left alone and do not move. `workers_dev` and `preview_urls` are off, which means the only public address is your custom domain, and that domain's zone has to be on your Cloudflare account. Before deploying, replace `APP_DOMAIN` in the route pattern of `wrangler.toml`. If you deploy through `.github/workflows/release.yml`, also replace it in the `url:` of the `production` environment; the workflow refuses to run while either one is still a placeholder. Edit the route pattern and that `url:` only, not the whole repo: the guard survives a global search-and-replace (it builds its search word from two pieces), but it would also rewrite the placeholders in `docs/migration`.
 
 If you keep a custom domain that the older `kostos` Worker already serves, remove the domain from that Worker in the Cloudflare dashboard first. A custom domain can point at one Worker only, so the `kostos-app` deploy fails while the old one holds it.
 
@@ -146,10 +146,15 @@ Abuse beyond a single room is not handled in code. Put a rate limit on `/sync/` 
 v3 changes the sync protocol, so each group gets a new invite link. Members' data survives through export and restore. This guide is for Docker and Node self-hosters; on Cloudflare, deploy the `kostos-app` Worker as described above and move groups the same way.
 
 1. Ask members to open the app online once, so their devices hold the latest data. After the upgrade, an installed app keeps running v2 until the member taps Update on the "A new version of Kostos is ready." prompt. Until then it shows Offline and new edits pile up on the phone.
-2. Pull the new image (change the tag from `:2` to `:3` if you pin it) and restart. Same volume, same variables, same port.
-3. Check that the server is reached over HTTPS. v2 sync needed HTTPS as well, so a plain-HTTP address wasn't syncing before. What v3 adds is that new group, restore and join refuse to start there and show "Kostos needs HTTPS (or localhost) to encrypt your data." If you move a LAN server behind HTTPS, the web address changes, and a device's saved groups stay with the old address. Export each group at the old address first (v3 still opens it there and offers Export backup), then restore the file at the new HTTPS address.
+2. Pull the new image (change the tag from `:2` to `:3` if you pin it) and restart. Same volume, same variables, same port. If you run `:latest`, the pull is the upgrade, so finish step 1 first.
+3. Check that the server is reached over HTTPS.
+   - v2 sync needed HTTPS as well, so a plain-HTTP address wasn't syncing before. What v3 adds is that new group, restore and join refuse to start there and show "Kostos needs HTTPS (or localhost) to encrypt your data."
+   - Moving a LAN server behind HTTPS changes the web address, and a device's saved groups stay with the old address.
+   - So export each group at the old address first (v3 still opens it there and offers Export backup), then restore the file at the new HTTPS address.
 4. Once a member has tapped Update, open each group on one of their devices. v3 recognises the old format, does not try to sync it, and shows a banner ("This group no longer syncs.") with two buttons: Export backup, and Restore as a new group.
-5. Restore on that device: choose the backup file, pick which member you are ("Which member are you?"), tap Restore on this device. Then use the Share icon at the top of the new group to send its invite link. Everyone else joins that link. Only one person per group does steps 4 and 5.
+5. Restore on that device: choose the backup file, then look at "Which member are you?". It preselects the first member in the list, so pick yourself if that isn't you (after restoring, Settings > Switch does the same). Tap Restore on this device, then use the Share icon at the top of the new group to send its invite link. Everyone else joins that link. Only one person per group does steps 4 and 5.
+
+   The old copy stays on each phone and shows as "No longer syncs". Once the new group looks right, open the old one, go to Settings and tap "Forget this group on this device". That deletes the old data on that phone, so export first.
 6. When everyone has moved, delete the old logs. A v3 group's log (`<hash>.jsonl`) has a `<hash>.auth` file next to it; an old one doesn't. This removes only the `.jsonl` files without an `.auth` partner:
 
    ```sh
@@ -163,14 +168,12 @@ A restore keeps members, categories, payment methods, trips and expenses. It doe
 ### Limits and operating notes
 
 - Run one server process per data directory. Room claims aren't locked across processes, so two processes sharing a directory can split a room.
-- A room refuses writes once it holds 32 MiB of live history or 100,000 live entries, whichever comes first. The app then says "This group is full, so new changes stay on this phone. Export a backup from Settings and restore it as a new group." and retries about every five minutes.
-- On Cloudflare the Durable Object frees live space when a synced device compacts its history. The replaced entries move to an archive that is capped at another 32 MiB; once the archive is full, compactions are ignored and the live cap stays where it is.
+- A room refuses writes once it holds 32 MiB of live history or 100,000 live entries, whichever comes first. The app then says "This group is full, so new changes stay on this phone. Export a backup from Settings and restore it as a new group." and retries about every five minutes, or when someone taps Try again. A full group can still be exported and restored.
+- On Cloudflare the Durable Object frees live space when a synced device compacts its history. The replaced entries move to an archive that is capped at another 32 MiB; once the archive is full, its oldest entries are dropped to make room for newer ones.
 - The Node relay never compacts, so its caps are permanent. A group that reaches them needs a backup exported from Settings and restored as a new group.
 - The Node relay keeps one small `.auth` file per room and anyone can create rooms, so put a rate limit in front of a public server (a reverse proxy rule, or a Cloudflare rule on `/sync/*`).
 - Whoever knows a relay room ID before the group's first connection can claim it, and after that only the group's proof gets in. The operator is trusted until that first connection.
-- On start the Node relay drops an unfinished last line of a room log, since a write is only acknowledged after it is flushed. It also frees idle rooms from memory and reloads them from disk on the next connection. After a claim it syncs the data directory to disk, and skips that step on platforms that refuse it (Windows, some network and Docker Desktop mounts).
 - The Docker `HEALTHCHECK` follows `PORT` but always probes `127.0.0.1`.
-- `release.yml` refuses to run until `APP_DOMAIN` is replaced in `wrangler.toml` and in the environment url. It builds its search word from two pieces so that replacing the domain can't rewrite the check; edit only those two spots.
 
 ## Why v2 and v3
 
