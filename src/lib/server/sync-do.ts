@@ -9,7 +9,7 @@
  */
 import { DurableObject } from 'cloudflare:workers';
 import {
-	MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
+	MAX_ARCHIVE_BYTES, MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, SIZE_CLOSE_CODE, SIZE_ERROR_MESSAGE,
 	unwrapPacket, payloadHash
 } from '../sync/relay-protocol.js';
 import {
@@ -160,13 +160,19 @@ export class SyncRoom extends DurableObject {
 		});
 	}
 
+	/** Compaction is rare, so summing the archive here is cheaper than keeping a running total honest. */
+	private archiveWouldOverflow(addedBytes: number): boolean {
+		const archived = this.ctx.storage.sql.exec<{ bytes: number }>('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM archive').one().bytes;
+		return archived + addedBytes > MAX_ARCHIVE_BYTES;
+	}
+
 	/** Replace entries up to `through` with one snapshot at the same seq, so revision numbers and
-	 *  everything after `through` stay as they are. Late, redundant or over-cap requests are ignored. */
+	 *  everything after `through` stay as they are. Late, redundant, over-cap or archive-overflowing requests are ignored. */
 	private compact(ws: WebSocket, through: number, payload: Uint8Array): void {
 		if (through < 1 || through > this.revision()) return;
 		const { n: covered, bytes: coveredBytes } = this.ctx.storage.sql
 			.exec<{ n: number; bytes: number }>('SELECT COUNT(*) AS n, COALESCE(SUM(length(payload)), 0) AS bytes FROM messages WHERE seq <= ?', through).one();
-		if (covered < 2 || this.exceedsCap(payload.byteLength - coveredBytes)) return;
+		if (covered < 2 || this.exceedsCap(payload.byteLength - coveredBytes) || this.archiveWouldOverflow(coveredBytes)) return;
 		const hash = `snapshot:${through}:${Date.now()}`;
 		this.ctx.storage.transactionSync(() => {
 			this.ctx.storage.sql.exec('INSERT INTO archive (seq, hash, payload, archived_at) SELECT seq, hash, payload, ? FROM messages WHERE seq <= ?', Date.now(), through);

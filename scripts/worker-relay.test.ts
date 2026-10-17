@@ -1,14 +1,14 @@
 /* Exercise the production Durable Object inside the same Workers runtime used
  * by Wrangler, including legacy KV migration and a cold storage restart. */
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_MESSAGE_BYTES, MAX_ROOM_ENTRIES } from '../src/lib/sync/relay-protocol.js';
+import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_ENTRIES } from '../src/lib/sync/relay-protocol.js';
 import { joinRoom, largePacket, openSocket, packet, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 
 const room = (name: string) => createHash('sha256').update(name).digest('hex');
@@ -229,6 +229,38 @@ describe('room storage cap', () => {
 		const reader = await connect('snapshot-overflow');
 		expect(reader.binary).toHaveLength(stored.length);
 	}, 60_000);
+});
+
+async function bytesOnDisk(folder: string): Promise<number> {
+	let total = 0;
+	for (const entry of await readdir(folder, { withFileTypes: true, recursive: true })) {
+		if (entry.isFile()) total += (await stat(join(entry.parentPath, entry.name))).size;
+	}
+	return total;
+}
+
+describe('room archive ceiling', () => {
+	it('stops archiving once the archive is full, so alternating writes and compactions cannot grow storage forever', async () => {
+		const diskBefore = await bytesOnDisk(join(directory, 'storage'));
+		const device = await connect('archive-bound');
+		let compactions = 0;
+		let refusedAtCycle = -1;
+		for (let cycle = 1; cycle <= 60 && refusedAtCycle < 0; cycle++) {
+			device.ws.send(largePacket());
+			await until(() => device.controls.some((m) => m.type === 'ack' && m.revision === cycle));
+			// a single entry is not worth compacting, so the first cycle only writes
+			if (cycle === 1) continue;
+			device.ws.send(snapshot(cycle, 200));
+			device.ws.send(JSON.stringify({ type: 'barrier', id: `cycle-${cycle}` }));
+			await until(() => device.controls.some((m) => m.type === 'caught-up' && m.id === `cycle-${cycle}`));
+			if (device.controls.filter((m) => m.type === 'compacted').length > compactions) compactions++;
+			else refusedAtCycle = cycle;
+		}
+		expect(refusedAtCycle).toBeGreaterThan(0);
+		const grown = await bytesOnDisk(join(directory, 'storage')) - diskBefore;
+		expect(grown).toBeLessThan(MAX_ARCHIVE_BYTES + 8 * 1024 * 1024);
+		expect(device.ws.readyState).toBe(WebSocket.OPEN);
+	}, 120_000);
 });
 
 describe('room entry cap', () => {

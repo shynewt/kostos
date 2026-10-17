@@ -4,6 +4,10 @@ export const MAX_MESSAGE_BYTES = 1_048_576;
  *  compaction replaced. Past it a room refuses writes (the `storage` error) instead of dropping history.
  *  A Durable Object room recovers by compacting; a Node relay cannot compact, so its cap is permanent. */
 export const MAX_ROOM_BYTES = 32 * 1024 * 1024;
+/** Per-room ceiling on archived bytes: entries a compaction replaced, kept for recovery and never replayed.
+ *  With MAX_ROOM_BYTES it bounds a room's total storage at twice the live cap. A compaction that would archive
+ *  more is ignored, so a client that keeps writing and compacting cannot grow storage without limit. */
+export const MAX_ARCHIVE_BYTES = MAX_ROOM_BYTES;
 /** Per-room ceiling on live entries, refused like MAX_ROOM_BYTES. The Node relay holds every entry in memory and a
  *  Durable Object scans them to enforce the byte cap, so tiny entries cost far more than their size suggests. */
 export const MAX_ROOM_ENTRIES = 100_000;
