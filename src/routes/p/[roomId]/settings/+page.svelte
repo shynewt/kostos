@@ -296,7 +296,11 @@
 				<span>Forget this project on this device</span>
 			</button>
 			<p class="dim sign-out-hint">
-				Your data stays in the group. Rejoin with the invite link to restore it.
+				{#if handle.legacy}
+					This group can’t be rejoined, so forgetting it deletes its data here. Export a backup first.
+				{:else}
+					Your data stays in the group. Rejoin with the invite link to restore it.
+				{/if}
 			</p>
 			<p class="dim version-line">Kostos v{version}</p>
 		</div>

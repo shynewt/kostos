@@ -7,3 +7,6 @@ import { isValidSecret } from './invite';
 export function isLegacySecret(secret: string): boolean {
 	return !isValidSecret(secret);
 }
+
+export const LEGACY_GROUP_SUMMARY =
+	'It was made with an older version of Kostos and stays readable here. Export a backup and restore it as a new group to keep syncing.';

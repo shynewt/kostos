@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LEGACY_GROUP_SUMMARY } from '$lib/legacy';
 import { describeSync } from './describe';
 import { LOCAL_STATUS, type SyncStatus } from './status';
 
@@ -60,6 +61,7 @@ describe('describeSync', () => {
 	it('marks an old-format group as not syncing, without a banner or retry', () => {
 		const view = describeSync(LOCAL_STATUS, null, NOW, { legacy: true });
 		expect(view).toMatchObject({ state: 'legacy', label: 'Not syncing', banner: null, retry: false, attention: true });
+		expect(view.body).toBe(LEGACY_GROUP_SUMMARY);
 	});
 
 	it('says when nothing has synced yet', () => {

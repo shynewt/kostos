@@ -38,7 +38,13 @@
 	<div class="screen">
 		<header class="app-bar"><a href="/" class="btn btn-ghost">Back to groups</a><SyncStatus variant="dot" /></header>
 		<SyncBanner />
-		<div class="scroll"><p>No saved group data is available here yet. Open the full invite link to reach the group.</p></div>
+		<div class="scroll">
+			{#if room.handle.legacy}
+				<p>This group was made with an older version of Kostos and no longer syncs. This device has no saved data for it, so it can’t be opened.</p>
+			{:else}
+				<p>No saved group data is available here yet. Open the full invite link to reach the group.</p>
+			{/if}
+		</div>
 	</div>
 {:else}
 	<LoadingScreen label="Loading your group…" hint="Opening saved data and checking for new expenses." />

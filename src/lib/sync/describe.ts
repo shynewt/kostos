@@ -1,3 +1,4 @@
+import { LEGACY_GROUP_SUMMARY } from '$lib/legacy';
 import { INSECURE_CONTEXT_MESSAGE } from './crypto';
 import type { LocalState } from './persistence';
 import { PROBLEM_LABELS, relativeTime, type SyncProblem, type SyncStatus } from './status';
@@ -76,7 +77,7 @@ export function describeSync(
 		return {
 			...base, tone: 'warn', state: 'legacy', label: 'Not syncing', attention: true, facts: [],
 			headline: 'This group no longer syncs',
-			body: 'It was made with an older version of Kostos and stays readable here. Export a backup and restore it as a new group to keep syncing.'
+			body: LEGACY_GROUP_SUMMARY
 		};
 	}
 	switch (sync.phase) {

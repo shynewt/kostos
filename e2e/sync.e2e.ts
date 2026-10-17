@@ -324,6 +324,7 @@ describe('mobile sync and freshness', () => {
 		await page.waitForSelector('[data-legacy-banner]');
 		await page.waitForSelector('[data-sync-state="legacy"]', { state: 'attached' });
 		expect(await page.locator('.project-name').innerText()).toContain('Lisbon Crew');
+		expect(await page.getByRole('button', { name: 'Share invite' }).count()).toBe(0);
 		const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export backup' }).click()]);
 		expect(download.suggestedFilename()).toMatch(/^kostos-lisbon-crew-\d{4}-\d{2}-\d{2}\.json$/);
 		await page.goto(`${BASE}/p/${roomId}/expenses`);
@@ -348,7 +349,7 @@ describe('mobile sync and freshness', () => {
 		await page.getByRole('button', { name: 'Create', exact: true }).click();
 		await page.waitForURL(LOCAL_ID); await synced(page);
 	});
-	it('rejects old invites with a message that names the old site', async () => {
+	it('rejects old invites with a message that names the older version', async () => {
 		const page = await phone();
 		await page.goto(`${BASE}/join?room=PRT-AB23-CD45#${LEGACY_SECRET}`);
 		await page.getByText('older version of Kostos').waitFor();
