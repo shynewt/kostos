@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-	generateSecret, invitePath, inviteError, INVALID_INVITE_MESSAGE, isOldInvite, isValidSecret, OLD_INVITE_MESSAGE, parseInvite, SECRET_LENGTH
+	generateSecret, invitePath, inviteError, isOldInvite, isValidSecret, OLD_INVITE_MESSAGE, parseInvite, SECRET_LENGTH
 } from './invite';
 
 const secret = 'AAECAwQFBgcICQoLDA0ODw';
@@ -52,6 +52,29 @@ describe('parseInvite', () => {
 		expect(parseInvite(`#kostos kostos.example/join#${secret}`)).toEqual({ secret });
 	});
 
+	it('finds the invite when other links or words come first', () => {
+		const link = `https://kostos.example/join#${secret}`;
+		expect(parseInvite(`Kostos: https://kostos.example Join: ${link}`)).toEqual({ secret });
+		expect(parseInvite(`https://kostos.example\n${link}`)).toEqual({ secret });
+		expect(parseInvite(`key ${secret}, app at https://kostos.example`)).toEqual({ secret });
+		expect(parseInvite(`${link}/`)).toEqual({ secret });
+	});
+
+	it('prefers the link over a look-alike word', () => {
+		expect(parseInvite(`thanks-for-the-help-guys https://kostos.example/join#${secret}`)).toEqual({ secret });
+	});
+
+	it('accepts the same key given twice but refuses two different keys', () => {
+		const other = 'BBECAwQFBgcICQoLDA0ODw';
+		expect(parseInvite(`${secret} https://kostos.example/join#${secret}`)).toEqual({ secret });
+		expect(parseInvite(`${secret} ${other}`)).toBeNull();
+		expect(parseInvite(`https://kostos.example/join#${secret} https://kostos.example/join#${other}`)).toBeNull();
+	});
+
+	it('ignores words too long to be an invite', () => {
+		expect(parseInvite(`${'.'.repeat(3000)}${secret}`)).toBeNull();
+	});
+
 	it('answers a huge input quickly', () => {
 		for (const filler of ['.', 'a', '<', '#', '.a']) {
 			const started = performance.now();
@@ -89,6 +112,11 @@ describe('old invites', () => {
 		expect(isOldInvite(legacySecret)).toBe(true);
 	});
 
+	it('finds an old invite that comes after another link', () => {
+		expect(isOldInvite(`https://kostos.example then https://kostos.example/join?room=PRT-AB23-CD45#${legacySecret}`)).toBe(true);
+		expect(isOldInvite(`app at https://kostos.example key ${legacySecret}`)).toBe(true);
+	});
+
 	it('does not flag current invites or plain mistakes', () => {
 		expect(isOldInvite(`https://kostos.example/join#${secret}`)).toBe(false);
 		expect(isOldInvite(secret)).toBe(false);
@@ -100,7 +128,7 @@ describe('old invites', () => {
 	it('answers an old invite with a message that says it is from the old site', () => {
 		expect(inviteError(legacySecret)).toBe(OLD_INVITE_MESSAGE);
 		expect(OLD_INVITE_MESSAGE).toContain('older version of Kostos');
-		expect(inviteError('hello')).toBe(INVALID_INVITE_MESSAGE);
+		expect(inviteError('hello')).toContain('doesn’t look right');
 	});
 });
 
@@ -112,7 +140,7 @@ describe('invitePath', () => {
 
 	it('names the key length in the invalid-invite message', () => {
 		expect(SECRET_LENGTH).toBe(22);
-		expect(INVALID_INVITE_MESSAGE).toContain(`${SECRET_LENGTH} character`);
+		expect(inviteError('hello')).toContain(`${SECRET_LENGTH} character`);
 	});
 });
 

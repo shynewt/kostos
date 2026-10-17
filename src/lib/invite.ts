@@ -13,10 +13,15 @@ const SECRET_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${SECRET_LENGTH}}$`);
 const OLD_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 // a real invite is a few dozen characters; anything longer is never worth scanning
 const MAX_WORD_LENGTH = 2048;
-const WRAPPERS_AND_PUNCTUATION = new Set([...'<>()[]"\'.,;:!?“”‘’«»']);
+const WRAPPERS_AND_PUNCTUATION = new Set([...'<>()[]"\'.,;:!?/“”‘’«»']);
+const INVITE_TIERS: ((candidate: string) => boolean)[] = [
+	(candidate) => candidate.includes('://') || candidate.includes('/join#') || candidate.includes('room='),
+	(candidate) => candidate.includes('#'),
+	() => true
+];
 
 export const OLD_INVITE_MESSAGE = 'That invite comes from an older version of Kostos and no longer works. Ask your group for a new invite link.';
-export const INVALID_INVITE_MESSAGE = `That doesn’t look right. Paste the full invite link or the ${SECRET_LENGTH} character group key.`;
+const INVALID_INVITE_MESSAGE = `That doesn’t look right. Paste the full invite link or the ${SECRET_LENGTH} character group key.`;
 
 export function generateSecret(): string {
 	const bytes = new Uint8Array(SECRET_BYTES);
@@ -32,26 +37,32 @@ export function invitePath(secret: string): string {
 	return `/join#${secret}`;
 }
 
-/** Accepts the share link (`/join#SECRET`) or the bare secret. */
+/** Accepts the share link (`/join#SECRET`) or the bare secret, anywhere in a pasted message. */
 export function parseInvite(raw: string): ParsedInvite | null {
-	const key = keyOf(extractCandidate(raw));
-	return isValidSecret(key) ? { secret: key } : null;
+	const candidates = candidatesIn(raw);
+	// links first, so a look-alike word in the same message cannot outrank or clash with the real invite
+	for (const belongsToTier of INVITE_TIERS) {
+		const secrets = new Set(candidates.filter(belongsToTier).map(fragmentSecret).filter(isValidSecret));
+		if (secrets.size > 0) return secrets.size === 1 ? { secret: [...secrets][0] } : null;
+	}
+	return null;
 }
 
 /** Invites from before v3: `?room=` links, `ROOM.SECRET` pairs and bare 43 character keys. */
 export function isOldInvite(raw: string): boolean {
-	const candidate = extractCandidate(raw);
-	if (candidate.includes('room=')) return true;
-	const key = keyOf(candidate);
-	return OLD_KEY_PATTERN.test(key.includes('.') ? key.slice(key.indexOf('.') + 1) : key);
+	return candidatesIn(raw).some((candidate) => {
+		if (candidate.includes('room=')) return true;
+		const secret = fragmentSecret(candidate);
+		return OLD_KEY_PATTERN.test(secret.includes('.') ? secret.slice(secret.indexOf('.') + 1) : secret);
+	});
 }
 
 export function inviteError(raw: string): string {
 	return isOldInvite(raw) ? OLD_INVITE_MESSAGE : INVALID_INVITE_MESSAGE;
 }
 
-/** The key is the fragment up to a `&`, so share links with extra fragment parameters still work. */
-function keyOf(candidate: string): string {
+/** The secret is the fragment up to a `&`, so share links with extra fragment parameters still work. */
+function fragmentSecret(candidate: string): string {
 	const hash = candidate.indexOf('#');
 	const fragment = hash === -1 ? candidate : candidate.slice(hash + 1);
 	const separator = fragment.indexOf('&');
@@ -59,12 +70,12 @@ function keyOf(candidate: string): string {
 }
 
 /** Chat apps paste links with surrounding text, quotes, `<...>` wrappers, a sentence's final period,
- *  or without the scheme. None of those characters can appear in a secret. */
-function extractCandidate(raw: string): string {
-	const words = raw.trim().split(/\s+/);
-	const isLink = (word: string) => word.includes('://') || word.includes('/join#') || word.includes('room=');
-	const word = words.find(isLink) ?? words.find((w) => w.includes('#')) ?? words[words.length - 1] ?? '';
-	return word.length > MAX_WORD_LENGTH ? '' : trimAround(word, WRAPPERS_AND_PUNCTUATION);
+ *  a trailing slash, or without the scheme. None of those characters can appear in a secret. */
+function candidatesIn(raw: string): string[] {
+	return raw
+		.split(/\s+/)
+		.filter((word) => word.length <= MAX_WORD_LENGTH)
+		.map((word) => trimAround(word, WRAPPERS_AND_PUNCTUATION));
 }
 
 // a linear scan; a regex anchored at the end backtracks quadratically on long runs
