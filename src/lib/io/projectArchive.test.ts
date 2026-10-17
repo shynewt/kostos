@@ -96,6 +96,11 @@ const expenses: Expense[] = [
 ];
 
 describe('serializeProject + parseProjectArchive', () => {
+	it('says a backup without group details is missing them', () => {
+		const result = parseProjectArchive(JSON.stringify({ app: 'kostos', schemaVersion: 2, project: null, members: [], expenses: [] }));
+		expect(result).toEqual({ ok: false, error: 'Backup is missing group details.' });
+	});
+
 	it('round-trips full project state', () => {
 		const archive = serializeProject(project, members, expenses);
 		const result = parseProjectArchive(JSON.stringify(archive));

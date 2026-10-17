@@ -92,6 +92,11 @@ describe('mapV1ToV2', () => {
 		expect(out.expenses[0].amount).toBe(1350);
 	});
 
+	it('warns that a group without real members would be empty', () => {
+		const out = mapV1ToV2({ id: 'p', name: 'X', currency: 'EUR', participants: [], categories: [], paymentMethods: [], expenses: [] });
+		expect(out.warnings).toContain('No real members found; group would be empty.');
+	});
+
 	it('drops the "All" pseudo-member and its paidFor entries', () => {
 		const v1 = {
 			id: 'p',

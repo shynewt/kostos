@@ -117,7 +117,7 @@
 					onPick={(value) => updateProject(handle, { emoji: value })}
 				/>
 
-				<div class="swatch-row" role="radiogroup" aria-label="Project color">
+				<div class="swatch-row" role="radiogroup" aria-label="Group color">
 					{#each PROJECT_COLORS as c (c)}
 						<button
 							type="button"

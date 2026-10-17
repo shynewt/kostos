@@ -149,7 +149,7 @@ export function mapV1ToV2(v1: V1Export): ImportResult {
 		}));
 
 	if (members.length === 0) {
-		warnings.push('No real members found; project would be empty.');
+		warnings.push('No real members found; group would be empty.');
 	}
 
 	const categories: Category[] = v1.categories.map((c) => {

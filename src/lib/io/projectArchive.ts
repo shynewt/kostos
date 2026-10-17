@@ -102,7 +102,7 @@ export function parseProjectArchive(input: unknown): ArchiveParseResult {
 
 	const project = raw.project;
 	if (!isObject(project) || typeof project.name !== 'string') {
-		return { ok: false, error: 'Backup is missing project metadata.' };
+		return { ok: false, error: 'Backup is missing group details.' };
 	}
 
 	const members = raw.members;
