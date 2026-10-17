@@ -332,6 +332,36 @@ describe('verified encrypted sync', () => {
 		expect(Socket.instances).toHaveLength(2);
 	});
 
+	it('lets Try again override the wait of a full group even when it was tapped offline', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('full'));
+		vi.stubGlobal('navigator', { onLine: false });
+		events.dispatchEvent(new Event('offline'));
+		provider.retry();
+		vi.stubGlobal('navigator', { onLine: true });
+		events.dispatchEvent(new Event('online'));
+		expect(Socket.instances).toHaveLength(2);
+	});
+
+	it('forgets the wait of a full group once its jittered timer replays it early', async () => {
+		vi.useFakeTimers();
+		vi.spyOn(Math, 'random').mockReturnValue(0);
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('full'));
+		await vi.advanceTimersByTimeAsync(4 * 60_000 + 1_000);
+		expect(Socket.instances).toHaveLength(2);
+		Socket.instances[1].close();
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(Socket.instances).toHaveLength(3);
+	});
+
 	it('still reports a real storage failure as storage', async () => {
 		const ws = await start();
 		ws.control({ type: 'error', reason: 'storage' });

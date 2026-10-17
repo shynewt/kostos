@@ -411,6 +411,8 @@ export class EncryptedSyncProvider {
 		if (this.destroyed) return;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = null;
+		// an explicit tap overrides a full group's wait, even if connect() bails out offline
+		this.holdUntil = 0;
 		this.closeSocket();
 		this.connect();
 	};
