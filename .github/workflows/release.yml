@@ -34,8 +34,11 @@ jobs:
       - name: Refuse to ship placeholders
         run: |
           test -f wrangler.toml
-          if grep -n "APP_DOMAIN" wrangler.toml || grep -nE "^ +url: https://APP_DOMAIN" .github/workflows/release.yml; then
-            echo "Replace APP_DOMAIN in wrangler.toml and the environment url of this workflow first"
+          # built in two pieces so the repo-wide replace that picks the real domain can't rewrite
+          # this check into one that matches the finished config and refuses every release
+          placeholder="APP_""DOMAIN"
+          if grep -n "$placeholder" wrangler.toml || grep -nE "^ +url: https://$placeholder" .github/workflows/release.yml; then
+            echo "Replace $placeholder in wrangler.toml and the environment url of this workflow first"
             exit 1
           fi
 
