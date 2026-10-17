@@ -1529,7 +1529,9 @@ function syncSecret(secret: string | undefined): string | undefined {
 
 set `legacy: known !== undefined && isLegacySecret(known),` in the handle, and `cache.set(roomId, { handle, persistence, secret: effectiveSecret });`.
 
-`src/lib/demo.ts`: delete `const DEMO_ROOM_ID = 'DEMO';` and `import { ..., DEMO_ROOM_ID, openRoom } from './sync/doc';`.
+`src/lib/demo.ts`: delete `const DEMO_ROOM_ID = 'DEMO';` and change `import { openRoom } from './sync/doc';` to `import { DEMO_ROOM_ID, openRoom } from './sync/doc';`.
+
+Three tests build `RoomHandle` literals (`activity-log.test.ts`, `expense-conflicts.test.ts`, `split-default-sync.test.ts`); add `legacy: false` to each so `npm run check` stays clean.
 
 `src/lib/sync/describe.ts`: widen `options` to `{ demo?: boolean; legacy?: boolean }` and add, directly after the `local?.phase === 'error'` block:
 
