@@ -1,4 +1,4 @@
-/* New, restore, import and the demo all end the same way: put a project into a room. */
+/* New, restore, import and the demo all end the same way: put a group into a room. */
 import { addProject, setCurrentMember } from '$lib/storage';
 import { deriveLocalId } from '$lib/sync/crypto';
 import { addExpense, initProject, openRoom, type RoomHandle } from '$lib/sync/doc';

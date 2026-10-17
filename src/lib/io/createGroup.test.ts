@@ -4,7 +4,7 @@ import { deriveLocalId, INSECURE_CONTEXT_MESSAGE } from '$lib/sync/crypto';
 import { openRoom, readExpenses, readMembers, readProject } from '$lib/sync/doc';
 import type { Expense, Member } from '$lib/types';
 import { parseProjectArchive } from './projectArchive';
-import { archiveContents, createGroup, seedRoom } from './restoreProject';
+import { archiveContents, createGroup, seedRoom } from './createGroup';
 
 vi.mock('$lib/storage', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/storage')>()),

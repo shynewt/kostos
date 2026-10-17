@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { currencyDecimals } from '$lib/currencies';
 	import { isV1Export, mapV1ToV2, type ImportResult } from '$lib/import/v1';
-	import { createGroup } from '$lib/io/restoreProject';
+	import { createGroup } from '$lib/io/createGroup';
 	import { plural } from '$lib/plural';
 
 	let fileInputEl = $state<HTMLInputElement | null>(null);

@@ -6,7 +6,7 @@
 	import CurrencyPicker from '$lib/components/CurrencyPicker.svelte';
 	import EmojiTilePicker from '$lib/components/EmojiTilePicker.svelte';
 	import { CURRENCY_PRESETS, type CurrencyPreset } from '$lib/currencies';
-	import { createGroup } from '$lib/io/restoreProject';
+	import { createGroup } from '$lib/io/createGroup';
 	import { generateId } from '$lib/sync/doc';
 	import {
 		DEFAULT_CATEGORIES,

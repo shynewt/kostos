@@ -11,7 +11,7 @@ import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import demoArchive from './demo-seed.json';
 import { parseProjectArchive } from './io/projectArchive';
-import { archiveContents, seedRoom } from './io/restoreProject';
+import { archiveContents, seedRoom } from './io/createGroup';
 import { setCurrentMember } from './storage';
 import { DEMO_ROOM_ID, openRoom } from './sync/doc';
 

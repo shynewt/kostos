@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import { parseProjectArchive, type ProjectArchive } from '$lib/io/projectArchive';
-	import { archiveContents, createGroup } from '$lib/io/restoreProject';
+	import { archiveContents, createGroup } from '$lib/io/createGroup';
 
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let archive = $state<ProjectArchive | null>(null);
