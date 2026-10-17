@@ -351,12 +351,12 @@ describe('mobile sync and freshness', () => {
 	it('rejects old invites with a message that names the old site', async () => {
 		const page = await phone();
 		await page.goto(`${BASE}/join?room=PRT-AB23-CD45#${LEGACY_SECRET}`);
-		await page.getByText('old Kostos site').waitFor();
+		await page.getByText('older version of Kostos').waitFor();
 		expect(page.url()).toContain('/join');
 		await page.goto(`${BASE}/`);
 		await page.getByRole('button', { name: 'Join a group' }).click();
 		await page.fill('input[placeholder="Invite link or group key"]', LEGACY_SECRET);
 		await page.getByRole('button', { name: 'Continue' }).click();
-		await page.getByText('old Kostos site').waitFor();
+		await page.getByText('older version of Kostos').waitFor();
 	});
 });

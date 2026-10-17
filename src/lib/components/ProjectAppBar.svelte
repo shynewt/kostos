@@ -3,6 +3,7 @@
 	import SyncBanner from './SyncBanner.svelte';
 	import SyncStatus from './SyncStatus.svelte';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
+	import { invitePath } from '$lib/invite';
 	import { findProject } from '$lib/storage';
 	import type { Project } from '$lib/types';
 	import QrCode from './QrCode.svelte';
@@ -20,7 +21,7 @@
 	const shareUrl = $derived.by(() => {
 		const stored = findProject(roomId);
 		if (!stored) return null;
-		return `${location.origin}/join#${stored.secret}`;
+		return `${location.origin}${invitePath(stored.secret)}`;
 	});
 
 	async function copyShareUrl() {

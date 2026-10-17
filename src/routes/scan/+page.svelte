@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { isOldInvite, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
+	import { invitePath, isOldInvite, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
 	import { onMount } from 'svelte';
 
 	type ScanStatus = 'starting' | 'scanning' | 'no-camera' | 'denied' | 'unsupported' | 'matched';
@@ -17,7 +17,7 @@
 		const parsed = parseInvite(value);
 		if (parsed) {
 			status = 'matched';
-			goto(`/join#${parsed.secret}`);
+			goto(invitePath(parsed.secret));
 			return true;
 		}
 		return false;

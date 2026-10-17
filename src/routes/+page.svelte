@@ -7,11 +7,11 @@
 	import { formatAmount } from '$lib/money';
 	import { isLegacySecret } from '$lib/legacy';
 	import { listProjects, type ProjectRef } from '$lib/storage';
-	import { inviteError, parseInvite } from '$lib/invite';
+	import { invitePath, inviteError, parseInvite, SECRET_LENGTH } from '$lib/invite';
 
 	let projects = $state<ProjectRef[]>([]);
-	let tokenInputOpen = $state(false);
-	let token = $state('');
+	let inviteInputOpen = $state(false);
+	let inviteText = $state('');
 	let error = $state<string | null>(null);
 	let demoLoading = $state(false);
 
@@ -33,13 +33,13 @@
 
 	function onJoinSubmit(event: SubmitEvent) {
 		event.preventDefault();
-		const parsed = parseInvite(token);
+		const parsed = parseInvite(inviteText);
 		if (!parsed) {
-			error = inviteError(token);
+			error = inviteError(inviteText);
 			return;
 		}
 		error = null;
-		goto(`/join#${parsed.secret}`);
+		goto(invitePath(parsed.secret));
 	}
 
 	function relativeDay(ts: number | undefined): string {
@@ -152,14 +152,14 @@
 			{/if}
 		</header>
 
-		{#snippet tokenForm()}
-			<form class="card token-form" onsubmit={onJoinSubmit}>
+		{#snippet inviteForm()}
+			<form class="card invite-form" onsubmit={onJoinSubmit}>
 				<div class="eyebrow" style="margin-bottom: 8px;">Paste an invite link or group key</div>
 				<div class="input-wrap">
 					<input
-						class="input token-input"
+						class="input invite-input"
 						placeholder="Invite link or group key"
-						bind:value={token}
+						bind:value={inviteText}
 						autocomplete="off"
 						autocapitalize="off"
 						spellcheck="false"
@@ -177,7 +177,7 @@
 						</svg>
 					</button>
 				</div>
-				<div class="dim hint">PASTE THE LINK, OR JUST THE 22 CHARACTERS AFTER THE #</div>
+				<div class="dim hint">Paste the link, or just the {SECRET_LENGTH} characters after the #</div>
 				{#if error}
 					<div class="error" role="alert">{error}</div>
 				{/if}
@@ -244,16 +244,16 @@
 				<button
 					class="btn action-btn"
 					type="button"
-					aria-expanded={tokenInputOpen}
-					onclick={() => (tokenInputOpen = !tokenInputOpen)}
+					aria-expanded={inviteInputOpen}
+					onclick={() => (inviteInputOpen = !inviteInputOpen)}
 				>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
 					<span>Join with invite link</span>
 				</button>
 			</div>
 
-			{#if tokenInputOpen}
-				{@render tokenForm()}
+			{#if inviteInputOpen}
+				{@render inviteForm()}
 			{/if}
 		{:else}
 			<div class="cta-stack">
@@ -265,8 +265,8 @@
 				<button
 					type="button"
 					class="btn btn-block secondary-cta"
-					aria-expanded={tokenInputOpen}
-					onclick={() => (tokenInputOpen = !tokenInputOpen)}
+					aria-expanded={inviteInputOpen}
+					onclick={() => (inviteInputOpen = !inviteInputOpen)}
 				>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
 					<span>Join a group</span>
@@ -278,8 +278,8 @@
 				</button>
 			</div>
 
-			{#if tokenInputOpen}
-				{@render tokenForm()}
+			{#if inviteInputOpen}
+				{@render inviteForm()}
 			{/if}
 
 			<section class="value-props" aria-labelledby="why-kostos">
@@ -836,7 +836,7 @@
 		font-size: 12px;
 	}
 
-	.token-form {
+	.invite-form {
 		margin-top: 14px;
 	}
 
@@ -844,7 +844,7 @@
 		position: relative;
 	}
 
-	.token-input {
+	.invite-input {
 		font-family: var(--font-mono);
 		letter-spacing: 0.08em;
 		padding-right: 48px;
@@ -863,6 +863,7 @@
 		font-family: var(--font-mono);
 		margin-top: 8px;
 		letter-spacing: 0.02em;
+		text-transform: uppercase;
 	}
 
 	.error {
