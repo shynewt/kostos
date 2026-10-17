@@ -10,11 +10,20 @@ import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { ARCHIVE_BYTES, LIVE_BYTES } from '../src/lib/server/room-meta.js';
+import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PACKET_MAGIC, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import { proofHash } from '../src/lib/sync/room-access.js';
 import { joinRoom, largePacket, openSocket, packet, packetsFillingTheCap, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 
 const room = (name: string) => createHash('sha256').update(name).digest('hex');
+
+// payload sizes behind the counter assertions: what the packet builders produce minus the 4 magic bytes and flag byte
+const PACKET_HEADER_BYTES = PACKET_MAGIC.length + 1;
+const ENTRY_BYTES = packet().length - PACKET_HEADER_BYTES;
+const SNAPSHOT_PACKET_BYTES = 200;
+const SNAPSHOT_ENTRY_BYTES = SNAPSHOT_PACKET_BYTES - (PACKET_HEADER_BYTES + 4);
+const SEEDED_ENTRIES = 50;
+const SEEDED_ENTRY_BYTES = 28;
 
 let mf: Miniflare;
 let directory: string;
@@ -28,7 +37,7 @@ const legacyScript = `export class SyncRoom {
    // a legacy value over 2 MB can't be stored, so fill the v3 table directly
    const sql = this.ctx.storage.sql;
    sql.exec('CREATE TABLE IF NOT EXISTS messages (seq INTEGER PRIMARY KEY, hash TEXT UNIQUE NOT NULL, payload BLOB NOT NULL)');
-   this.ctx.storage.transactionSync(() => { for (let i = 0; i < Number(params.get('entries')); i++) sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', 'seed:' + i, new ArrayBuffer(28)); });
+   this.ctx.storage.transactionSync(() => { for (let i = 0; i < Number(params.get('entries')); i++) sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', 'seed:' + i, new ArrayBuffer(${SEEDED_ENTRY_BYTES})); });
    if (params.has('refuseInserts')) sql.exec("CREATE TRIGGER refuse_inserts BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'database is broken'); END");
    return new Response('seeded');
   }
@@ -40,7 +49,18 @@ const legacyScript = `export class SyncRoom {
 export default {fetch(request,env) { const room = new URL(request.url).pathname.split('/').pop(); return env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName(room)).fetch(request); }};`;
 const runtimeLog: string[] = [];
 function options() {
-	return { handleRuntimeStdio: (stdout: Readable, stderr: Readable) => { for (const stream of [stdout, stderr]) stream.on('data', (chunk: Buffer) => runtimeLog.push(chunk.toString())); }, name: 'kostos-relay-test', modules: true, compatibilityDate: '2025-05-01', host: '127.0.0.1', port: 0, durableObjects: { SYNC_ROOM: { className: 'SyncRoom', useSQLite: true } }, durableObjectsPersist: join(directory, 'storage') };
+	return {
+		handleRuntimeStdio: (stdout: Readable, stderr: Readable) => {
+			for (const stream of [stdout, stderr]) stream.on('data', (chunk: Buffer) => runtimeLog.push(chunk.toString()));
+		},
+		name: 'kostos-relay-test',
+		modules: true,
+		compatibilityDate: '2025-05-01',
+		host: '127.0.0.1',
+		port: 0,
+		durableObjects: { SYNC_ROOM: { className: 'SyncRoom', useSQLite: true } },
+		durableObjectsPersist: join(directory, 'storage')
+	};
 }
 beforeAll(async () => {
 	directory = await mkdtemp(join(tmpdir(), 'kostos-worker-'));
@@ -52,7 +72,7 @@ beforeAll(async () => {
 	await mf.dispatchFetch(`http://local/sync/${room('small')}?count=3`);
 	await mf.dispatchFetch(`http://local/sync/${room('capped')}?count=1000`);
 	await mf.dispatchFetch(`http://local/sync/${room('broken')}?entries=0&refuseInserts`);
-	await mf.dispatchFetch(`http://local/sync/${room('seeded-rows')}?entries=50`);
+	await mf.dispatchFetch(`http://local/sync/${room('seeded-rows')}?entries=${SEEDED_ENTRIES}`);
 	await mf.dispatchFetch(`http://local/sync/${room('one-below-entry-cap')}?entries=${MAX_ROOM_ENTRIES - 1}`);
 	await mf.setOptions({ ...options(), script });
 	await mf.ready;
@@ -317,27 +337,27 @@ describe('room byte counters', () => {
 		const device = await connect('counted', proof);
 		for (let i = 0; i < 4; i++) device.ws.send(packet(i));
 		await until(() => device.controls.some((m) => m.type === 'ack' && m.revision === 4));
-		device.ws.send(snapshot(3, 200));
+		device.ws.send(snapshot(3, SNAPSHOT_PACKET_BYTES));
 		await until(() => device.controls.some((m) => m.type === 'compacted'));
 		const compacted = await readRoom(proof);
-		expect(compacted.meta).toMatchObject({ live_bytes: 191 + 40, archive_bytes: 3 * 40 });
+		expect(compacted.meta).toMatchObject({ [LIVE_BYTES]: SNAPSHOT_ENTRY_BYTES + ENTRY_BYTES, [ARCHIVE_BYTES]: 3 * ENTRY_BYTES });
 		await restartRuntime();
 		const again = await connect('counted', proof);
 		again.ws.send(packet(9));
 		await until(() => again.controls.some((m) => m.type === 'ack'));
 		const restarted = await readRoom(proof);
-		expect(restarted.meta).toMatchObject({ live_bytes: restarted.liveBytes, archive_bytes: restarted.archiveBytes });
-		expect(restarted.liveBytes).toBe(191 + 40 + 40);
+		expect(restarted.meta).toMatchObject({ [LIVE_BYTES]: restarted.liveBytes, [ARCHIVE_BYTES]: restarted.archiveBytes });
+		expect(restarted.liveBytes).toBe(SNAPSHOT_ENTRY_BYTES + 2 * ENTRY_BYTES);
 	});
 
 	it('start from the rows a room already holds, once, and from then on decide the cap', async () => {
 		const proof = 'D'.repeat(43);
 		await connect('seeded-rows', proof);
-		expect((await readRoom(proof)).meta).toMatchObject({ live_bytes: 50 * 28, archive_bytes: 0 });
+		expect((await readRoom(proof)).meta).toMatchObject({ [LIVE_BYTES]: SEEDED_ENTRIES * SEEDED_ENTRY_BYTES, [ARCHIVE_BYTES]: 0 });
 		terminateOpenSockets();
 		await mf.dispose();
 		const database = await openRoomDatabase(proof, false);
-		database.prepare("UPDATE sync_meta SET value = ? WHERE key = 'live_bytes'").run(MAX_ROOM_BYTES - 10);
+		database.prepare('UPDATE sync_meta SET value = ? WHERE key = ?').run(MAX_ROOM_BYTES - 10, LIVE_BYTES);
 		database.close();
 		mf = new Miniflare({ ...options(), script }); await mf.ready;
 		// the stored counter is trusted, not recomputed: a 40 byte write no longer fits
@@ -355,11 +375,11 @@ describe('room byte counters', () => {
 		terminateOpenSockets();
 		await mf.dispose();
 		const database = await openRoomDatabase(proof, false);
-		database.exec("DELETE FROM sync_meta WHERE key IN ('live_bytes', 'archive_bytes')");
+		database.prepare('DELETE FROM sync_meta WHERE key IN (?, ?)').run(LIVE_BYTES, ARCHIVE_BYTES);
 		database.close();
 		mf = new Miniflare({ ...options(), script }); await mf.ready;
 		await connect('predates-counters', proof);
-		expect((await readRoom(proof)).meta).toMatchObject({ live_bytes: 40, archive_bytes: 0 });
+		expect((await readRoom(proof)).meta).toMatchObject({ [LIVE_BYTES]: ENTRY_BYTES, [ARCHIVE_BYTES]: 0 });
 	});
 });
 
@@ -381,7 +401,7 @@ describe('room archive ceiling', () => {
 			await until(() => device.controls.filter((m) => m.type === 'compacted').length === cycle - 1);
 		}
 		const { archive, archiveBytes, databaseBytes, liveBytes, meta } = await readRoom(proof);
-		expect(meta).toMatchObject({ live_bytes: liveBytes, archive_bytes: archiveBytes });
+		expect(meta).toMatchObject({ [LIVE_BYTES]: liveBytes, [ARCHIVE_BYTES]: archiveBytes });
 		expect(archiveBytes).toBeLessThanOrEqual(MAX_ARCHIVE_BYTES);
 		expect(archiveBytes).toBeGreaterThan(MAX_ARCHIVE_BYTES - MAX_MESSAGE_BYTES);
 		const archivedHashes = archive.map((row) => row.hash);

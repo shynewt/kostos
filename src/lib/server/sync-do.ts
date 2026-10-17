@@ -9,6 +9,7 @@
  * barriers are serialized with writes, including across WebSocket hibernation.
  */
 import { DurableObject } from 'cloudflare:workers';
+import { ARCHIVE_BYTES, LIVE_BYTES } from './room-meta.js';
 import {
 	MAX_ARCHIVE_BYTES, MAX_BARRIER_ID_LENGTH, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, PROTOCOL_VERSION, unwrapPacket, payloadHash
 } from '../sync/relay-protocol.js';
@@ -22,10 +23,6 @@ type Entry = { payload: ArrayBuffer };
 
 /** The old KV history held at most this many entries, so a full one may have lost older ones. */
 const LEGACY_HISTORY_LIMIT = 1000;
-
-/** Running payload totals in sync_meta: summing rows bills a read per row, so writes adjust these instead. */
-const LIVE_BYTES = 'live_bytes';
-const ARCHIVE_BYTES = 'archive_bytes';
 
 export class SyncRoom extends DurableObject {
 	private tail: Promise<unknown> = Promise.resolve();
@@ -69,7 +66,7 @@ export class SyncRoom extends DurableObject {
 		});
 	}
 
-	private bytes(key: string): number {
+	private storedBytes(key: string): number {
 		return this.ctx.storage.sql.exec<{ value: number }>('SELECT value FROM sync_meta WHERE key = ?', key).one().value;
 	}
 	private addBytes(key: string, delta: number): void {
@@ -92,7 +89,7 @@ export class SyncRoom extends DurableObject {
 
 	/** Whether live history (the rows a new client replays, not the archive) would pass MAX_ROOM_BYTES after growing by `deltaBytes`. */
 	private exceedsCap(deltaBytes: number): boolean {
-		return this.bytes(LIVE_BYTES) + deltaBytes > MAX_ROOM_BYTES;
+		return this.storedBytes(LIVE_BYTES) + deltaBytes > MAX_ROOM_BYTES;
 	}
 
 	/** Sequence numbers never shrink, so a revision under the limit proves the live count is too; the exact count only runs past it. */
@@ -192,7 +189,7 @@ export class SyncRoom extends DurableObject {
 	/** The archive is recovery-only and never replayed, so its oldest rows make room for new ones. A
 	 *  compaction can archive at most MAX_ROOM_BYTES (the live cap), which MAX_ARCHIVE_BYTES never undercuts. */
 	private trimArchive(incomingBytes: number): void {
-		const toFree = this.bytes(ARCHIVE_BYTES) + incomingBytes - MAX_ARCHIVE_BYTES;
+		const toFree = this.storedBytes(ARCHIVE_BYTES) + incomingBytes - MAX_ARCHIVE_BYTES;
 		if (toFree <= 0) return;
 		let lastDropped = 0;
 		let dropped = 0;
