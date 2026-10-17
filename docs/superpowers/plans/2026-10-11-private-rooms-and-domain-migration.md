@@ -2703,7 +2703,8 @@ jobs:
 
       - name: Refuse to ship placeholders
         run: |
-          if grep -nE "= '(APP_DOMAIN|RETIREMENT_DATE)'" src/lib/migration.ts; then
+          test -f src/lib/migration.ts
+          if grep -nE "^export const (APP_HOST|RETIREMENT_DATE) = '[A-Z_]+';" src/lib/migration.ts; then
             echo "Set APP_HOST and RETIREMENT_DATE in src/lib/migration.ts first"
             exit 1
           fi
@@ -2725,7 +2726,7 @@ jobs:
           command: deploy
 ```
 
-Create the `production-legacy` environment in the repository settings with its own `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets (scoped to the old Worker only), and require a reviewer. Check that the workflow shows up under Actions after merging to `main`.
+The guard matches any all-caps placeholder instead of naming `APP_DOMAIN`, so the final `rg APP_DOMAIN` sweep does not trip over this workflow, and `test -f` makes a branch without the banner fail instead of passing silently (`grep` exits 2 on a missing file, which `if` treats as "no placeholder"). Create the `production-legacy` environment in the repository settings with its own `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets (scoped to the old Worker only), and require a reviewer. Check that the workflow shows up under Actions after merging to `main`.
 
 - [ ] **Step 2: Owner message and runbook**
 
@@ -2739,7 +2740,7 @@ Create `docs/migration/owner-message-and-runbook.md`:
 > Kostos is moving from kostos.shynewt.com to APP_DOMAIN, and groups get new keys on the way. Yours needs moving once.
 >
 > 1. Agree with your group who moves it. Only that person does steps 2 and 3; everyone else waits for the new link and should not export.
-> 2. On the old site, open the group while online and wait for "Up to date". Then open Settings and choose Export backup.
+> 2. On the old site, open the group while online and wait for "Up to date". Then choose Export backup in the "Moving this group?" box at the top of the group.
 > 3. On APP_DOMAIN choose "Restore from backup", pick which member you are, and share the new invite link.
 > 4. Everyone else opens the new link and picks their name. If you installed the app, reinstall it from APP_DOMAIN. On iPhone: remove the old icon, open APP_DOMAIN in Safari, tap Share, then Add to Home Screen.
 >
@@ -2751,8 +2752,8 @@ Create `docs/migration/owner-message-and-runbook.md`:
 
 1. Register the domain and add its zone to the Cloudflare account. Fill in `docs/migration/rollout-checklist.md`.
 2. Replace `APP_DOMAIN` (see the checklist) and deploy this branch as the `kostos-app` Worker. Smoke test it: create a group, join it from a second browser.
-3. Cut `legacy` from the last v2 tag (`git switch -c legacy v2.10.1`), add the migration banner (part B of the plan), push it, run the "Release legacy" workflow.
-4. Send the owner message. Put the same link in the retired site's banner ("Open the new site").
+3. Cut `legacy` from the last v2 tag (`git switch -c legacy v2.10.1`) and add the migration banner (see the commits on the `legacy` branch). Set `APP_HOST` and `RETIREMENT_DATE` in `src/lib/migration.ts`, push the branch, then run the "Release legacy" workflow. It refuses to deploy while either is still a placeholder.
+4. Send the owner message. The retired site's banner links to the new site ("Open the new site").
 5. The mover may paste the new invite link into the old group's description; it reaches every member through normal sync.
 6. After FREEZE_DATE, send a reminder as a second legacy release (the non-dismissible update prompt now reaches phones that took release one).
 7. On RETIREMENT_DATE (at least three months after step 4) take the old Worker down. Only the landing page and `/join` may redirect after that date; never redirect the app.
@@ -2919,7 +2920,7 @@ Expected: PASS.
 
 Manual check of the update prompt (not automated; the component depends on `virtual:pwa-register`): build twice with a trivial text change in between, serve the first build with `npm run preview`, open it in Chromium so the service worker registers, serve the second build on the same origin, wait for the waiting worker, and confirm the bar reads "Update to see an important notice about Kostos moving." with only an Update button.
 
-Also run `npm run build && npm run test:e2e` once on this branch to confirm the banners do not break existing selectors.
+Also run `npm run build && npm run test:e2e` once on this branch to confirm the banners do not break existing selectors. Set `PLAYWRIGHT_CHROMIUM_PATH` if Playwright has no downloaded browser, and run `git checkout -- docs/screenshots` afterwards: `sync.e2e.ts` rewrites the tracked screenshots.
 
 - [ ] **Step 8: Commit and deploy**
 
