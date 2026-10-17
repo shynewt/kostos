@@ -10,7 +10,7 @@ import { build } from 'esbuild';
 import { Miniflare } from 'miniflare';
 import WebSocket from 'ws';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_ENTRIES, payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { MAX_ARCHIVE_BYTES, MAX_MESSAGE_BYTES, MAX_ROOM_BYTES, MAX_ROOM_ENTRIES, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import { proofHash } from '../src/lib/sync/room-access.js';
 import { joinRoom, largePacket, openSocket, packet, packetsFillingTheCap, PROOF, proofProtocol, snapshot, terminateOpenSockets, until } from './test-helpers.js';
 
@@ -52,6 +52,7 @@ beforeAll(async () => {
 	await mf.dispatchFetch(`http://local/sync/${room('small')}?count=3`);
 	await mf.dispatchFetch(`http://local/sync/${room('capped')}?count=1000`);
 	await mf.dispatchFetch(`http://local/sync/${room('broken')}?entries=0&refuseInserts`);
+	await mf.dispatchFetch(`http://local/sync/${room('seeded-rows')}?entries=50`);
 	await mf.dispatchFetch(`http://local/sync/${room('one-below-entry-cap')}?entries=${MAX_ROOM_ENTRIES - 1}`);
 	await mf.setOptions({ ...options(), script });
 	await mf.ready;
@@ -275,23 +276,92 @@ describe('compaction', () => {
 	});
 });
 
-/** Reads a room's SQLite file while the runtime keeps running. The room is found by the proof that claimed it. */
-async function readRoom(proof: string) {
+/** Opens a room's SQLite file; the room is found by the proof that claimed it. Callers close it. */
+async function openRoomDatabase(proof: string, readOnly = true) {
 	const claim = await proofHash(proof);
 	for (const entry of await readdir(join(directory, 'storage'), { withFileTypes: true, recursive: true })) {
 		if (!entry.isFile() || !entry.name.endsWith('.sqlite') || entry.name === 'metadata.sqlite') continue;
-		const database = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly: true });
+		const database = new DatabaseSync(join(entry.parentPath, entry.name), { readOnly });
 		try {
-			if ((database.prepare('SELECT proof_hash FROM room_auth').get() as { proof_hash: string } | undefined)?.proof_hash !== claim) continue;
-			const archive = database.prepare('SELECT seq, hash, length(payload) AS bytes FROM archive ORDER BY id').all() as { seq: number; hash: string; bytes: number }[];
-			const live = database.prepare('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM messages').get() as { bytes: number };
-			const pages = database.prepare('PRAGMA page_count').get() as { page_count: number };
-			const page = database.prepare('PRAGMA page_size').get() as { page_size: number };
-			return { archive, archiveBytes: archive.reduce((total, row) => total + row.bytes, 0), liveBytes: live.bytes, databaseBytes: pages.page_count * page.page_size };
-		} catch { continue; } finally { database.close(); }
+			if ((database.prepare('SELECT proof_hash FROM room_auth').get() as { proof_hash: string } | undefined)?.proof_hash === claim) return database;
+		} catch { /* a room that was never claimed has no room_auth table */ }
+		database.close();
 	}
 	throw new Error('No room database found for that proof');
 }
+
+/** What a room stores, read while the runtime keeps running, next to the byte counters it keeps. */
+async function readRoom(proof: string) {
+	const database = await openRoomDatabase(proof);
+	try {
+		const archive = database.prepare('SELECT seq, hash, length(payload) AS bytes FROM archive ORDER BY id').all() as { seq: number; hash: string; bytes: number }[];
+		const live = database.prepare('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM messages').get() as { bytes: number };
+		const meta = Object.fromEntries((database.prepare('SELECT key, value FROM sync_meta').all() as { key: string; value: number }[]).map((row) => [row.key, row.value]));
+		const pages = database.prepare('PRAGMA page_count').get() as { page_count: number };
+		const page = database.prepare('PRAGMA page_size').get() as { page_size: number };
+		return {
+			archive, meta, liveBytes: live.bytes, databaseBytes: pages.page_count * page.page_size,
+			archiveBytes: archive.reduce((total, row) => total + row.bytes, 0)
+		};
+	} finally { database.close(); }
+}
+
+async function restartRuntime() {
+	terminateOpenSockets();
+	await mf.dispose(); mf = new Miniflare({ ...options(), script }); await mf.ready;
+}
+
+describe('room byte counters', () => {
+	it('count live and archived bytes through writes, a compaction and a cold restart', async () => {
+		const proof = 'C'.repeat(43);
+		const device = await connect('counted', proof);
+		for (let i = 0; i < 4; i++) device.ws.send(packet(i));
+		await until(() => device.controls.some((m) => m.type === 'ack' && m.revision === 4));
+		device.ws.send(snapshot(3, 200));
+		await until(() => device.controls.some((m) => m.type === 'compacted'));
+		const compacted = await readRoom(proof);
+		expect(compacted.meta).toMatchObject({ live_bytes: 191 + 40, archive_bytes: 3 * 40 });
+		await restartRuntime();
+		const again = await connect('counted', proof);
+		again.ws.send(packet(9));
+		await until(() => again.controls.some((m) => m.type === 'ack'));
+		const restarted = await readRoom(proof);
+		expect(restarted.meta).toMatchObject({ live_bytes: restarted.liveBytes, archive_bytes: restarted.archiveBytes });
+		expect(restarted.liveBytes).toBe(191 + 40 + 40);
+	});
+
+	it('start from the rows a room already holds, once, and from then on decide the cap', async () => {
+		const proof = 'D'.repeat(43);
+		await connect('seeded-rows', proof);
+		expect((await readRoom(proof)).meta).toMatchObject({ live_bytes: 50 * 28, archive_bytes: 0 });
+		terminateOpenSockets();
+		await mf.dispose();
+		const database = await openRoomDatabase(proof, false);
+		database.prepare("UPDATE sync_meta SET value = ? WHERE key = 'live_bytes'").run(MAX_ROOM_BYTES - 10);
+		database.close();
+		mf = new Miniflare({ ...options(), script }); await mf.ready;
+		// the stored counter is trusted, not recomputed: a 40 byte write no longer fits
+		const sender = await connect('seeded-rows', proof);
+		sender.ws.send(packet(1));
+		expect(await sender.closed).toBe(1011);
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'full' });
+	});
+
+	it('are rebuilt for a room that predates them', async () => {
+		const proof = 'E'.repeat(43);
+		const device = await connect('predates-counters', proof);
+		device.ws.send(packet(1));
+		await until(() => device.controls.some((m) => m.type === 'ack'));
+		terminateOpenSockets();
+		await mf.dispose();
+		const database = await openRoomDatabase(proof, false);
+		database.exec("DELETE FROM sync_meta WHERE key IN ('live_bytes', 'archive_bytes')");
+		database.close();
+		mf = new Miniflare({ ...options(), script }); await mf.ready;
+		await connect('predates-counters', proof);
+		expect((await readRoom(proof)).meta).toMatchObject({ live_bytes: 40, archive_bytes: 0 });
+	});
+});
 
 describe('room archive ceiling', () => {
 	const proof = 'R'.repeat(43);
@@ -310,7 +380,8 @@ describe('room archive ceiling', () => {
 			device.ws.send(snapshot(cycle, 200));
 			await until(() => device.controls.filter((m) => m.type === 'compacted').length === cycle - 1);
 		}
-		const { archive, archiveBytes, databaseBytes } = await readRoom(proof);
+		const { archive, archiveBytes, databaseBytes, liveBytes, meta } = await readRoom(proof);
+		expect(meta).toMatchObject({ live_bytes: liveBytes, archive_bytes: archiveBytes });
 		expect(archiveBytes).toBeLessThanOrEqual(MAX_ARCHIVE_BYTES);
 		expect(archiveBytes).toBeGreaterThan(MAX_ARCHIVE_BYTES - MAX_MESSAGE_BYTES);
 		const archivedHashes = archive.map((row) => row.hash);

@@ -20,6 +20,10 @@ import {
 
 type Entry = { seq: number; hash: string; payload: ArrayBuffer };
 
+/** Running payload totals in sync_meta: summing rows bills a read per row, so writes adjust these instead. */
+const LIVE_BYTES = 'live_bytes';
+const ARCHIVE_BYTES = 'archive_bytes';
+
 export class SyncRoom extends DurableObject {
 	private tail: Promise<unknown> = Promise.resolve();
 	private initialized: Promise<void>;
@@ -33,18 +37,40 @@ export class SyncRoom extends DurableObject {
 			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS room_auth (id INTEGER PRIMARY KEY CHECK (id = 1), proof_hash TEXT NOT NULL)');
 			// Entries replaced by a snapshot. Never replayed, kept so a bad snapshot is recoverable.
 			ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS archive (id INTEGER PRIMARY KEY, seq INTEGER NOT NULL, hash TEXT NOT NULL, payload BLOB NOT NULL, archived_at INTEGER NOT NULL)');
-			const migrated = ctx.storage.sql.exec<{ value: number }>("SELECT value FROM sync_meta WHERE key = 'migrated'").toArray();
-			if (migrated.length) return;
-			// Keep the legacy KV entry untouched for recovery. A full capped log
-			// cannot prove it includes all older data, so do not claim freshness.
-			const old = await ctx.storage.get<ArrayBuffer[]>('history') ?? [];
-			ctx.storage.transactionSync(() => {
-				for (let i = 0; i < old.length; i++) {
-					ctx.storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', `legacy:${i}`, old[i]);
-				}
-				ctx.storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', ?), ('migrated', 1)", old.length < 1000 ? 1 : 0);
-			});
+			await this.migrateLegacyHistory();
+			this.initByteCounters();
 		});
+	}
+
+	private async migrateLegacyHistory(): Promise<void> {
+		const { storage } = this.ctx;
+		if (storage.sql.exec("SELECT value FROM sync_meta WHERE key = 'migrated'").toArray().length) return;
+		// Keep the legacy KV entry untouched for recovery. A full capped log
+		// cannot prove it includes all older data, so do not claim freshness.
+		const old = await storage.get<ArrayBuffer[]>('history') ?? [];
+		storage.transactionSync(() => {
+			for (let i = 0; i < old.length; i++) {
+				storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', `legacy:${i}`, old[i]);
+			}
+			storage.sql.exec("INSERT INTO sync_meta (key, value) VALUES ('complete', ?), ('migrated', 1)", old.length < 1000 ? 1 : 0);
+		});
+	}
+
+	/** Rooms from before the counters existed get them from one scan; every later start trusts what is stored. */
+	private initByteCounters(): void {
+		const { sql } = this.ctx.storage;
+		if (sql.exec<{ n: number }>('SELECT COUNT(*) AS n FROM sync_meta WHERE key IN (?, ?)', LIVE_BYTES, ARCHIVE_BYTES).one().n === 2) return;
+		this.ctx.storage.transactionSync(() => {
+			sql.exec('INSERT OR REPLACE INTO sync_meta (key, value) SELECT ?, COALESCE(SUM(length(payload)), 0) FROM messages', LIVE_BYTES);
+			sql.exec('INSERT OR REPLACE INTO sync_meta (key, value) SELECT ?, COALESCE(SUM(length(payload)), 0) FROM archive', ARCHIVE_BYTES);
+		});
+	}
+
+	private bytes(key: string): number {
+		return this.ctx.storage.sql.exec<{ value: number }>('SELECT value FROM sync_meta WHERE key = ?', key).one().value;
+	}
+	private addBytes(key: string, delta: number): void {
+		this.ctx.storage.sql.exec('UPDATE sync_meta SET value = value + ? WHERE key = ?', delta, key);
 	}
 
 	private serialized<T>(work: () => Promise<T>): Promise<T> {
@@ -61,14 +87,9 @@ export class SyncRoom extends DurableObject {
 		console.error(`[kostos] room ${this.ctx.id.toString().slice(0, 8)} storage failure: ${error instanceof Error ? error.message : error}`);
 	}
 
-	/** Whether live history (the rows a new client replays, not the archive) would pass MAX_ROOM_BYTES after
-	 *  growing by `deltaBytes`. The database size bounds live bytes from above for free, so the exact sum,
-	 *  which bills a read per live row, only runs once archived rows make that bound too loose. */
+	/** Whether live history (the rows a new client replays, not the archive) would pass MAX_ROOM_BYTES after growing by `deltaBytes`. */
 	private exceedsCap(deltaBytes: number): boolean {
-		const sql = this.ctx.storage.sql;
-		if (sql.databaseSize + deltaBytes <= MAX_ROOM_BYTES) return false;
-		const live = sql.exec<{ bytes: number }>('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM messages').one().bytes;
-		return live + deltaBytes > MAX_ROOM_BYTES;
+		return this.bytes(LIVE_BYTES) + deltaBytes > MAX_ROOM_BYTES;
 	}
 
 	/** Sequence numbers never shrink, so a revision under the limit proves the live count is too; the exact count only runs past it. */
@@ -155,6 +176,7 @@ export class SyncRoom extends DurableObject {
 					}
 					revision = this.ctx.storage.transactionSync(() => {
 						this.ctx.storage.sql.exec('INSERT INTO messages (hash, payload) VALUES (?, ?)', hash, payload);
+						this.addBytes(LIVE_BYTES, payload.byteLength);
 						return this.revision();
 					});
 					this.broadcast(ws, payload, revision);
@@ -170,17 +192,17 @@ export class SyncRoom extends DurableObject {
 	/** The archive is recovery-only and never replayed, so its oldest rows make room for new ones. A
 	 *  compaction can archive at most MAX_ROOM_BYTES (the live cap), which MAX_ARCHIVE_BYTES never undercuts. */
 	private trimArchive(incomingBytes: number): void {
-		const sql = this.ctx.storage.sql;
-		const archived = sql.exec<{ bytes: number }>('SELECT COALESCE(SUM(length(payload)), 0) AS bytes FROM archive').one().bytes;
-		let toFree = archived + incomingBytes - MAX_ARCHIVE_BYTES;
+		const toFree = this.bytes(ARCHIVE_BYTES) + incomingBytes - MAX_ARCHIVE_BYTES;
 		if (toFree <= 0) return;
 		let lastDropped = 0;
-		for (const row of sql.exec<{ id: number; bytes: number }>('SELECT id, length(payload) AS bytes FROM archive ORDER BY id')) {
+		let dropped = 0;
+		for (const row of this.ctx.storage.sql.exec<{ id: number; bytes: number }>('SELECT id, length(payload) AS bytes FROM archive ORDER BY id')) {
 			lastDropped = row.id;
-			toFree -= row.bytes;
-			if (toFree <= 0) break;
+			dropped += row.bytes;
+			if (dropped >= toFree) break;
 		}
-		sql.exec('DELETE FROM archive WHERE id <= ?', lastDropped);
+		this.ctx.storage.sql.exec('DELETE FROM archive WHERE id <= ?', lastDropped);
+		this.addBytes(ARCHIVE_BYTES, -dropped);
 	}
 
 	/** Replace entries up to `through` with one snapshot at the same seq, so revision numbers and
@@ -196,6 +218,8 @@ export class SyncRoom extends DurableObject {
 			this.ctx.storage.sql.exec('INSERT INTO archive (seq, hash, payload, archived_at) SELECT seq, hash, payload, ? FROM messages WHERE seq <= ? ORDER BY seq', Date.now(), through);
 			this.ctx.storage.sql.exec('DELETE FROM messages WHERE seq <= ?', through);
 			this.ctx.storage.sql.exec('INSERT INTO messages (seq, hash, payload) VALUES (?, ?, ?)', through, hash, payload);
+			this.addBytes(ARCHIVE_BYTES, coveredBytes);
+			this.addBytes(LIVE_BYTES, payload.byteLength - coveredBytes);
 		});
 		this.control(ws, { type: 'compacted', revision: through });
 	}
