@@ -616,10 +616,12 @@ function expenseLabel(handle: RoomHandle, expense: Expense): string {
 	return emoji ? `${emoji} ${name}` : name;
 }
 
-export function addExpense(handle: RoomHandle, expense: Expense): void {
+/** `silent` skips the activity log, for seeding a room with expenses that already happened. */
+export function addExpense(handle: RoomHandle, expense: Expense, { silent = false } = {}): void {
 	if (handle.expenses.toArray().some((e) => e.get('id') === expense.id)) return;
 	handle.doc.transact(() => {
 		handle.expenses.push([expenseMap(expense)]);
+		if (silent) return;
 		logActivity(
 			handle,
 			expense.isSettlement

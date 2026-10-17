@@ -6,6 +6,10 @@ import type { Expense, Member } from '$lib/types';
 import { parseProjectArchive } from './projectArchive';
 import { archiveContents, createGroup, seedRoom } from './createGroup';
 
+vi.mock('$lib/sync/doc', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/sync/doc')>();
+	return { ...actual, openRoom: vi.fn(actual.openRoom) };
+});
 vi.mock('$lib/storage', async (importOriginal) => ({
 	...(await importOriginal<typeof import('$lib/storage')>()),
 	addProject: vi.fn(),
@@ -55,6 +59,13 @@ describe('seedRoom', () => {
 		expect(readMembers(handle).map((member) => member.id)).toEqual(['anna', 'marco']);
 		expect(readExpenses(handle)).toHaveLength(1);
 	});
+
+	it('leaves no activity trail, since a restore brings history rather than news', async () => {
+		const handle = openRoom('SILENT-ROOM');
+		await handle.ready;
+		seedRoom(handle, { ...contents().project, id: 'SILENT-ROOM' }, members, expenses);
+		expect(handle.activity.length).toBe(0);
+	});
 });
 
 describe('createGroup', () => {
@@ -80,6 +91,13 @@ describe('createGroup', () => {
 		const second = await createGroup(contents(), null);
 		expect(first).not.toBe(second);
 		expect(vi.mocked(addProject).mock.calls[0][0].secret).not.toBe(vi.mocked(addProject).mock.calls[1][0].secret);
+	});
+
+	it('opens no room when the group cannot be saved, so a retry starts clean', async () => {
+		vi.mocked(addProject).mockImplementationOnce(() => { throw new Error('storage full'); });
+		await expect(createGroup(contents(), 'marco')).rejects.toThrow('storage full');
+		expect(openRoom).not.toHaveBeenCalled();
+		expect(setCurrentMember).not.toHaveBeenCalled();
 	});
 
 	it('says why when the page has no crypto.subtle, and saves nothing', async () => {
