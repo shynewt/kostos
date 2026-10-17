@@ -6,7 +6,7 @@
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, truncate, unlink } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../src/lib/sync/relay-protocol.js';
 import {
 	DENIED_CLOSE_CODE, DENIED_MESSAGE, STORAGE_CLOSE_CODE, STORAGE_ERROR_MESSAGE, STORAGE_FULL_REASON,
@@ -27,7 +27,8 @@ async function readClaim(file) {
 }
 
 /** Writes the claim under a temporary name, then renames it into place, so a crash can't leave a
- *  half-written real file. Callers are serialized per room, so no second claim races this one.
+ *  half-written real file. The directory is synced afterwards so the rename itself survives power loss.
+ *  Callers are serialized per room, so no second claim races this one.
  *  @param {string} file @param {string} hash @returns {Promise<string>} the hash that owns the room */
 async function claimRoom(file, hash) {
 	const temporary = `${file}.${randomUUID()}.tmp`;
@@ -35,6 +36,8 @@ async function claimRoom(file, hash) {
 		const handle = await open(temporary, 'wx');
 		try { await handle.writeFile(hash); await handle.sync(); } finally { await handle.close(); }
 		await rename(temporary, file);
+		const directoryHandle = await open(dirname(file), 'r');
+		try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
 	} catch (error) {
 		await unlink(temporary).catch(() => {});
 		throw error;

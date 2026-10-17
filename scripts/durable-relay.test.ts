@@ -12,19 +12,30 @@ import { parseProofProtocol } from '../src/lib/sync/room-access.js';
 const ROOM = 'a'.repeat(64);
 const ROOM_STEM = createHash('sha256').update(ROOM).digest('hex');
 
-// lets a test make the next log append write half a line and then fail, like a full disk
-const failingAppend = vi.hoisted(() => ({ armed: false }));
+// records file system calls, and lets a test make the next log append write half a line and then
+// fail, like a full disk
+const fsSpy = vi.hoisted(() => ({ armed: false, calls: [] as string[] }));
 vi.mock('node:fs/promises', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('node:fs/promises')>();
 	return {
 		...actual,
+		rename: async (from: string, to: string) => {
+			fsSpy.calls.push(`rename ${to}`);
+			return actual.rename(from, to);
+		},
 		open: async (path: string, flags: string) => {
 			const handle = await actual.open(path, flags);
-			if (!failingAppend.armed || flags !== 'a') return handle;
-			failingAppend.armed = false;
+			const failThisAppend = fsSpy.armed && flags === 'a';
+			if (failThisAppend) fsSpy.armed = false;
 			return new Proxy(handle, {
 				get(target, property) {
-					if (property === 'writeFile') {
+					if (property === 'sync') {
+						return async () => {
+							fsSpy.calls.push(`sync ${path}`);
+							return target.sync();
+						};
+					}
+					if (property === 'writeFile' && failThisAppend) {
 						return async (data: string) => {
 							await target.write(data.slice(0, 20));
 							throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
@@ -166,6 +177,13 @@ describe('durable encrypted relay', () => {
 		expect(await peer.closed).toBe(1011);
 		expect(peer.controls).toEqual([{ type: 'error', reason: 'storage' }]);
 	});
+	it('syncs the data directory after renaming the claim into place', async () => {
+		fsSpy.calls.length = 0;
+		await joinRoom(await start());
+		const renamed = fsSpy.calls.indexOf(`rename ${directory}/${ROOM_STEM}.auth`);
+		expect(renamed).toBeGreaterThanOrEqual(0);
+		expect(fsSpy.calls.indexOf(`sync ${directory}`)).toBeGreaterThan(renamed);
+	});
 	it('keeps an update from a socket that closes straight after sending it', async () => {
 		const url = await start(); const sender = await joinRoom(url);
 		for (let i = 0; i < 20; i++) sender.ws.send(packet(i));
@@ -232,7 +250,7 @@ describe('relay disk log recovery', () => {
 		await writeThree();
 		const before = await readFile(logFile());
 		const url = await start(directory); const sender = await joinRoom(url);
-		failingAppend.armed = true;
+		fsSpy.armed = true;
 		sender.ws.send(packet(20));
 		expect(await sender.closed).toBe(1011);
 		expect(sender.controls.some((m) => m.type === 'ack')).toBe(false);
