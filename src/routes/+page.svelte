@@ -88,7 +88,7 @@
 					name: 'Do I need an account?',
 					acceptedAnswer: {
 						'@type': 'Answer',
-						text: 'No. Each group is identified by a secret key. Share the invite link to bring others in; anyone with it joins the group. No email, no password, no sign-up.'
+						text: 'No. Each group is identified by a group key. Share the invite link to bring others in; anyone with it joins the group. No email, no password, no sign-up.'
 					}
 				},
 				{
@@ -358,7 +358,7 @@
 							<h3 class="how-title">Create a group</h3>
 							<p class="dim how-body">
 								Pick a name, an emoji, a currency, and the people involved. The app generates a
-								secret key for the group locally on your device.
+								group key locally on your device.
 							</p>
 						</div>
 					</li>
@@ -396,7 +396,7 @@
 				<details class="faq-item">
 					<summary><h3>Do I need an account?</h3></summary>
 					<p>
-						No. Each group is identified by a secret key. Share the invite link to bring others in;
+						No. Each group is identified by a group key. Share the invite link to bring others in;
 						anyone with it joins the group. No email, no password, no sign-up.
 					</p>
 				</details>
