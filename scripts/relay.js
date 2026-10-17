@@ -1,11 +1,43 @@
 /* Shared Node relay: complete append-only encrypted history, serialized room
  * operations, and acknowledgements after fsync. KOSTOS_DATA_DIR should be on a
- * persistent volume in Docker. There is deliberately no lossy history cap.
+ * persistent volume in Docker. Nothing is ever trimmed; a room that reaches
+ * MAX_ROOM_BYTES refuses further writes instead. The first proof to connect
+ * claims a room, and the claim lives next to its log in <room hash>.auth.
  */
-import { createHash } from 'node:crypto';
-import { mkdir, open, readFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { unwrapPacket, payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { MAX_ROOM_BYTES, unwrapPacket, payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { DENIED_CLOSE_CODE, DENIED_MESSAGE, hashesEqual, isProofHash, proofHash } from '../src/lib/sync/room-access.js';
+
+/** null only when nobody has claimed the room; a damaged file throws.
+ *  @param {string} file @returns {Promise<string | null>} */
+async function readClaim(file) {
+	let contents;
+	try { contents = await readFile(file, 'utf8'); }
+	catch (error) {
+		if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') return null;
+		throw error;
+	}
+	if (!isProofHash(contents)) throw new Error(`Damaged room claim: ${file}`);
+	return contents;
+}
+
+/** Writes the claim under a temporary name, then renames it into place, so a crash can't leave a
+ *  half-written real file. Callers are serialized per room, so no second claim races this one.
+ *  @param {string} file @param {string} hash @returns {Promise<string>} the hash that owns the room */
+async function claimRoom(file, hash) {
+	const temporary = `${file}.${randomUUID()}.tmp`;
+	try {
+		const handle = await open(temporary, 'wx');
+		try { await handle.writeFile(hash); await handle.sync(); } finally { await handle.close(); }
+		await rename(temporary, file);
+	} catch (error) {
+		await unlink(temporary).catch(() => {});
+		throw error;
+	}
+	return hash;
+}
 
 /** @param {string} directory */
 export function createRelay(directory) {
@@ -13,12 +45,16 @@ export function createRelay(directory) {
 	const rooms = new Map();
 	/** @param {string} id */
 	function makeRoom(id) {
+		const stem = resolve(directory, createHash('sha256').update(id).digest('hex'));
 		const room = {
 			/** @type {Set<import('ws').WebSocket>} */ sockets: new Set(),
 			/** @type {{hash: string, payload: Buffer}[]} */ history: [],
 			/** @type {Map<string, number>} */ hashes: new Map(),
 			tail: Promise.resolve(),
-			file: resolve(directory, `${createHash('sha256').update(id).digest('hex')}.jsonl`),
+			file: `${stem}.jsonl`,
+			authFile: `${stem}.auth`,
+			/** @type {string | null} */ authHash: null,
+			bytes: 0,
 			loaded: false
 		};
 		return room;
@@ -47,8 +83,11 @@ export function createRelay(directory) {
 			history.push({ hash: entry.hash, payload });
 			hashes.set(entry.hash, history.length);
 		}
+		const authHash = await readClaim(room.authFile);
 		room.history = history;
 		room.hashes = hashes;
+		room.authHash = authHash;
+		room.bytes = history.reduce((total, entry) => total + entry.payload.length, 0);
 		room.loaded = true;
 	}
 	/** @param {ReturnType<typeof makeRoom>} room @param {import('ws').WebSocket} ws @param {() => Promise<void>} work */
@@ -59,15 +98,30 @@ export function createRelay(directory) {
 			ws.close(1011, 'Could not persist sync data');
 		});
 	}
-	/** @param {import('ws').WebSocket} ws @param {string} id */
-	function attach(ws, id) {
+	/** The first proof to connect claims the room; every later connection must match it.
+	 *  @param {ReturnType<typeof makeRoom>} room @param {string} proof */
+	async function authorize(room, proof) {
+		const hash = await proofHash(proof);
+		room.authHash ??= await claimRoom(room.authFile, hash);
+		return hashesEqual(room.authHash, hash);
+	}
+	/** @param {import('ws').WebSocket} ws @param {string} id @param {string} proof */
+	function attach(ws, id, proof) {
 		let room = rooms.get(id);
 		if (!room) { room = makeRoom(id); rooms.set(id, room); }
 		const activeRoom = room;
+		// Set once the proof is accepted and kept after the socket closes, so a write sent just
+		// before closing is still stored. Socket-set membership can't tell those cases apart.
+		let admitted = false;
 		ws.on('error', () => { activeRoom.sockets.delete(ws); ws.terminate(); });
 		ws.on('close', () => activeRoom.sockets.delete(ws));
 		enqueue(activeRoom, ws, async () => {
-			await load(activeRoom);
+			if (!(await authorize(activeRoom, proof))) {
+				control(ws, DENIED_MESSAGE);
+				ws.close(DENIED_CLOSE_CODE, 'Unauthorized');
+				return;
+			}
+			admitted = true;
 			if (ws.readyState !== ws.OPEN) return;
 			activeRoom.sockets.add(ws);
 			for (const entry of activeRoom.history) ws.send(entry.payload);
@@ -82,12 +136,14 @@ export function createRelay(directory) {
 				if (!message || typeof message !== 'object') return;
 				if (message.type === 'barrier' && typeof message.id === 'string' && message.id.length <= 80) {
 					enqueue(activeRoom, ws, async () => {
+						if (!admitted) return;
 						control(ws, { type: 'caught-up', id: message.id, revision: activeRoom.history.length });
 					});
 				}
 				return;
 			}
 			enqueue(activeRoom, ws, async () => {
+				if (!admitted) return;
 				const packet = data instanceof Buffer ? data : Buffer.concat(Array.isArray(data) ? data : [Buffer.from(data)]);
 				let decoded;
 				try { decoded = unwrapPacket(packet); }
@@ -105,12 +161,18 @@ export function createRelay(directory) {
 				const hash = await payloadHash(payload);
 				const existing = activeRoom.hashes.get(hash);
 				if (existing) { control(ws, { type: 'ack', hash, revision: existing }); return; }
+				if (activeRoom.bytes + payload.length > MAX_ROOM_BYTES) {
+					control(ws, { type: 'error', reason: 'storage' });
+					ws.close(1011, 'Room storage limit reached');
+					return;
+				}
 				const file = await open(activeRoom.file, 'a');
 				try {
 					await file.writeFile(`${JSON.stringify({ hash, data: payload.toString('base64') })}\n`);
 					await file.sync();
 				} finally { await file.close(); }
 				activeRoom.history.push({ hash, payload });
+				activeRoom.bytes += payload.length;
 				const revision = activeRoom.history.length;
 				activeRoom.hashes.set(hash, revision);
 				for (const peer of activeRoom.sockets) {

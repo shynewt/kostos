@@ -17,6 +17,7 @@ COPY --from=builder /app/build ./build
 COPY --from=builder /app/scripts/serve.js ./scripts/serve.js
 COPY --from=builder /app/scripts/relay.js ./scripts/relay.js
 COPY --from=builder /app/src/lib/sync/relay-protocol.js ./src/lib/sync/relay-protocol.js
+COPY --from=builder /app/src/lib/sync/room-access.js ./src/lib/sync/room-access.js
 ENV KOSTOS_DATA_DIR=/data
 VOLUME /data
 EXPOSE 8080

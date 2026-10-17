@@ -31,7 +31,7 @@ afterEach(async () => {
 describe('serve.js shutdown', () => {
 	it('exits cleanly and quickly on SIGTERM, telling connected clients to reconnect', async () => {
 		await startServer(18_762);
-		const ws = new WebSocket('ws://127.0.0.1:18762/sync/ROOM');
+		const ws = new WebSocket(`ws://127.0.0.1:18762/sync/${'b'.repeat(64)}`, [`kostos1.${'P'.repeat(43)}`]);
 		await new Promise<void>((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
 		const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
 		const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>

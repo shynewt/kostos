@@ -1,10 +1,17 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket, { WebSocketServer } from 'ws';
 import { createRelay } from './relay.js';
-import { payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { MAX_MESSAGE_BYTES, payloadHash } from '../src/lib/sync/relay-protocol.js';
+import { parseProofProtocol } from '../src/lib/sync/room-access.js';
+
+const ROOM = 'a'.repeat(64);
+const PROOF = 'P'.repeat(43);
+const proofOf = (request: { headers: Record<string, string | string[] | undefined> }) =>
+	parseProofProtocol(request.headers['sec-websocket-protocol'] as string | undefined)?.proof ?? '';
 
 let server: WebSocketServer;
 let directory: string;
@@ -13,17 +20,18 @@ async function start(dir?: string) {
 	directory = dir ?? await mkdtemp(join(tmpdir(), 'kostos-relay-'));
 	server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
 	const attach = createRelay(directory);
-	server.on('connection', (ws) => attach(ws, 'ROOM'));
+	server.on('connection', (ws, request) => attach(ws, ROOM, proofOf(request)));
 	await new Promise<void>((resolve) => server.once('listening', resolve));
 	return `ws://127.0.0.1:${(server.address() as { port: number }).port}`;
 }
-async function connect(url: string) {
-	const ws = new WebSocket(url); sockets.push(ws);
+async function connect(url: string, proof = PROOF) {
+	const ws = new WebSocket(url, [`kostos1.${proof}`]); sockets.push(ws);
 	const binary: Buffer[] = [];
 	const controls: Record<string, unknown>[] = [];
+	const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
 	ws.on('message', (data, isBinary) => { if (isBinary) binary.push(Buffer.from(data as Buffer)); else controls.push(JSON.parse(data.toString())); });
 	await new Promise<void>((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
-	return { ws, binary, controls };
+	return { ws, binary, controls, closed };
 }
 async function until(check: () => boolean) {
 	const deadline = Date.now() + 15_000;
@@ -44,7 +52,7 @@ describe('durable encrypted relay', () => {
 		server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
 		const attach = createRelay(directory);
 		let received = 0;
-		server.on('connection', (ws) => { attach(ws, 'ROOM'); ws.on('message', (_data, binary) => { if (binary) received++; }); });
+		server.on('connection', (ws, request) => { attach(ws, ROOM, proofOf(request)); ws.on('message', (_data, binary) => { if (binary) received++; }); });
 		await new Promise<void>((resolve) => server.once('listening', resolve));
 		const sender = await connect(`ws://127.0.0.1:${(server.address() as { port: number }).port}`);
 		await until(() => sender.controls.some((m) => m.type === 'ready'));
@@ -112,4 +120,74 @@ describe('durable encrypted relay', () => {
 		expect(a.controls.at(-1)).toMatchObject({ revision: 1 });
 		expect(a.ws.readyState).toBe(WebSocket.OPEN);
 	});
+	it('lets the first proof claim the room and tells any other proof it was denied', async () => {
+		const url = await start(); const owner = await connect(url);
+		await until(() => owner.controls.some((m) => m.type === 'ready'));
+		const intruder = await connect(url, 'Q'.repeat(43));
+		expect(await intruder.closed).toBe(1008);
+		expect(intruder.controls).toEqual([{ type: 'denied' }]);
+		expect(intruder.binary).toHaveLength(0);
+	});
+	it('ignores updates from a socket that was denied', async () => {
+		const url = await start(); const owner = await connect(url);
+		await until(() => owner.controls.some((m) => m.type === 'ready'));
+		const intruder = await connect(url, 'Q'.repeat(43));
+		intruder.ws.send(packet(7));
+		await intruder.closed;
+		const reader = await connect(url);
+		await until(() => reader.controls.some((m) => m.type === 'ready'));
+		expect(reader.binary).toHaveLength(0);
+	});
+	it('remembers the claim across a restart', async () => {
+		const url = await start(); const owner = await connect(url);
+		await until(() => owner.controls.some((m) => m.type === 'ready'));
+		await stop();
+		const restarted = await start(directory);
+		const intruder = await connect(restarted, 'Q'.repeat(43));
+		expect(await intruder.closed).toBe(1008);
+		const again = await connect(restarted);
+		await until(() => again.controls.some((m) => m.type === 'ready'));
+	});
+	it('gives an unclaimed room to exactly one of two simultaneous first connections', async () => {
+		const url = await start();
+		const peers = await Promise.all([connect(url, 'A'.repeat(43)), connect(url, 'B'.repeat(43))]);
+		await until(() => peers.every((peer) => peer.controls.length > 0));
+		expect(peers.map((peer) => peer.controls[0].type).sort()).toEqual(['denied', 'ready']);
+	});
+	it('treats a torn claim file as an error, never as an unclaimed room', async () => {
+		const url = await start();
+		const stem = createHash('sha256').update(ROOM).digest('hex');
+		await mkdir(directory, { recursive: true });
+		await writeFile(`${directory}/${stem}.auth`, 'half-writ');
+		const peer = await connect(url);
+		expect(await peer.closed).toBe(1011);
+		expect(peer.controls).toEqual([{ type: 'error', reason: 'storage' }]);
+	});
+	it('keeps an update from a socket that closes straight after sending it', async () => {
+		const url = await start(); const sender = await connect(url);
+		await until(() => sender.controls.some((m) => m.type === 'ready'));
+		for (let i = 0; i < 20; i++) sender.ws.send(packet(i));
+		sender.ws.close();
+		await sender.closed;
+		const receiver = await connect(url);
+		await until(() => receiver.controls.some((m) => m.type === 'ready'));
+		expect(receiver.binary).toHaveLength(20);
+	});
+	it('refuses writes past the room storage cap and keeps what was acknowledged', async () => {
+		const url = await start(); const sender = await connect(url);
+		await until(() => sender.controls.some((m) => m.type === 'ready'));
+		const large = () => Buffer.concat([Buffer.from([75, 79, 83, 51, 1]), randomBytes(MAX_MESSAGE_BYTES - 5)]);
+		let acknowledged = 0;
+		for (let i = 0; i < 40 && !sender.controls.some((m) => m.type === 'error'); i++) {
+			sender.ws.send(large());
+			await until(() => sender.controls.some((m) => m.type === 'ack' && m.revision === acknowledged + 1) || sender.controls.some((m) => m.type === 'error'));
+			if (!sender.controls.some((m) => m.type === 'error')) acknowledged++;
+		}
+		expect(sender.controls.at(-1)).toEqual({ type: 'error', reason: 'storage' });
+		expect(acknowledged).toBe(32);
+		expect(await sender.closed).toBe(1011);
+		const reader = await connect(url);
+		await until(() => reader.controls.some((m) => m.type === 'ready'));
+		expect(reader.binary).toHaveLength(32);
+	}, 60_000);
 });
