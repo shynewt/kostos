@@ -6,6 +6,7 @@
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import { formatAmount } from '$lib/money';
 	import { listProjects, type ProjectRef } from '$lib/storage';
+	import { NEW_ORIGIN } from '$lib/migration';
 	import { parseToken } from '$lib/token';
 
 	let projects = $state<ProjectRef[]>([]);
@@ -26,6 +27,8 @@
 
 	$effect(() => {
 		projects = listProjects();
+		// nothing to move from this phone, so the old site has nothing left to offer it
+		if (projects.length === 0) location.replace(NEW_ORIGIN);
 	});
 
 	const hasProjects = $derived(projects.length > 0);
@@ -54,6 +57,7 @@
 
 <svelte:head>
 	<title>Kostos · Group expense splitter, no accounts needed</title>
+	<link rel="canonical" href="{NEW_ORIGIN}/" />
 	<meta
 		name="description"
 		content="Kostos is a free group expense splitter. Share a token, split bills with friends, sync live across devices. No accounts, end-to-end encrypted, open source, works offline."
