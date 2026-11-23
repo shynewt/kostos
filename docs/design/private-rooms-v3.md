@@ -14,7 +14,7 @@ This is a breaking protocol change, so the release is **3.0.0**.
 
 ## Decisions
 
-- Every group gets a new secret, so a new invite link. Existing groups are recreated through export and restore. No server-side data migration.
+- Every group gets a new secret, so a new invite link. Hosted groups copy themselves to the new server from members' phones (see Hosted migration); self-hosted groups are recreated through export and restore. No server-side data migration.
 - 128-bit secret, 22 base64url characters. The invite is the secret alone.
 - Four values derived from the secret. The server routes by one and checks another (trust on first use).
 - No short label. It only existed to be glanced at, and an invite link does not need one.
@@ -107,11 +107,18 @@ What makes this work: a v3 app still opens an old group offline from the data on
 
 ## Hosted migration
 
-1. Cut a `legacy` branch from `main` at the last v2 release. It keeps the old protocol and gets: a persistent banner telling users to move to `APP_DOMAIN`, an Export button that warns unless the device is fully synced (`phase` is synced and no pending changes), and the "one person per group" wording. It deploys to the existing Worker through its own workflow, pinned to that branch.
-2. Deploy this branch as a second Worker on `APP_DOMAIN`, only after the domain is registered and its zone is on Cloudflare.
-3. One person per group exports on the old site and restores on `APP_DOMAIN`, then shares the new link. The banner says not to export yourself. The mover can paste the new link into the old group's description; it reaches every member through normal sync but only shows in the group's Settings, so it backs up the owner message.
-4. Installed apps keep the old build until they accept the update prompt. The legacy build marks the update as needed to see an important notice. Dormant users are reached through the owners of the 4 groups directly.
-5. On a published retirement date (at least three months out), delete the old Worker and remove its custom domain. Until then it keeps serving and exporting. Nothing redirects afterwards. The app must never redirect, because installed apps and WebSocket upgrades do not follow redirects and an unexported group would become unreachable; a redirect for only the landing page and `/join` would need a separate small Worker, which this change does not build.
+Revised 2026-11-23: groups move by themselves. The first plan (one person per group exports a backup and restores it on the new site, then shares the new link) needed a mover, a file and a freeze date, and two people moving the same group would split it.
+
+How it works:
+
+1. Cut a `legacy` branch from `main` at the last v2 release. It deploys to the existing Worker through its own workflow, pinned to that branch, and carries a non-dismissible update prompt.
+2. Each v2 group gets a fixed v3 secret: HKDF-SHA-256 over the v2 secret with `info` `kostos/move/v1`, 128 bits. Every member's phone holds the same v2 secret, so every phone computes the same v3 group with no coordination, and a pinned test in `legacy` (`src/lib/move/crypto.test.ts`) locks the value.
+3. While a group is open on the old site, `legacy` runs a copy of the v3 sync client (`src/lib/move/`) on the same Yjs document, connected to the v3 server. It uploads the whole document, activity log included, and then passes edits both ways: updates from the v3 server carry their own origin, so the v2 provider forwards them to the v2 server, and the copy forwards everything else to v3. Any number of phones can do this at once: Yjs merges duplicates, so the result is the same. The cost is storage, since an edit can reach a server once per open phone and encryption stops the server from spotting copies; for groups of a few people over three months that stays far below `MAX_ROOM_BYTES`, and v3 compaction trims it. On connect the copy rebuilds the server's state from the replay and uploads only what it lacks, so reopening a group adds nothing.
+4. The box at the top of each group says "Moving this group…" and turns into "This group is ready on kostos.app" once both servers have confirmed this phone's state. Its Open button links to `https://APP_DOMAIN/join#<v3 secret>&member=<member ID>`; the v3 join page reads `member` and joins as that member without showing the picker. Copy invite link gives the plain v3 invite, for an installed iPhone app whose storage is separate.
+5. If the copy fails (a server error, not being offline), the box falls back to Try again plus the old export and restore buttons.
+6. On a published retirement date (at least three months out), delete the old Worker and remove its custom domain. Nothing redirects afterwards: installed apps and WebSocket upgrades do not follow redirects, and a group nobody opened on an updated old site before then would become unreachable.
+
+Trade-off: the v3 secret is derived from the v2 one instead of being fresh. Anyone holding an old invite can compute the new one, but those are the people who can already read the group. The v2 server only ever saw the `PRT-` room ID, never the v2 secret, so it cannot compute the v3 room or proof, and the threat v3 was built for (anyone who knows a room ID) stays closed. Groups created on v3 get fresh secrets as before.
 
 Installed PWAs are tied to the old origin, so people reinstall from `APP_DOMAIN`. The banner and the owner message say so, with a note for iOS home screen users.
 
