@@ -3,7 +3,7 @@
 <p align="center"><strong>Privacy-first group expense splitter PWA</strong>. No accounts. End-to-end encrypted. Works offline. Self-hostable.</p>
 
 <p align="center">
-  <a href="https://APP_DOMAIN">Live demo</a> ·
+  <a href="https://kostos.app">Live demo</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="#deploy">Deploy</a> ·
   <a href="#why-v2-and-v3">Why v2 and v3</a>

@@ -4,7 +4,7 @@ Date: 2026-10-11, revised 2026-10-17. Branch: `feat/domain-migration`.
 
 ## Goal
 
-Only a client that holds a group's secret can reach that group's room on the sync server. Hosted groups move to the new domain with their data intact, and self-hosters get a short upgrade path. The new domain is `kostos.app` if it frees up, otherwise `kostos.fi`. Everything below says `APP_DOMAIN`.
+Only a client that holds a group's secret can reach that group's room on the sync server. Hosted groups move to the new domain with their data intact, and self-hosters get a short upgrade path. The new domain is `kostos.app`; everything below calls it `APP_DOMAIN`.
 
 This is a breaking protocol change, so the release is **3.0.0**.
 

@@ -8,7 +8,7 @@ workers_dev = false
 preview_urls = false
 
 routes = [
-	{ pattern = "APP_DOMAIN", custom_domain = true }
+	{ pattern = "kostos.app", custom_domain = true }
 ]
 
 [assets]
