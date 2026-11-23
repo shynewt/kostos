@@ -18,6 +18,7 @@ import {
 } from '$lib/types';
 import { diffExpense } from './activity-diff';
 import { createSyncProvider, type EncryptedSyncProvider } from './provider';
+import { GroupMove } from '$lib/move/groupMove';
 
 function syncUrl(): string {
 	const env = (import.meta.env.VITE_SYNC_URL as string | undefined) ?? '';
@@ -37,6 +38,8 @@ export type RoomHandle = {
 	ready: Promise<void>;
 	syncProvider?: EncryptedSyncProvider;
 	persistence?: RoomPersistence;
+	/** The group's copy on the new site, kept current while the group is open. */
+	move?: GroupMove;
 };
 
 type CacheEntry = {
@@ -55,6 +58,8 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		if (browser && effectiveSecret && (!cached.handle.syncProvider || cached.secret !== effectiveSecret)) {
 			cached.handle.syncProvider?.destroy();
 			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), roomId, effectiveSecret, cached.persistence) ?? undefined;
+			cached.handle.move?.destroy();
+			cached.handle.move = new GroupMove(cached.handle.doc, cached.persistence, effectiveSecret);
 			cached.secret = effectiveSecret;
 		}
 		return cached.handle;
@@ -76,11 +81,13 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 	}
 
 	let syncProvider: EncryptedSyncProvider | undefined;
+	let move: GroupMove | undefined;
 	if (browser) {
 		const effectiveSecret = secret ?? secretFromStorage(roomId);
 		if (effectiveSecret) {
 			syncProvider =
 				createSyncProvider(doc, syncUrl(), roomId, effectiveSecret, persistence) ?? undefined;
+			move = new GroupMove(doc, persistence, effectiveSecret);
 		}
 	}
 
@@ -93,7 +100,8 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		activity,
 		ready,
 		syncProvider,
-		persistence
+		persistence,
+		move
 	};
 	cache.set(roomId, { handle, persistence, secret: secret ?? secretFromStorage(roomId) });
 	return handle;
@@ -107,6 +115,7 @@ export async function destroyRoom(roomId: string): Promise<void> {
 	const entry = cache.get(roomId);
 	if (!entry) return;
 	if (entry.handle.syncProvider) entry.handle.syncProvider.destroy();
+	entry.handle.move?.destroy();
 	if (entry.persistence) {
 		await entry.persistence.destroy();
 		await entry.persistence.clearData();

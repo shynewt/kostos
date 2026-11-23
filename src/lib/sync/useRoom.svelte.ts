@@ -18,6 +18,7 @@ import {
 } from './doc';
 import { LOCAL_STATUS, type SyncStatus } from './status';
 import { REMOTE_ORIGIN, type LocalState } from './persistence';
+import type { MoveStatus } from '$lib/move/groupMove';
 
 import type {
 	ActivityEvent,
@@ -41,6 +42,8 @@ export class RoomState {
 	activity = $state<ActivityEvent[]>([]);
 	sync = $state<SyncStatus>(LOCAL_STATUS);
 	local = $state<LocalState | null>(null);
+	/** The group's copy on the new site; null when this group has nothing to move (the demo). */
+	move = $state<MoveStatus | null>(null);
 	conflicts = $state<ReturnType<typeof readExpenseConflicts>>([]);
 	private firstCheckDone = $state(false);
 	checking = $derived(!this.firstCheckDone && this.sync.checking && ['loading', 'connecting', 'syncing'].includes(this.sync.phase));
@@ -68,6 +71,7 @@ export class RoomState {
 		this.handle = handle;
 		this.sync = handle.syncProvider?.snapshot ?? LOCAL_STATUS;
 		this.local = handle.persistence?.state ?? null;
+		this.move = handle.move?.snapshot ?? null;
 		this.noteStatus(this.sync);
 		this.refresh();
 	}
@@ -102,11 +106,13 @@ export class RoomState {
 		this.handle.doc.on('afterTransaction', this.onTransaction);
 		const offSync = this.handle.syncProvider?.onStatusChange((status) => { this.sync = status; this.noteStatus(status); });
 		const offLocal = this.handle.persistence?.onChange((state) => { this.local = state; });
+		const offMove = this.handle.move?.onStatusChange((status) => { this.move = status; });
 		return () => {
 			this.handle.doc.off('afterTransaction', this.onTransaction);
 			if (this.burst) { clearTimeout(this.burst); this.burst = null; }
 			offSync?.();
 			offLocal?.();
+			offMove?.();
 		};
 	}
 }

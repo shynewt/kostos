@@ -5,14 +5,15 @@
 <div class="migration" role="status">
 	<p class="headline">Kostos is moving to {APP_HOST}</p>
 	<p class="body">
-		This site keeps working, and keeps exporting, until {RETIREMENT_DATE}. One person per group moves it, so ask your group who
-		before you export. <a class="open" href={NEW_ORIGIN}>Open the new site</a>
+		Open each of your groups here once. It moves by itself, history included, then tap Open on {APP_HOST}. This site keeps
+		working until {RETIREMENT_DATE}. <a class="open" href={NEW_ORIGIN}>Go to {APP_HOST}</a>
 	</p>
 	<details>
 		<summary>Installed the app?</summary>
 		<p class="body">
-			Reinstall it from {APP_HOST} once your group has moved. On iPhone: remove the old icon, open {APP_HOST} in Safari, then
-			Share and Add to Home Screen. The installed app has its own storage, so paste the new invite link under Join a group inside it.
+			Install it again from {APP_HOST} after opening your groups there. On iPhone the installed app has its own storage: remove
+			the old icon, add {APP_HOST} to the Home Screen from Safari, then in each group here tap Copy invite link and paste it under
+			Join a group inside the new app.
 		</p>
 	</details>
 </div>
