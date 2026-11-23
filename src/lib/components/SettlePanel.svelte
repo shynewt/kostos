@@ -34,7 +34,7 @@
 
 	// yours first, then everyone else's
 	const sortedPlan = $derived(
-		[...plan].sort((a, b) => {
+		plan.toSorted((a, b) => {
 			const aMine = a.from === currentMemberId || a.to === currentMemberId ? 0 : 1;
 			const bMine = b.from === currentMemberId || b.to === currentMemberId ? 0 : 1;
 			return aMine - bMine;

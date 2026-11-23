@@ -127,7 +127,7 @@ function migrateLegacyIfNeeded(): ProjectRef[] | null {
 export function listProjects(): ProjectRef[] {
 	const migrated = migrateLegacyIfNeeded();
 	const projects = migrated ?? parseProjectsRaw() ?? [];
-	return [...projects].sort((a, b) => (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0));
+	return projects.toSorted((a, b) => (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0));
 }
 
 export function findProject(roomId: string): ProjectRef | null {

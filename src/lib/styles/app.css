@@ -178,8 +178,15 @@ select {
   padding: 0 22px calc(110px + env(safe-area-inset-bottom));
 }
 
-.scroll::-webkit-scrollbar {
-  display: none;
+.scroll {
+  scrollbar-width: none;
+}
+
+/* Safari before 18.2 has no scrollbar-width */
+@supports not (scrollbar-width: none) {
+  .scroll::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Type */
