@@ -28,6 +28,11 @@ export default {
 			return env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName(relayRoomId)).fetch(request);
 		}
 
+		// the fallback below reuses the request, and a body (a bot's POST) can only be read once
+		if (request.method !== 'GET' && request.method !== 'HEAD') {
+			return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
+		}
+
 		const assetResponse = await env.ASSETS.fetch(request);
 		if (assetResponse.status !== 404) return assetResponse;
 
