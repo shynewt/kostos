@@ -41,6 +41,10 @@ jobs:
             echo "Set APP_HOST and RETIREMENT_DATE in src/lib/migration.ts first"
             exit 1
           fi
+          if [ -n "${VITE_NEW_ORIGIN:-}" ]; then
+            echo "VITE_NEW_ORIGIN points the group move at a test server; unset it"
+            exit 1
+          fi
 
       - name: Type-check
         run: npm run check

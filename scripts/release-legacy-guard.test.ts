@@ -15,7 +15,7 @@ async function guardScript(): Promise<string> {
 	return step[1].replace(/^ {10}/gm, '');
 }
 
-async function runGuard(migration: string | null) {
+async function runGuard(migration: string | null, env: NodeJS.ProcessEnv = {}) {
 	const directory = await mkdtemp(join(tmpdir(), 'kostos-guard-'));
 	directories.push(directory);
 	if (migration !== null) {
@@ -23,7 +23,8 @@ async function runGuard(migration: string | null) {
 		await writeFile(join(directory, 'src/lib/migration.ts'), migration);
 	}
 	// GitHub runs `run:` blocks with bash -e
-	return spawnSync('bash', ['-e', '-c', await guardScript()], { cwd: directory, encoding: 'utf8' });
+	const { VITE_NEW_ORIGIN: _unset, ...inherited } = process.env;
+	return spawnSync('bash', ['-e', '-c', await guardScript()], { cwd: directory, encoding: 'utf8', env: { ...inherited, ...env } });
 }
 
 const migration = (host: string, date: string) => `export const APP_HOST = ${host};\nexport const RETIREMENT_DATE = ${date};\n`;
@@ -47,6 +48,12 @@ describe('release-legacy placeholder guard', () => {
 	it('refuses when only one of the two is still a placeholder', async () => {
 		expect((await runGuard(migration("'kostos.app'", '"RETIREMENT_DATE"'))).status).toBe(1);
 		expect((await runGuard(migration('"APP_DOMAIN"', "'2027-02-01'"))).status).toBe(1);
+	});
+
+	it('refuses a build that points the group move at a test server', async () => {
+		const result = await runGuard(migration("'kostos.app'", "'1 March 2027'"), { VITE_NEW_ORIGIN: 'http://127.0.0.1:18800' });
+		expect(result.status).toBe(1);
+		expect(result.stdout + result.stderr).toContain('VITE_NEW_ORIGIN');
 	});
 
 	it('fails when the migration file is missing', async () => {
