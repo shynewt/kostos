@@ -17,6 +17,7 @@
 		"sync": "node scripts/sync-server.js",
 		"icons": "pwa-assets-generator && node scripts/build-maskable.js",
 		"screenshots": "node scripts/screenshots.js",
+		"og-images": "node scripts/og-images.js",
 		"seed": "node scripts/generate-seed.js",
 		"cf:dev": "wrangler dev",
 		"cf:deploy": "vite build && wrangler deploy"

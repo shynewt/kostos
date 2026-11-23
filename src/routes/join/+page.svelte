@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ShareMeta from '$lib/components/ShareMeta.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { pickMemberColor, pickMemberEmoji } from '$lib/avatar';
@@ -27,8 +28,11 @@
 
 	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'denied' | 'invalid' | 'unreadable' | 'storage';
 
-	const secret = $derived(parseInvite(page.url.hash) ?? '');
-	const oldInvite = $derived(isOldInvite(`${page.url.search}${page.url.hash}`));
+	// the page is prerendered for link previews; the link itself, and the key after its #, only exist in the browser
+	let mounted = $state(false);
+	$effect(() => { mounted = true; });
+	const secret = $derived(mounted ? (parseInvite(page.url.hash) ?? '') : '');
+	const oldInvite = $derived(mounted && isOldInvite(`${page.url.search}${page.url.hash}`));
 	let unreadableMessage = $state('');
 	let derivation = $state<{ secret: string; roomId: string } | null>(null);
 	// the hash can change in place; an ID derived from the previous secret must never open a room with the new one
@@ -64,7 +68,7 @@
 	});
 
 	// a link from the old site names the member this phone already was, so the picker can be skipped
-	const linkedMemberId = $derived(memberFromInviteHash(page.url.hash));
+	const linkedMemberId = $derived(mounted ? memberFromInviteHash(page.url.hash) : null);
 	let chosenId = $state<string | null>(null);
 	// a choice made in another group (the hash can change in place) falls back to the first member
 	const pickedId = $derived(members.some((member) => member.id === chosenId) ? chosenId : (members[0]?.id ?? null));
@@ -128,10 +132,20 @@
 	}
 </script>
 
+<ShareMeta
+	title="You’re invited to a group on Kostos"
+	description="Tap to join and split expenses together. No account needed, end-to-end encrypted."
+	image="/og-invite.png"
+	imageAlt="An invitation to join a group on Kostos"
+	path="/join"
+	noindex
+/>
+
 <svelte:head>
-	<title>Join {project?.name ?? 'a group'} · Kostos</title>
+	<title>{project ? `Join ${project.name} on Kostos` : 'Join a group on Kostos'}</title>
 </svelte:head>
 
+{#if mounted}
 <div class="screen" data-page="join">
 	<header class="app-bar">
 		<div class="row gap-8" style="flex: 1;">
@@ -238,6 +252,7 @@
 		{/if}
 	</div>
 </div>
+{/if}
 
 <style>
 	.back-btn {

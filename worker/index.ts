@@ -42,9 +42,9 @@ export default {
 		// route to `/` after hydration.
 		const fallbackUrl = new URL('/200', url);
 		const fallback = await env.ASSETS.fetch(new Request(fallbackUrl, request));
-		return new Response(fallback.body, {
-			status: 200,
-			headers: fallback.headers
-		});
+		const headers = new Headers(fallback.headers);
+		// app screens and unknown paths share one shell; search engines should index neither
+		headers.set('X-Robots-Tag', 'noindex');
+		return new Response(fallback.body, { status: 200, headers });
 	}
 } satisfies ExportedHandler<Env>;

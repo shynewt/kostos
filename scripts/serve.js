@@ -60,12 +60,13 @@ function safeJoin(root, urlPath) {
 	return full.startsWith(root) ? full : null;
 }
 
-function serveFile(filePath, res) {
+function serveFile(filePath, res, extraHeaders = {}) {
 	const ext = extname(filePath).toLowerCase();
 	const type = MIME[ext] ?? 'application/octet-stream';
 	res.writeHead(200, {
 		'Content-Type': type,
-		'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable'
+		'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
+		...extraHeaders
 	});
 	createReadStream(filePath).pipe(res);
 }
@@ -92,12 +93,23 @@ function serveStatic(req, res) {
 			}
 		}
 	} catch {
+		// try a prerendered page next
+	}
+
+	try {
+		const page = `${candidate}.html`;
+		if (statSync(page).isFile()) {
+			serveFile(page, res);
+			return;
+		}
+	} catch {
 		// fall through to SPA fallback
 	}
 
 	try {
 		statSync(FALLBACK);
-		serveFile(FALLBACK, res);
+		// app screens and unknown paths share one shell; search engines should index neither
+		serveFile(FALLBACK, res, { 'X-Robots-Tag': 'noindex' });
 	} catch {
 		res.writeHead(404);
 		res.end('not found');
