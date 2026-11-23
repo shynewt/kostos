@@ -2,8 +2,8 @@ import type { LocalState } from './sync/persistence';
 import type { SyncStatus } from './sync/status';
 
 /** Both placeholders must be replaced before release; release-legacy.yml refuses to deploy otherwise. */
-export const APP_HOST = 'APP_DOMAIN';
-export const RETIREMENT_DATE = 'RETIREMENT_DATE';
+export const APP_HOST = 'kostos.app';
+export const RETIREMENT_DATE = '1 March 2027';
 export const NEW_ORIGIN = `https://${APP_HOST}`;
 
 export const UPDATE_NOTICE_TEXT = 'Update to see an important notice about Kostos moving.';
