@@ -6,6 +6,8 @@ import type { MirrorStatus } from './move/provider';
 export const APP_HOST = 'kostos.app';
 /** The day the old site is switched off, as YYYY-MM-DD. */
 export const RETIREMENT_DATE = '2027-03-01';
+/** From this day, YYYY-MM-DD, a group that has moved can only be viewed and exported here. */
+export const FREEZE_DATE = '2027-01-31';
 // a local v3 server stands in for the real one in development and the cross-version e2e run
 export const NEW_ORIGIN = (import.meta.env.VITE_NEW_ORIGIN as string | undefined) || `https://${APP_HOST}`;
 
@@ -17,6 +19,13 @@ const retirementDay = new Date(`${RETIREMENT_DATE}T00:00:00`);
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 // spelled out by hand: a runtime without full locale data ignores 'en-GB' and prints "March 1, 2027"
 export const RETIREMENT_LABEL = `${retirementDay.getDate()} ${MONTHS[retirementDay.getMonth()]} ${retirementDay.getFullYear()}`;
+
+const freezeDay = new Date(`${FREEZE_DATE}T00:00:00`);
+
+/** Groups that haven't moved stay editable, so a failed copy never strands anyone. */
+export function isLockedHere(moved: boolean, now: Date): boolean {
+	return moved && now.getTime() >= freezeDay.getTime();
+}
 
 export type RetirementNotice = { urgent: boolean; daysLeft: number };
 

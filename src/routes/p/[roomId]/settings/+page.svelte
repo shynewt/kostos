@@ -109,6 +109,10 @@
 
 	{#if project}
 		<div class="scroll">
+			{#if room.locked}
+				<p class="locked-note" role="status">This group has moved to kostos.app, so its details can’t be changed here. Exporting still works.</p>
+			{/if}
+			<fieldset class="lockable" disabled={room.locked}>
 			<section class="project-block">
 				<EmojiTilePicker
 					emoji={project.emoji}
@@ -144,6 +148,7 @@
 					onblur={(e) => commitDescription(e.currentTarget.value)}
 				/>
 			</section>
+			</fieldset>
 
 			<div class="section-head">
 				<div class="eyebrow">Joined as</div>
@@ -165,6 +170,7 @@
 				onPick={pickMember}
 			/>
 
+			<fieldset class="lockable" disabled={room.locked}>
 			<div class="section-head">
 				<div class="eyebrow">Currency</div>
 			</div>
@@ -258,6 +264,7 @@
 					</SettingsNavRow>
 				</div>
 			{/if}
+			</fieldset>
 
 			<div class="section-head">
 				<div class="eyebrow">Data</div>
@@ -310,6 +317,13 @@
 </div>
 
 <style>
+	/* only groups controls for `disabled`; it must not change the layout */
+	.lockable { display: contents; }
+	.lockable:disabled :global(:is(button, input, select, textarea)) { opacity: 0.5; cursor: not-allowed; }
+	.locked-note {
+		margin: 4px 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.4; color: var(--ink);
+		border: 1px solid color-mix(in oklab, var(--accent) 45%, transparent); background: color-mix(in oklab, var(--accent) 12%, var(--bg-2));
+	}
 	.project-block {
 		display: flex;
 		flex-direction: column;

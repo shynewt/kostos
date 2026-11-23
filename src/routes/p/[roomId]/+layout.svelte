@@ -2,11 +2,19 @@
 	import { page } from '$app/state';
 	import { setContext } from 'svelte';
 	import LoadingScreen from '$lib/components/LoadingScreen.svelte';
+	import MovedLock from '$lib/components/MovedLock.svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
 	import { updateProjectMetadata } from '$lib/storage';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 	let { children } = $props();
+	const EDITING_ROUTES = new Set([
+		'/p/[roomId]/add',
+		'/p/[roomId]/expenses/[expenseId]/edit',
+		'/p/[roomId]/settings/categories',
+		'/p/[roomId]/settings/payment-methods',
+		'/p/[roomId]/settings/trips'
+	]);
 	const roomId = $derived(page.params.roomId ?? '');
 	const room = $derived(useRoom(roomId));
 	setContext('kostos-room', { get room() { return room; } });
@@ -26,7 +34,9 @@
 	});
 </script>
 
-{#if loadedRoomId === roomId && room.project}
+{#if loadedRoomId === roomId && room.project && room.locked && EDITING_ROUTES.has(page.route.id ?? '')}
+	<MovedLock />
+{:else if loadedRoomId === roomId && room.project}
 	{@render children()}
 {:else if localError}
 	<div class="screen">

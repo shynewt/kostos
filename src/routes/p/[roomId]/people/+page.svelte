@@ -184,6 +184,7 @@
 						<button
 							type="button"
 							class="avatar-btn"
+							disabled={room.locked}
 							onclick={() => (emojiPickerId = m.id)}
 							aria-label="Change {m.name}'s avatar"
 						>
@@ -237,12 +238,14 @@
 										This is me
 									</button>
 								{/if}
+								{#if !room.locked}
 								<button class="icon-btn" type="button" onclick={() => startEdit(m)} aria-label="Rename">
 									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
 								</button>
 								<button class="icon-btn member-remove-btn" type="button" onclick={() => startRemove(m)} aria-label="Remove">
 									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" /></svg>
 								</button>
+								{/if}
 							</div>
 						</div>
 					{/if}
@@ -273,6 +276,7 @@
 			{/each}
 		</div>
 
+		{#if !room.locked}
 		<form class="card add-card" onsubmit={addNewMember}>
 			<div class="row gap-10">
 				<span class="av av-sm add-bubble">+</span>
@@ -288,6 +292,7 @@
 			</div>
 			<p class="dim add-hint">New members can claim a device later through the invite link.</p>
 		</form>
+		{/if}
 	</div>
 
 	<TabBar {roomId} active="people" />

@@ -3,6 +3,7 @@ import type * as Y from 'yjs';
 import { NEW_ORIGIN } from '$lib/migration';
 import type { RoomPersistence } from '$lib/sync/persistence';
 import { deriveMovedSecret } from './crypto';
+import { markMoved } from './marker';
 import { MirrorProvider, type MirrorStatus } from './provider';
 
 /** `secret` is the group's v3 secret, null until derived. */
@@ -47,7 +48,10 @@ export class GroupMove {
 			const isPartial = () => this.persistence?.state.partial === true;
 			this.provider = new MirrorProvider(this.doc, moveSyncUrl(), secret, isPartial);
 			this.setState({ secret });
-			this.provider.onStatusChange((status) => this.setState(status));
+			this.provider.onStatusChange((status) => {
+				if (status.phase === 'synced') markMoved(this.doc);
+				this.setState(status);
+			});
 		}).catch((error) => {
 			console.error('Could not start moving this group', error);
 			this.setState({ phase: 'error', problem: 'storage' });

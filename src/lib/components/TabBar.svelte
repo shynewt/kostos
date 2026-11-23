@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { RoomState } from '$lib/sync/useRoom.svelte';
 	type Tab = 'home' | 'expenses' | 'stats' | 'people';
 
 	type Props = {
@@ -7,6 +9,8 @@
 	};
 
 	let { roomId, active }: Props = $props();
+	const context = getContext<{ readonly room: RoomState } | undefined>('kostos-room');
+	const locked = $derived(context?.room.locked ?? false);
 </script>
 
 <nav class="tabbar">
@@ -22,7 +26,7 @@
 		</div>
 		<span>EXPENSES</span>
 	</a>
-	<a class="fab" href="/p/{roomId}/add" aria-label="Add expense">
+	<a class="fab" class:fab-locked={locked} href="/p/{roomId}/add" aria-label={locked ? 'Adding happens on the new site now' : 'Add expense'}>
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 6v12M6 12h12" /></svg>
 	</a>
 	<a href="/p/{roomId}/stats" class="tab" class:active={active === 'stats'}>
@@ -38,3 +42,7 @@
 		<span>PEOPLE</span>
 	</a>
 </nav>
+
+<style>
+	.fab-locked { background: var(--line-2); color: var(--ink-3); box-shadow: none; }
+</style>

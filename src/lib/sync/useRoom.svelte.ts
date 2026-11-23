@@ -19,6 +19,8 @@ import {
 import { LOCAL_STATUS, type SyncStatus } from './status';
 import { REMOTE_ORIGIN, type LocalState } from './persistence';
 import type { MoveStatus } from '$lib/move/groupMove';
+import { hasMoved } from '$lib/move/marker';
+import { isLockedHere } from '$lib/migration';
 
 import type {
 	ActivityEvent,
@@ -44,6 +46,10 @@ export class RoomState {
 	local = $state<LocalState | null>(null);
 	/** The group's copy on the new site; null when this group has nothing to move (the demo). */
 	move = $state<MoveStatus | null>(null);
+	/** Another phone, or this one, confirmed the group is on the new site. */
+	moved = $state(false);
+	/** Moved and past the freeze date: view and export only. */
+	locked = $derived(isLockedHere(this.moved, new Date()));
 	conflicts = $state<ReturnType<typeof readExpenseConflicts>>([]);
 	private firstCheckDone = $state(false);
 	checking = $derived(!this.firstCheckDone && this.sync.checking && ['loading', 'connecting', 'syncing'].includes(this.sync.phase));
@@ -98,6 +104,7 @@ export class RoomState {
 		this.expenses = readExpenses(this.handle);
 		this.activity = readActivity(this.handle);
 		this.conflicts = readExpenseConflicts(this.handle);
+		this.moved = hasMoved(this.handle.doc);
 	};
 
 	/** Attach Yjs observers + return a teardown function suitable for $effect cleanup. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canRetryMove, exportWarning, moveStage, RETIREMENT_LABEL, retirementNotice, NEW_ORIGIN, newInviteLink, openOnNewSiteLink } from './migration';
+import { canRetryMove, exportWarning, isLockedHere, moveStage, RETIREMENT_LABEL, retirementNotice, NEW_ORIGIN, newInviteLink, openOnNewSiteLink } from './migration';
 import type { MirrorStatus } from './move/provider';
 import { LOCAL_STATUS, type SyncStatus } from './sync/status';
 
@@ -82,5 +82,16 @@ describe('retirementNotice', () => {
 
 	it('shows the date the way people write it', () => {
 		expect(RETIREMENT_LABEL).toBe('1 March 2027');
+	});
+});
+
+describe('isLockedHere', () => {
+	it('locks a moved group from the freeze date on', () => {
+		expect(isLockedHere(true, new Date(2027, 0, 30, 23, 59))).toBe(false);
+		expect(isLockedHere(true, new Date(2027, 0, 31, 0, 0))).toBe(true);
+	});
+
+	it('never locks a group that has not moved', () => {
+		expect(isLockedHere(false, new Date(2027, 1, 20))).toBe(false);
 	});
 });

@@ -129,9 +129,11 @@
 <div class="screen" data-page="expense-detail">
 	<ScreenAppBar title="Expense" backHref="/p/{roomId}/expenses">
 		{#snippet right()}
-			<button class="icon-btn" type="button" onclick={onEdit} aria-label="Edit" disabled={!expense}>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
-			</button>
+			{#if !room.locked}
+				<button class="icon-btn" type="button" onclick={onEdit} aria-label="Edit" disabled={!expense}>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
+				</button>
+			{/if}
 		{/snippet}
 	</ScreenAppBar>
 
@@ -269,6 +271,7 @@
 			{#if deleteError}
 				<p class="delete-error" role="alert" transition:slide={{ duration: 160 }}>Couldn’t delete this on your phone. The expense is still here, so you can try again.</p>
 			{/if}
+			{#if !room.locked}
 			<div class="row gap-8 action-row">
 				<button class="btn action-btn" type="button" onclick={onEdit}>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
@@ -284,6 +287,7 @@
 					<span>{deleting ? 'Deleting…' : deleteError ? 'Try again' : confirmingDelete ? 'Tap again to delete' : 'Delete'}</span>
 				</button>
 			</div>
+			{/if}
 		</div>
 	{/if}
 </div>

@@ -114,7 +114,7 @@
 		{#if plan.length > 0}
 			<div class="section-head settle-head">
 				<div class="eyebrow">Settle up</div>
-				<span class="dim mono plan-count">tap any to settle</span>
+				{#if !room.locked}<span class="dim mono plan-count">tap any to settle</span>{/if}
 			</div>
 			<SettlePanel
 				{roomId}
@@ -125,6 +125,7 @@
 				{currentMemberId}
 				symbol={currencySymbol}
 				{currency}
+				locked={room.locked}
 			/>
 		{:else}
 			<div class="all-settled">

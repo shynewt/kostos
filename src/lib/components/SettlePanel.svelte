@@ -16,9 +16,11 @@
 		currentMemberId: string | null;
 		symbol: string;
 		currency: string;
+			/** The group moved: show who owes whom, but record nothing here. */
+		locked?: boolean;
 	};
 
-	let { handle, project, membersById, plan, currentMemberId, symbol, currency }: Props = $props();
+	let { handle, project, membersById, plan, currentMemberId, symbol, currency, locked = false }: Props = $props();
 
 	// the transfer being confirmed in the bottom sheet, if any
 	let pending = $state<Settlement | null>(null);
@@ -98,6 +100,7 @@
 			class="line"
 			class:involves-you={youFrom || youTo}
 			type="button"
+			disabled={locked}
 			onclick={() => selectTransfer(t)}
 		>
 			<span class="line-avatars">

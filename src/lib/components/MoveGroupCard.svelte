@@ -12,7 +12,10 @@
 	// every edit sends both copies through a quick sync again; once ready, the button stays unless the copy fails
 	let wasReady = $state(false);
 	$effect(() => { if (currentStage === 'ready') wasReady = true; });
-	const stage = $derived(wasReady && currentStage !== 'failed' ? 'ready' : currentStage);
+	const stage = $derived.by(() => {
+		if (room?.locked) return 'locked';
+		return wasReady && currentStage !== 'failed' ? 'ready' : currentStage;
+	});
 	const warning = $derived(room ? exportWarning(room.sync, room.local) : null);
 	let copied = $state(false);
 	let notice = $state<RetirementNotice | null>(null);
@@ -42,7 +45,14 @@
 
 {#if room?.project && stage}
 	<section class="move" class:alert={stage === 'failed' || notice?.urgent} data-move-card data-move-stage={stage} role="status">
-		{#if stage === 'ready' && v3Secret}
+		{#if stage === 'locked'}
+			<p class="lead">This group has moved to {APP_HOST}</p>
+			<p class="body">You can’t add or change things here anymore. Keep using it on {APP_HOST}; this copy stops working {stopsWorking}.</p>
+			<div class="actions">
+				<a class="btn btn-primary" href={v3Secret ? openOnNewSiteLink(v3Secret, getCurrentMember(room.handle.roomId)) : NEW_ORIGIN}>Open on {APP_HOST}</a>
+				{#if v3Secret}<button type="button" class="btn" onclick={copyInvite}>{copied ? 'Copied' : 'Copy invite link'}</button>{/if}
+			</div>
+		{:else if stage === 'ready' && v3Secret}
 			<p class="lead">This group now lives on {APP_HOST}</p>
 			<p class="body">Everything came along, history included. Keep using it there: this copy stops working {stopsWorking}.</p>
 			<div class="actions">
