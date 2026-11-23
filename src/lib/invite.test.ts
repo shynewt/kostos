@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-	generateSecret, invitePath, inviteError, isOldInvite, isValidSecret, OLD_INVITE_MESSAGE, parseInvite, SECRET_LENGTH
+	generateSecret, invitePath, inviteError, isOldInvite, isValidSecret, memberFromInviteHash, OLD_INVITE_MESSAGE, parseInvite, SECRET_LENGTH
 } from './invite';
 
 const secret = 'AAECAwQFBgcICQoLDA0ODw';
@@ -121,6 +121,19 @@ describe('parseInvite', () => {
 		expect(parseInvite(`${secret}x`)).toBeNull();
 		expect(parseInvite(`${secret}<script>`)).toBeNull();
 		expect(parseInvite('')).toBeNull();
+	});
+});
+
+describe('memberFromInviteHash', () => {
+	it('reads the member the old site passes along', () => {
+		expect(memberFromInviteHash(`#${secret}&member=a1b2c3`)).toBe('a1b2c3');
+		expect(memberFromInviteHash(`#${secret}&utm_source=chat&member=a%20b`)).toBe('a b');
+	});
+
+	it('is null when the link names no member', () => {
+		expect(memberFromInviteHash(`#${secret}`)).toBeNull();
+		expect(memberFromInviteHash(`#${secret}&member=`)).toBeNull();
+		expect(memberFromInviteHash(`#${secret}&utm_source=chat`)).toBeNull();
 	});
 });
 

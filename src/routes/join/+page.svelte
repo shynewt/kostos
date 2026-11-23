@@ -6,7 +6,7 @@
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import FormError from '$lib/components/FormError.svelte';
 	import MemberPicker from '$lib/components/MemberPicker.svelte';
-	import { addProject, setCurrentMember } from '$lib/storage';
+	import { addProject, getCurrentMember, setCurrentMember } from '$lib/storage';
 	import { deriveLocalId, InsecureContextError } from '$lib/sync/crypto';
 	import {
 		addMember,
@@ -14,7 +14,7 @@
 		openRoom
 	} from '$lib/sync/doc';
 	import type { Member, Project } from '$lib/types';
-	import { isOldInvite, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
+	import { isOldInvite, memberFromInviteHash, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
 	import { plural } from '$lib/plural';
@@ -63,6 +63,8 @@
 		return 'syncing';
 	});
 
+	// a link from the old site names the member this phone already was, so the picker can be skipped
+	const linkedMemberId = $derived(memberFromInviteHash(page.url.hash));
 	let chosenId = $state<string | null>(null);
 	// a choice made in another group (the hash can change in place) falls back to the first member
 	const pickedId = $derived(members.some((member) => member.id === chosenId) ? chosenId : (members[0]?.id ?? null));
@@ -100,6 +102,16 @@
 	function joinAsExisting() {
 		if (pickedId) return join(pickedId);
 	}
+
+	let joinedLinkedMember = false;
+	$effect(() => {
+		if (status !== 'ready' || joinedLinkedMember || !linkedMemberId) return;
+		if (!members.some((member) => member.id === linkedMemberId)) return;
+		joinedLinkedMember = true;
+		// a phone that already chose a member in this group keeps that choice
+		const alreadyChosen = getCurrentMember(roomId);
+		void join(alreadyChosen && members.some((member) => member.id === alreadyChosen) ? alreadyChosen : linkedMemberId);
+	});
 
 	function joinAsNew(event: Event) {
 		event.preventDefault();

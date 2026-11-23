@@ -47,6 +47,13 @@ export function parseInvite(raw: string): string | null {
 	return null;
 }
 
+/** The member a link from the old site signs in as: `/join#SECRET&member=ID`. Never the secret itself. */
+export function memberFromInviteHash(hash: string): string | null {
+	const separator = hash.indexOf('&');
+	if (separator === -1) return null;
+	return new URLSearchParams(hash.slice(separator + 1)).get('member') || null;
+}
+
 /** Invites from before v3: `?room=` links, `ROOM.SECRET` pairs and bare 43 character keys. */
 export function isOldInvite(raw: string): boolean {
 	return candidatesIn(raw).some((candidate) => {
