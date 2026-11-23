@@ -1,7 +1,10 @@
 <script lang="ts">
+	import LegacyGroupBanner from './LegacyGroupBanner.svelte';
 	import SyncBanner from './SyncBanner.svelte';
 	import SyncStatus from './SyncStatus.svelte';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
+	import { invitePath } from '$lib/invite';
+	import { isLegacySecret } from '$lib/legacy';
 	import { findProject } from '$lib/storage';
 	import type { Project } from '$lib/types';
 	import QrCode from './QrCode.svelte';
@@ -18,8 +21,8 @@
 
 	const shareUrl = $derived.by(() => {
 		const stored = findProject(roomId);
-		if (!stored) return null;
-		return `${location.origin}/join?room=${encodeURIComponent(roomId)}#${stored.secret}`;
+		if (!stored || isLegacySecret(stored.secret)) return null;
+		return `${location.origin}${invitePath(stored.secret)}`;
 	});
 
 	async function copyShareUrl() {
@@ -56,19 +59,21 @@
 		<div class="project-status"><SyncStatus /></div>
 	</div>
 	<div class="row gap-6" style="flex: 0; justify-content: flex-end;">
-		<button
-			class="icon-btn"
-			aria-label="Share invite"
-			aria-expanded={showShare}
-			onclick={() => (showShare = !showShare)}
-		>
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v12M8 8l4-4 4 4M5 14v5h14v-5" /></svg>
-		</button>
+		{#if shareUrl}
+			<button
+				class="icon-btn"
+				aria-label="Share invite"
+				aria-expanded={showShare}
+				onclick={() => (showShare = !showShare)}
+			>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v12M8 8l4-4 4 4M5 14v5h14v-5" /></svg>
+			</button>
+		{/if}
 		<a
 			class="icon-btn"
 			href="/p/{roomId}/settings"
-			aria-label="Project settings"
-			title="Project settings"
+			aria-label="Group settings"
+			title="Group settings"
 		>
 			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
 				<circle cx="12" cy="12" r="2.6" />
@@ -78,12 +83,13 @@
 	</div>
 </header>
 <SyncBanner conflicts />
+<LegacyGroupBanner />
 
-{#if showShare}
+{#if shareUrl && showShare}
 	<section class="card share-card">
 		<div class="row between" style="margin-bottom: 10px;">
-			<span class="eyebrow">Invite token</span>
-			<button class="btn btn-ghost copy-btn" type="button" onclick={copyShareUrl} disabled={!shareUrl}>
+			<span class="eyebrow">Invite link</span>
+			<button class="btn btn-ghost copy-btn" type="button" onclick={copyShareUrl}>
 				{#if copied}
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
 					<span>Copied</span>
@@ -93,16 +99,13 @@
 				{/if}
 			</button>
 		</div>
-		<span class="token-pill">{roomId}</span>
-		{#if shareUrl}
-			<div class="qr-wrap">
-				<QrCode value={shareUrl} size={200} />
-				<p class="dim mono qr-caption">SCAN TO JOIN</p>
-			</div>
-			<input id="share-url-display" class="share-url-display" value={shareUrl} readonly />
-		{/if}
+		<div class="qr-wrap">
+			<QrCode value={shareUrl} size={200} />
+			<p class="dim mono qr-caption">SCAN TO JOIN</p>
+		</div>
+		<input id="share-url-display" class="share-url-display" aria-label="Invite link" value={shareUrl} readonly />
 		<p class="dim share-hint">
-			Anyone with this link joins instantly; the secret lives in the URL fragment so the server never sees it.
+			Anyone with this link can join the group. The key sits after the # in the link, so the server never receives it.
 		</p>
 	</section>
 {/if}

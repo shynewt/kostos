@@ -1,0 +1,134 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { addProject, removeProject, setCurrentMember } from '$lib/storage';
+import { deriveLocalId, INSECURE_CONTEXT_MESSAGE } from '$lib/sync/crypto';
+import { destroyRoom, openRoom, readExpenses, readMembers, readProject, type RoomHandle } from '$lib/sync/doc';
+import type { Expense, Member } from '$lib/types';
+import { parseProjectArchive } from './projectArchive';
+import { archiveContents, createGroup, seedRoom } from './createGroup';
+
+vi.mock('$lib/sync/doc', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/sync/doc')>();
+	return { ...actual, openRoom: vi.fn(actual.openRoom), destroyRoom: vi.fn(actual.destroyRoom) };
+});
+vi.mock('$lib/storage', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/storage')>()),
+	addProject: vi.fn(),
+	removeProject: vi.fn(),
+	setCurrentMember: vi.fn()
+}));
+
+const now = 1_700_000_000_000;
+const members: Member[] = [
+	{ id: 'anna', name: 'Anna', createdAt: now },
+	{ id: 'marco', name: 'Marco', createdAt: now }
+];
+const expenses: Expense[] = [
+	{
+		id: 'dinner', description: 'Dinner', amount: 9000, currency: 'EUR', date: now, createdAt: now, createdBy: 'anna',
+		payments: [{ memberId: 'anna', amount: 9000 }], splitMode: 'even', splits: [{ memberId: 'anna' }, { memberId: 'marco' }]
+	}
+];
+const backup = {
+	schemaVersion: 2, app: 'kostos', exportedAt: now,
+	project: { name: 'Lisbon', emoji: '🏖', color: 'lime', currency: 'EUR', currencySymbol: '€', defaultSplit: 'even', createdAt: now, categories: [], paymentMethods: [] },
+	members, expenses
+};
+
+function contents() {
+	const parsed = parseProjectArchive(backup);
+	if (!parsed.ok) throw new Error(parsed.error);
+	return archiveContents(parsed.archive);
+}
+
+beforeEach(() => vi.clearAllMocks());
+
+describe('archiveContents', () => {
+	it('keeps what a backup holds and defaults the trips an old backup lacks', () => {
+		const { project, members: restored, expenses: restoredExpenses } = contents();
+		expect(project).toMatchObject({ name: 'Lisbon', currency: 'EUR', trips: [] });
+		expect(restored).toEqual(members);
+		expect(restoredExpenses).toEqual(expenses);
+	});
+});
+
+describe('seedRoom', () => {
+	it('writes the project, its members and every expense into the room', async () => {
+		const handle = openRoom('SEED-ROOM');
+		await handle.ready;
+		seedRoom(handle, { ...contents().project, id: 'SEED-ROOM' }, members, expenses);
+		expect(readProject(handle)).toMatchObject({ id: 'SEED-ROOM', name: 'Lisbon' });
+		expect(readMembers(handle).map((member) => member.id)).toEqual(['anna', 'marco']);
+		expect(readExpenses(handle)).toHaveLength(1);
+	});
+
+	it('leaves no activity trail, since a restore brings history rather than news', async () => {
+		const handle = openRoom('SILENT-ROOM');
+		await handle.ready;
+		seedRoom(handle, { ...contents().project, id: 'SILENT-ROOM' }, members, expenses);
+		expect(handle.activity.length).toBe(0);
+	});
+});
+
+describe('createGroup', () => {
+	it('saves the group under a fresh secret and remembers who you are', async () => {
+		const roomId = await createGroup(contents(), 'marco');
+		const saved = vi.mocked(addProject).mock.calls[0][0];
+		expect(saved).toMatchObject({ roomId, name: 'Lisbon' });
+		expect(saved.secret).toHaveLength(22);
+		expect(roomId).toMatch(/^[0-9a-f]{32}$/);
+		expect(roomId).toBe(await deriveLocalId(saved.secret));
+		expect(setCurrentMember).toHaveBeenCalledWith(roomId, 'marco');
+		expect(readProject(openRoom(roomId))?.id).toBe(roomId);
+		expect(readExpenses(openRoom(roomId))).toHaveLength(1);
+	});
+
+	it('leaves the identity unset when none is chosen', async () => {
+		await createGroup(contents(), null);
+		expect(setCurrentMember).not.toHaveBeenCalled();
+	});
+
+	it('gives every group its own secret and ID', async () => {
+		const first = await createGroup(contents(), null);
+		const second = await createGroup(contents(), null);
+		expect(first).not.toBe(second);
+		expect(vi.mocked(addProject).mock.calls[0][0].secret).not.toBe(vi.mocked(addProject).mock.calls[1][0].secret);
+	});
+
+	it('opens no room when the group cannot be saved, so a retry starts clean', async () => {
+		vi.mocked(addProject).mockImplementationOnce(() => { throw new Error('storage full'); });
+		await expect(createGroup(contents(), 'marco')).rejects.toThrow('storage full');
+		expect(openRoom).not.toHaveBeenCalled();
+		expect(setCurrentMember).not.toHaveBeenCalled();
+	});
+
+	it('forgets the group again when the room cannot be opened or filled', async () => {
+		vi.mocked(openRoom).mockImplementationOnce(() => ({ ready: Promise.reject(new Error('IndexedDB blocked')) }) as unknown as RoomHandle);
+		await expect(createGroup(contents(), 'marco')).rejects.toThrow('IndexedDB blocked');
+		const { roomId } = vi.mocked(addProject).mock.calls[0][0];
+		expect(removeProject).toHaveBeenCalledWith(roomId);
+		expect(destroyRoom).toHaveBeenCalledWith(roomId);
+	});
+
+	it('forgets the group again when saving its contents fails, and reports that failure', async () => {
+		const actualOpenRoom = vi.mocked(openRoom).getMockImplementation()!;
+		vi.mocked(openRoom).mockImplementationOnce((roomId, secret) => {
+			const handle = actualOpenRoom(roomId, secret);
+			handle.persistence = { flush: () => Promise.reject(new Error('quota exceeded')) } as unknown as RoomHandle['persistence'];
+			return handle;
+		});
+		await expect(createGroup(contents(), 'marco')).rejects.toThrow('quota exceeded');
+		const { roomId } = vi.mocked(addProject).mock.calls[0][0];
+		expect(removeProject).toHaveBeenCalledWith(roomId);
+		expect(destroyRoom).toHaveBeenCalledWith(roomId);
+	});
+
+	it('says why when the page has no crypto.subtle, and saves nothing', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		try {
+			await expect(createGroup(contents(), null)).rejects.toThrow(INSECURE_CONTEXT_MESSAGE);
+		} finally {
+			vi.unstubAllGlobals();
+		}
+		expect(addProject).not.toHaveBeenCalled();
+	});
+});

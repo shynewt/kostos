@@ -1,15 +1,13 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
 	import { fade, scale } from 'svelte/transition';
-	import { describeSync } from '$lib/sync/describe';
-	import type { RoomState } from '$lib/sync/useRoom.svelte';
+	import { useRoomContext } from '$lib/sync/useRoom.svelte';
 	import SyncSheet from './SyncSheet.svelte';
 
-	/** `line` replaces the room code under the group name; `dot` is a small marker that
+	/** `line` shows the sync state under the group name; `dot` is a small marker that
 	 *  only appears next to a screen title when something needs attention. */
 	let { variant = 'line' }: { variant?: 'line' | 'dot' } = $props();
 
-	const context = getContext<{ readonly room: RoomState } | undefined>('kostos-room');
+	const context = useRoomContext();
 	const room = $derived(context?.room);
 
 	let open = $state(false);
@@ -18,8 +16,8 @@
 	let settled = $state(false);
 	let previousTone: string | null = null;
 
-	const view = $derived(room ? describeSync(room.sync, room.local, now, { demo: room.handle.roomId === 'DEMO' }) : null);
-	const text = $derived(view ? (view.label ?? room?.handle.roomId ?? '') : '');
+	const view = $derived(room ? room.syncView(now) : null);
+	const text = $derived(view?.label ?? '');
 
 	$effect(() => {
 		const tone = view?.tone ?? null;
@@ -61,7 +59,7 @@
 			>
 				<span class="dot" aria-hidden="true"></span>
 				{#key text}
-					<span class="text" class:code={view.label === null} in:fade={{ duration: reduced ? 0 : 200 }}>{text}</span>
+					<span class="text" in:fade={{ duration: reduced ? 0 : 200 }}>{text}</span>
 				{/key}
 			</button>
 		{:else if view.attention}

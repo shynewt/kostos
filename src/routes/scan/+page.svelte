@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { parseToken } from '$lib/token';
+	import { invitePath, isOldInvite, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
 	import { onMount } from 'svelte';
 
 	type ScanStatus = 'starting' | 'scanning' | 'no-camera' | 'denied' | 'unsupported' | 'matched';
@@ -14,10 +14,10 @@
 		const value = raw.trim();
 		if (!value) return false;
 
-		const parsed = parseToken(value);
-		if (parsed) {
+		const secret = parseInvite(value);
+		if (secret) {
 			status = 'matched';
-			goto(`/join?room=${encodeURIComponent(parsed.roomId)}#${parsed.secret}`);
+			goto(invitePath(secret));
 			return true;
 		}
 		return false;
@@ -48,7 +48,7 @@
 					if (matched) {
 						instance.stop();
 					} else {
-						detail = 'That QR code is not a Kostos invite. Try another.';
+						detail = isOldInvite(text) ? OLD_INVITE_MESSAGE : 'That QR code is not a Kostos invite. Try another.';
 					}
 				},
 				{
@@ -108,7 +108,7 @@
 					{:else if status === 'no-camera'}
 						<p class="overlay-text">No camera available on this device.</p>
 					{:else if status === 'unsupported'}
-						<p class="overlay-text">This browser cannot use the camera. Paste the invite token instead.</p>
+						<p class="overlay-text">This browser cannot use the camera. Paste the invite link instead.</p>
 					{/if}
 				</div>
 			{/if}
@@ -120,7 +120,7 @@
 			<p class="detail" role="alert">{detail}</p>
 		{/if}
 
-		<a class="btn btn-block fallback-btn" href="/">Paste a token instead</a>
+		<a class="btn btn-block fallback-btn" href="/">Paste an invite link instead</a>
 	</div>
 </div>
 

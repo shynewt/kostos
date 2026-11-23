@@ -2,8 +2,10 @@
 /* Cloudflare Worker entry.
  *
  * Static assets (the SvelteKit static build) come out of env.ASSETS.
- * WebSocket sync hits /sync/<roomId> and gets routed to a SyncRoom DO instance.
+ * WebSocket sync hits /sync/<relay room ID> and gets routed to a SyncRoom DO instance.
  */
+
+import { parseProofProtocol, relayRoomIdFromPath, SYNC_PATH_PREFIX } from '../src/lib/sync/room-access.js';
 
 export { SyncRoom } from '../src/lib/server/sync-do';
 
@@ -16,19 +18,14 @@ export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
 		const url = new URL(request.url);
 
-		if (url.pathname.startsWith('/sync/')) {
-			if (request.headers.get('Upgrade') !== 'websocket') {
+		if (url.pathname.startsWith(SYNC_PATH_PREFIX)) {
+			if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
 				return new Response('Expected WebSocket', { status: 426 });
 			}
-			let roomId = '';
-			try {
-				roomId = decodeURIComponent(url.pathname.slice('/sync/'.length)).toUpperCase();
-			} catch {
-				return new Response('Bad roomId', { status: 400 });
-			}
-			if (!roomId) return new Response('Missing roomId', { status: 400 });
-			const id = env.SYNC_ROOM.idFromName(roomId);
-			return env.SYNC_ROOM.get(id).fetch(request);
+			const relayRoomId = relayRoomIdFromPath(url.pathname);
+			if (!relayRoomId) return new Response('Bad room', { status: 400 });
+			if (!parseProofProtocol(request.headers.get('Sec-WebSocket-Protocol'))) return new Response('Unauthorized', { status: 401 });
+			return env.SYNC_ROOM.get(env.SYNC_ROOM.idFromName(relayRoomId)).fetch(request);
 		}
 
 		const assetResponse = await env.ASSETS.fetch(request);

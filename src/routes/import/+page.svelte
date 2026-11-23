@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import FormError from '$lib/components/FormError.svelte';
 	import { currencyDecimals } from '$lib/currencies';
 	import { isV1Export, mapV1ToV2, type ImportResult } from '$lib/import/v1';
-	import { addProject } from '$lib/storage';
-	import { addExpense, initProject, openRoom } from '$lib/sync/doc';
-	import { generateRoomId, generateSecret } from '$lib/token';
+	import { createGroup } from '$lib/io/createGroup';
+	import { plural } from '$lib/plural';
 
 	let fileInputEl = $state<HTMLInputElement | null>(null);
 	let parsed = $state<ImportResult | null>(null);
@@ -64,26 +64,8 @@
 		if (!parsed || busy) return;
 		busy = true;
 		try {
-			const roomId = generateRoomId();
-			const secret = generateSecret();
-			const handle = openRoom(roomId, secret);
-			await handle.ready;
-
-			// Tag the project header with the freshly minted roomId so v2 keys match.
-			initProject(handle, { ...parsed.project, id: roomId }, parsed.members);
-			for (const e of parsed.expenses) addExpense(handle, e);
-
-			addProject({
-				roomId,
-				secret,
-				name: parsed.project.name,
-				emoji: parsed.project.emoji,
-				color: parsed.project.color,
-				lastActiveAt: Date.now()
-			});
-
-			await handle.persistence?.flush();
-		await goto(`/p/${roomId}`);
+			const roomId = await createGroup(parsed, null);
+			await goto(`/p/${roomId}`);
 		} catch (err) {
 			busy = false;
 			const message = err instanceof Error ? err.message : String(err);
@@ -128,7 +110,7 @@
 
 	<div class="scroll import-scroll">
 		<p class="lede">
-			Drop a Kostos v1 export (JSON) here. We'll create a v2 project with its members, categories, payment methods and expenses.
+			Drop a Kostos v1 export (JSON) here. We'll create a group with its members, categories, payment methods and expenses.
 		</p>
 
 		{#if !parsed}
@@ -162,7 +144,7 @@
 				<div class="eyebrow">Ready to import</div>
 				<div class="h2 project-name">{parsed.project.name}</div>
 				<div class="dim mono preview-meta">
-					{parsed.project.currency} · {parsed.stats.memberCount} members · {parsed.stats.expenseCount} expenses
+					{parsed.project.currency} · {plural(parsed.stats.memberCount, 'member', 'members')} · {plural(parsed.stats.expenseCount, 'expense', 'expenses')}
 				</div>
 
 				<div class="stats-row">
@@ -223,14 +205,12 @@
 					onclick={confirmImport}
 					disabled={busy || parsed.stats.expenseCount === 0}
 				>
-					{busy ? 'Creating…' : 'Create v2 project'}
+					{busy ? 'Creating…' : 'Create group'}
 				</button>
 			</div>
 		{/if}
 
-		{#if error}
-			<div class="error" role="alert">{error}</div>
-		{/if}
+		{#if error}<FormError message={error} />{/if}
 
 		{#if fileName && !error && !parsed}
 			<p class="dim mono file-name">{fileName}</p>
@@ -376,14 +356,6 @@
 
 	.actions {
 		justify-content: flex-end;
-	}
-
-	.error {
-		padding: 10px 12px;
-		border-radius: 12px;
-		background: color-mix(in oklab, #ef4444 16%, transparent);
-		color: var(--ink);
-		font-size: 13px;
 	}
 
 	.file-name {

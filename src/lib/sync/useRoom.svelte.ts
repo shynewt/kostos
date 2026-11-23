@@ -7,7 +7,10 @@
  * via `$effect(() => room.observe())` so cleanup happens naturally on unmount.
  */
 
+import { getContext, setContext } from 'svelte';
+import { describeSync, type SyncView } from './describe';
 import {
+	DEMO_ROOM_ID,
 	openRoom,
 	readActivity,
 	readExpenses,
@@ -96,6 +99,10 @@ export class RoomState {
 		this.conflicts = readExpenseConflicts(this.handle);
 	};
 
+	syncView(now: number): SyncView {
+		return describeSync(this.sync, this.local, now, { demo: this.handle.roomId === DEMO_ROOM_ID, legacy: this.handle.legacy });
+	}
+
 	/** Attach Yjs observers + return a teardown function suitable for $effect cleanup. */
 	observe(): () => void {
 		this.refresh();
@@ -109,6 +116,19 @@ export class RoomState {
 			offLocal?.();
 		};
 	}
+}
+
+type RoomContext = { readonly room: RoomState | null };
+const ROOM_CONTEXT_KEY = 'kostos-room';
+
+/** Lets the sync components under a room page find that page's room without prop drilling. */
+export function provideRoomContext(getRoom: () => RoomState | null): void {
+	setContext<RoomContext>(ROOM_CONTEXT_KEY, { get room() { return getRoom(); } });
+}
+
+/** Undefined when no page above provided a room. */
+export function useRoomContext(): RoomContext | undefined {
+	return getContext<RoomContext | undefined>(ROOM_CONTEXT_KEY);
 }
 
 export function useRoom(roomId: string, secret?: string): RoomState {

@@ -17,9 +17,10 @@ COPY --from=builder /app/build ./build
 COPY --from=builder /app/scripts/serve.js ./scripts/serve.js
 COPY --from=builder /app/scripts/relay.js ./scripts/relay.js
 COPY --from=builder /app/src/lib/sync/relay-protocol.js ./src/lib/sync/relay-protocol.js
+COPY --from=builder /app/src/lib/sync/room-access.js ./src/lib/sync/room-access.js
 ENV KOSTOS_DATA_DIR=/data
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
-	CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+	CMD wget -qO- http://127.0.0.1:${PORT:-8080}/healthz || exit 1
 CMD ["node", "scripts/serve.js"]

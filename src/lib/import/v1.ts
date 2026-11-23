@@ -149,7 +149,7 @@ export function mapV1ToV2(v1: V1Export): ImportResult {
 		}));
 
 	if (members.length === 0) {
-		warnings.push('No real members found; project would be empty.');
+		warnings.push('No real members found; group would be empty.');
 	}
 
 	const categories: Category[] = v1.categories.map((c) => {
@@ -175,7 +175,7 @@ export function mapV1ToV2(v1: V1Export): ImportResult {
 	for (const e of v1.expenses) {
 		const amountCents = toCents(e.amount, decimals);
 		if (!Number.isFinite(amountCents) || amountCents <= 0) {
-			warnings.push(`Skipped expense "${e.title}" — non-positive amount.`);
+			warnings.push(`Skipped expense "${e.title}": non-positive amount.`);
 			continue;
 		}
 
@@ -188,7 +188,7 @@ export function mapV1ToV2(v1: V1Export): ImportResult {
 		const participants = realPaidFor.filter((pf) => (pf.owedAmount ?? 0) > 0);
 
 		if (participants.length === 0) {
-			warnings.push(`Skipped expense "${e.title}" — no real participants.`);
+			warnings.push(`Skipped expense "${e.title}": no real participants.`);
 			continue;
 		}
 

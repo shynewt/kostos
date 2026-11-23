@@ -5,17 +5,19 @@
  */
 import * as Y from 'yjs';
 import { browser } from '$app/environment';
-import { decryptPayload, deriveKey, encryptPayload } from './crypto';
+import { decryptPayload, deriveKey, deriveRoomAccess, encryptPayload, InsecureContextError, type RoomAccess } from './crypto';
 import { frame, parse, MSG_STEP1, MSG_UPDATE } from './protocol';
 import { REMOTE_ORIGIN, LOCAL_LOAD, type RoomPersistence } from './persistence';
 import { type SyncStatus, type SyncProblem } from './status';
+import { PROOF_PREFIX, ROOM_FULL_MESSAGE, SIZE_ERROR_MESSAGE } from './room-access.js';
+import { MAX_MESSAGE_BYTES, PACKET_MAGIC, PROTOCOL_VERSION, payloadHash } from './relay-protocol.js';
 
 export type ConnectionStatus = SyncStatus['phase'];
-const MAX_MESSAGE_BYTES = 1_048_576;
-const TRANSPORT_MAGIC = new Uint8Array([75, 79, 83, 51]); // KOS3
 const TIMEOUT_MS = 12_000;
 /** A socket that hasn't opened by now means the server is out of reach: treat it as offline. */
 const OPEN_TIMEOUT_MS = 6_000;
+/** A full room stays full until someone compacts it, and every attempt replays the whole history, so wait. */
+const ROOM_FULL_RETRY_MS = 5 * 60_000;
 /** History worth replacing with a single snapshot once this phone is up to date. */
 const COMPACT_MIN_ENTRIES = 50;
 const COMPACT_MIN_BYTES = 256 * 1024;
@@ -32,6 +34,8 @@ export class EncryptedSyncProvider {
 	private heartbeat: ReturnType<typeof setInterval> | null = null;
 	private pullTimer: ReturnType<typeof setTimeout> | null = null;
 	private reconnectDelay = 1000;
+	/** Until then only the Try again button reconnects a full group: every attempt replays up to MAX_ROOM_BYTES. */
+	private holdUntil = 0;
 	private sendQueue: Promise<void> = Promise.resolve();
 	private receiveQueue: Promise<void> = Promise.resolve();
 	private pending = new Set<string>();
@@ -41,29 +45,50 @@ export class EncryptedSyncProvider {
 	private durable = false;
 	private complete = true;
 	private sessionProblem: SyncProblem | null = null;
+	/** The server refused this key; nothing reconnects after that. */
+	private denied = false;
+	private recoveries = 0;
+	private replay: Uint8Array[] = [];
+	private replayBytes = 0;
+	private replayCount = 0;
+	private compacted = false;
+	/** This phone held data of its own before connecting, so it can vouch for a trimmed server history. */
+	private seeded = false;
+	private fresh = false;
 	private revision = 0;
+	private access: RoomAccess | null = null;
 	private barrier: { id: string; version: number } | null = null;
 	private unsubscribeLocal: (() => void) | undefined;
 
-	constructor(private doc: Y.Doc, private url: string, private roomId: string, secret: string, private persistence?: RoomPersistence) {
+	constructor(private doc: Y.Doc, private url: string, secret: string, private persistence?: RoomPersistence) {
 		this.key = deriveKey(secret);
+		const accessPromise = deriveRoomAccess(secret);
 		doc.on('update', this.onUpdate);
 		this.unsubscribeLocal = persistence?.onChange((local) => {
 			this.setState({ pendingChanges: local.pendingChanges, lastSyncedAt: local.lastSyncedAt });
 		});
 		if (typeof window !== 'undefined') {
-			window.addEventListener('online', this.retry);
-			window.addEventListener('offline', this.handleOffline);
+			window.addEventListener('online', this.reconnectUnlessHeld);
+			window.addEventListener('offline', this.reconnectUnlessHeld);
 			document.addEventListener('visibilitychange', this.handleVisibility);
 			window.addEventListener('pageshow', this.handlePageShow);
 		}
-		void Promise.all([persistence?.ready ?? Promise.resolve(), this.key]).then(() => {
-			const hasData = doc.store.clients.size > 0;
-			this.seeded = hasData && !persistence?.state.partial;
-			this.fresh = !hasData;
-			this.setState({ lastSyncedAt: persistence?.state.lastSyncedAt ?? null, unverifiedSince: persistence?.state.unverifiedSince ?? Date.now() });
-			this.connect();
-		}).catch(() => this.fail(persistence?.state.phase === 'error' ? 'storage' : 'decrypt', false));
+		this.start(accessPromise).catch((error) => this.fail(this.startupProblem(error), false));
+	}
+
+	private async start(accessPromise: Promise<RoomAccess>): Promise<void> {
+		// waiting on all three together keeps a failure in one from leaving another unhandled
+		[, , this.access] = await Promise.all([this.persistence?.ready, this.key, accessPromise]);
+		const hasData = this.doc.store.clients.size > 0;
+		this.seeded = hasData && !this.persistence?.state.partial;
+		this.fresh = !hasData;
+		this.setState({ lastSyncedAt: this.persistence?.state.lastSyncedAt ?? null, unverifiedSince: this.persistence?.state.unverifiedSince ?? Date.now() });
+		this.connect();
+	}
+
+	private startupProblem(error: unknown): SyncProblem {
+		if (error instanceof InsecureContextError) return 'insecure';
+		return this.persistence?.state.phase === 'error' ? 'storage' : 'decrypt';
 	}
 
 	get status(): ConnectionStatus { return this.state.phase; }
@@ -83,11 +108,14 @@ export class EncryptedSyncProvider {
 	private isCurrent(ws: WebSocket): boolean { return !this.destroyed && this.ws === ws; }
 
 	private connect(): void {
-		if (this.destroyed) return;
+		const access = this.access;
+		// no access means startup failed or hasn't finished; neither can be retried from here
+		if (this.destroyed || this.denied || !access) return;
 		if (typeof navigator !== 'undefined' && navigator.onLine === false) {
 			this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 			return;
 		}
+		this.holdUntil = 0;
 		this.supported = this.replayed = this.durable = false;
 		this.complete = true;
 		this.sessionProblem = null;
@@ -101,7 +129,7 @@ export class EncryptedSyncProvider {
 		if (this.state.phase === 'offline') this.setState({ problem: null });
 		else this.setState({ phase: 'connecting', checking: true, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		let ws: WebSocket;
-		try { ws = new WebSocket(`${this.url}/${encodeURIComponent(this.roomId)}`); }
+		try { ws = new WebSocket(`${this.url}/${access.relayRoomId}`, [`${PROOF_PREFIX}${access.proof}`]); }
 		catch { this.unreachable(); return; }
 		this.ws = ws;
 		ws.binaryType = 'arraybuffer';
@@ -143,8 +171,9 @@ export class EncryptedSyncProvider {
 		ws.onclose = () => {
 			if (!this.isCurrent(ws)) return;
 			if (!opened) { this.unreachable(); return; }
-			// The server dropped an open connection (a deploy, a restart): reconnect quietly.
-			this.recover('network');
+			// The server dropped an open connection (a deploy, a restart): reconnect quietly. Messages
+			// still being decrypted come first, since the last one may be the error that explains the close.
+			void this.receiveQueue.then(() => { if (this.isCurrent(ws)) this.recover('network'); });
 		};
 		ws.onerror = () => { if (this.isCurrent(ws) && !opened) this.unreachable(); };
 	}
@@ -153,10 +182,7 @@ export class EncryptedSyncProvider {
 	 *  their data stays on screen, the status says so, and the phone keeps trying on its own. */
 	private unreachable(): void {
 		if (this.destroyed) return;
-		const ws = this.ws;
-		this.ws = null;
-		this.clearTimers();
-		try { ws?.close(); } catch { /* Already closed. */ }
+		this.closeSocket();
 		this.setState({ phase: 'offline', checking: false, problem: null, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		this.scheduleReconnect();
 	}
@@ -166,10 +192,7 @@ export class EncryptedSyncProvider {
 	private recover(problem: SyncProblem): void {
 		if (this.recoveries >= 3) { this.fail(problem); return; }
 		this.recoveries++;
-		const ws = this.ws;
-		this.ws = null;
-		this.clearTimers();
-		try { ws?.close(); } catch { /* Already closed. */ }
+		this.closeSocket();
 		this.connect();
 	}
 
@@ -194,7 +217,7 @@ export class EncryptedSyncProvider {
 		try { message = JSON.parse(data); } catch { return; }
 		if (!message || typeof message !== 'object') return;
 		if (message.type === 'ready') {
-			if (message.protocol !== 3 || !Number.isSafeInteger(message.revision)) { this.fail('protocol', false); return; }
+			if (message.protocol !== PROTOCOL_VERSION || !Number.isSafeInteger(message.revision)) { this.fail('protocol', false); return; }
 			this.supported = this.replayed = true;
 			this.durable = message.durable === true;
 			this.complete = message.complete === true;
@@ -212,7 +235,8 @@ export class EncryptedSyncProvider {
 			this.send(MSG_STEP1, Y.encodeStateVector(this.doc));
 			return;
 		}
-		if (message.type === 'error') { this.fail(message.reason === 'size' ? 'size' : 'storage'); return; }
+		if (message.type === 'denied') { this.deny(); return; }
+		if (message.type === 'error') { this.fail(this.serverErrorProblem(message.reason)); return; }
 		if (message.type === 'ack' || message.type === 'revision') {
 			if (!Number.isSafeInteger(message.revision) || message.revision! > this.revision + 1) { this.recover('history'); return; }
 			this.revision = Math.max(this.revision, message.revision!);
@@ -249,6 +273,11 @@ export class EncryptedSyncProvider {
 		}
 	}
 
+	private serverErrorProblem(reason: string | undefined): SyncProblem {
+		if (reason === SIZE_ERROR_MESSAGE.reason) return 'size';
+		return reason === ROOM_FULL_MESSAGE.reason ? 'full' : 'storage';
+	}
+
 	private onUpdate = (update: Uint8Array, origin: unknown): void => {
 		if (origin === REMOTE_ORIGIN || origin === LOCAL_LOAD) return;
 		if (!this.sessionProblem) this.setState({ phase: navigator.onLine === false ? 'offline' : this.ws?.readyState === WebSocket.OPEN ? 'syncing' : this.state.phase, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
@@ -267,13 +296,13 @@ export class EncryptedSyncProvider {
 			if (encrypted.length + 5 > MAX_MESSAGE_BYTES) { this.fail('size', false); return; }
 			const durable = type === MSG_UPDATE;
 			const packet = new Uint8Array(5 + encrypted.length);
-			packet.set(TRANSPORT_MAGIC);
+			packet.set(PACKET_MAGIC);
 			packet[4] = durable ? 1 : 0;
 			packet.set(encrypted, 5);
 			if (durable) {
-				const hash = await crypto.subtle.digest('SHA-256', encrypted as BufferSource);
+				const hash = await payloadHash(encrypted);
 				if (!this.isCurrent(ws)) return;
-				this.pending.add(Array.from(new Uint8Array(hash), (v) => v.toString(16).padStart(2, '0')).join(''));
+				this.pending.add(hash);
 			}
 			ws.send(packet);
 		}).catch(() => { if (this.isCurrent(ws)) this.fail('storage'); }).finally(() => {
@@ -314,7 +343,7 @@ export class EncryptedSyncProvider {
 			if (!this.isCurrent(ws) || ws.readyState !== WebSocket.OPEN) return;
 			if (encrypted.length + 9 > MAX_MESSAGE_BYTES || encrypted.length * 2 > replayBytes) return;
 			const packet = new Uint8Array(9 + encrypted.length);
-			packet.set(TRANSPORT_MAGIC);
+			packet.set(PACKET_MAGIC);
 			packet[4] = 2;
 			new DataView(packet.buffer).setUint32(5, through);
 			packet.set(encrypted, 9);
@@ -325,24 +354,29 @@ export class EncryptedSyncProvider {
 	private fail(problem: SyncProblem, reconnect = true): void {
 		if (this.destroyed) return;
 		this.sessionProblem = problem;
-		this.setState({ phase: navigator.onLine === false ? 'offline' : 'error', checking: false, problem, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
+		if (problem === 'full') this.holdUntil = Date.now() + ROOM_FULL_RETRY_MS;
+		// a failure that will not reconnect has to stay visible, or nothing clears it when the device is back online
+		this.setState({ phase: reconnect && navigator.onLine === false ? 'offline' : 'error', checking: false, problem, unverifiedSince: this.state.unverifiedSince ?? Date.now() });
 		if (reconnect) {
-			const ws = this.ws;
-			this.ws = null;
-			this.clearTimers();
-			try { ws?.close(); } catch { /* Already closed. */ }
+			this.closeSocket();
 			this.scheduleReconnect();
 		} else this.clearDeadline();
 	}
 
-	private recoveries = 0;
-	private replay: Uint8Array[] = [];
-	private replayBytes = 0;
-	private replayCount = 0;
-	private compacted = false;
-	/** This phone held data of its own before connecting, so it can vouch for a trimmed server history. */
-	private seeded = false;
-	private fresh = false;
+	/** The server refused this key for this room. Retrying cannot change that, so every path
+	 *  that would reconnect (timers, online, foreground) stops at `denied` in `connect()`. */
+	private deny(): void {
+		this.denied = true;
+		this.closeSocket();
+		this.fail('denied', false);
+	}
+
+	private closeSocket(): void {
+		const ws = this.ws;
+		this.ws = null;
+		this.clearTimers();
+		try { ws?.close(); } catch { /* Already closed. */ }
+	}
 
 	private armDeadline(ws: WebSocket): void {
 		if (this.deadline) return;
@@ -360,10 +394,16 @@ export class EncryptedSyncProvider {
 		if (this.pullTimer) clearTimeout(this.pullTimer);
 		this.heartbeat = this.pullTimer = null;
 	}
+	private nextReconnectDelay(): number {
+		const hold = this.holdUntil - Date.now();
+		if (hold > 0) return hold;
+		const delay = this.reconnectDelay;
+		this.reconnectDelay = Math.min(delay * 2, 30_000);
+		return delay;
+	}
 	private scheduleReconnect(): void {
 		if (this.destroyed || this.reconnectTimer || navigator.onLine === false) return;
-		const delay = this.reconnectDelay * (0.8 + Math.random() * 0.4);
-		this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30_000);
+		const delay = this.nextReconnectDelay() * (0.8 + Math.random() * 0.4);
 		this.reconnectTimer = setTimeout(() => { this.reconnectTimer = null; this.connect(); }, delay);
 	}
 
@@ -371,37 +411,36 @@ export class EncryptedSyncProvider {
 		if (this.destroyed) return;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = null;
-		const ws = this.ws;
-		this.ws = null;
-		this.clearTimers();
-		try { ws?.close(); } catch { /* Already closed. */ }
+		// an explicit tap overrides a full group's wait, even if connect() bails out offline
+		this.holdUntil = 0;
+		this.closeSocket();
 		this.connect();
 	};
-	private handleOffline = (): void => {
-		this.retry();
+	/** Network and foreground events. A held group keeps its scheduled retry instead of replaying now. */
+	private reconnectUnlessHeld = (): void => {
+		if (Date.now() < this.holdUntil) this.scheduleReconnect();
+		else this.retry();
 	};
-	private handleVisibility = (): void => { if (document.visibilityState === 'visible') this.retry(); };
-	private handlePageShow = (event: PageTransitionEvent): void => { if (event.persisted) this.retry(); };
+	private handleVisibility = (): void => { if (document.visibilityState === 'visible') this.reconnectUnlessHeld(); };
+	private handlePageShow = (event: PageTransitionEvent): void => { if (event.persisted) this.reconnectUnlessHeld(); };
 
 	destroy(): void {
 		this.destroyed = true;
 		this.doc.off('update', this.onUpdate);
 		this.unsubscribeLocal?.();
-		this.clearTimers();
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-		this.ws?.close();
-		this.ws = null;
+		this.closeSocket();
 		this.listeners.clear();
 		if (typeof window !== 'undefined') {
-			window.removeEventListener('online', this.retry);
-			window.removeEventListener('offline', this.handleOffline);
+			window.removeEventListener('online', this.reconnectUnlessHeld);
+			window.removeEventListener('offline', this.reconnectUnlessHeld);
 			document.removeEventListener('visibilitychange', this.handleVisibility);
 			window.removeEventListener('pageshow', this.handlePageShow);
 		}
 	}
 }
 
-export function createSyncProvider(doc: Y.Doc, url: string | undefined, roomId: string, secret: string, persistence?: RoomPersistence): EncryptedSyncProvider | null {
+export function createSyncProvider(doc: Y.Doc, url: string | undefined, secret: string, persistence?: RoomPersistence): EncryptedSyncProvider | null {
 	if (!browser || !url) return null;
-	return new EncryptedSyncProvider(doc, url, roomId, secret, persistence);
+	return new EncryptedSyncProvider(doc, url, secret, persistence);
 }

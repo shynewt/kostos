@@ -138,8 +138,8 @@ export type Payment = {
 };
 
 /** Expense amounts are stored in minor units (cents) to avoid float drift.
- *  Settlements (`isSettlement: true`) are regular expenses structurally — a single payer,
- *  a single split member, even split — and feed the same `computeBalances` math. The flag
+ *  Settlements (`isSettlement: true`) are regular expenses structurally (a single payer,
+ *  a single split member, even split) and feed the same `computeBalances` math. The flag
  *  exists so the UI can tag them visually and offer separate listing/filtering. */
 export type Expense = {
 	id: string;

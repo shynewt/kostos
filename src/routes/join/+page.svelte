@@ -3,53 +3,87 @@
 	import { page } from '$app/state';
 	import { pickMemberColor, pickMemberEmoji } from '$lib/avatar';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
-	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
-	import { addProject, setCurrentMember } from '$lib/storage';
+	import FormError from '$lib/components/FormError.svelte';
+	import MemberPicker from '$lib/components/MemberPicker.svelte';
+	import { addProject, getCurrentMember, setCurrentMember } from '$lib/storage';
+	import { deriveLocalId, InsecureContextError } from '$lib/sync/crypto';
 	import {
 		addMember,
 		generateId,
 		openRoom
 	} from '$lib/sync/doc';
 	import type { Member, Project } from '$lib/types';
-	import { setContext } from 'svelte';
+	import { isOldInvite, memberFromInviteHash, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
-	import { useRoom } from '$lib/sync/useRoom.svelte';
+	import { plural } from '$lib/plural';
+	import { PROBLEM_LABELS } from '$lib/sync/status';
+	import { provideRoomContext, useRoom } from '$lib/sync/useRoom.svelte';
 
-	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'invalid';
+	const INCOMPLETE_INVITE_MESSAGE = 'This invite link is incomplete. Ask the sender for the full link from their Share button.';
 
-	const roomId = $derived((page.url.searchParams.get('room') ?? '').toUpperCase());
-	const secret = $derived(page.url.hash.startsWith('#') ? page.url.hash.slice(1) : '');
+	const LOCAL_STORAGE_MESSAGE = 'This browser won’t let Kostos save data here, so the group can’t be joined. Close other Kostos tabs, turn off private browsing if it’s on, then open the invite link again.';
 
-	let status = $state<Status>('parsing');
-	let project = $state<Project | null>(null);
-	let members = $state<Member[]>([]);
-	let pickedId = $state<string | null>(null);
+	type Status = 'parsing' | 'syncing' | 'ready' | 'empty' | 'denied' | 'invalid' | 'unreadable' | 'storage';
+
+	const secret = $derived(parseInvite(page.url.hash) ?? '');
+	const oldInvite = $derived(isOldInvite(`${page.url.search}${page.url.hash}`));
+	let unreadableMessage = $state('');
+	let derivation = $state<{ secret: string; roomId: string } | null>(null);
+	// the hash can change in place; an ID derived from the previous secret must never open a room with the new one
+	const roomId = $derived(derivation?.secret === secret ? derivation.roomId : '');
+	$effect(() => {
+		const current = secret;
+		unreadableMessage = '';
+		if (!current) return;
+		let stale = false;
+		deriveLocalId(current).then(
+			(id) => { if (!stale) derivation = { secret: current, roomId: id }; },
+			(error) => {
+				if (!stale) unreadableMessage = error instanceof InsecureContextError ? error.message : 'This invite couldn’t be opened on this device.';
+			}
+		);
+		return () => { stale = true; };
+	});
+
+	const room = $derived(roomId && secret ? useRoom(roomId, secret) : null);
+	provideRoomContext(() => room);
+	$effect(() => room?.observe());
+	const project = $derived(room?.project ?? null);
+	const members = $derived(room?.members ?? []);
+	const status = $derived.by<Status>(() => {
+		if (!secret) return 'invalid';
+		if (unreadableMessage) return 'unreadable';
+		if (!room) return 'parsing';
+		if (project && !room.checking) return 'ready';
+		if (room.sync.problem === 'denied') return 'denied';
+		if (room.local?.phase === 'error') return 'storage';
+		if (['error', 'offline', 'synced'].includes(room.sync.phase)) return 'empty';
+		return 'syncing';
+	});
+
+	// a link from the old site names the member this phone already was, so the picker can be skipped
+	const linkedMemberId = $derived(memberFromInviteHash(page.url.hash));
+	let chosenId = $state<string | null>(null);
+	// a choice made in another group (the hash can change in place) falls back to the first member
+	const pickedId = $derived(members.some((member) => member.id === chosenId) ? chosenId : (members[0]?.id ?? null));
 	let newName = $state('');
 	let joining = $state(false);
 	let joinError = $state<string | null>(null);
 
-	const room = $derived(roomId && secret ? useRoom(roomId, secret) : null);
-	setContext('kostos-room', { get room() { return room; } });
-	$effect(() => room?.observe());
-	$effect(() => {
-		if (!room) { status = 'invalid'; return; }
-		project = room.project;
-		members = room.members;
-		if (project && !room.checking) {
-			status = 'ready';
-			if (!pickedId && members.length) pickedId = members[0].id;
-		} else if (['error', 'offline', 'synced'].includes(room.sync.phase)) status = 'empty';
-		else status = 'syncing';
-	});
 	function retry() { room?.handle.syncProvider?.retry(); }
 
-	async function joinAsExisting() {
-		if (!project || !pickedId || joining) return;
+	async function join(memberId: string, newMember?: Member) {
+		if (!project || joining) return;
 		joining = true;
 		joinError = null;
 		try {
+			if (newMember) {
+				const handle = openRoom(roomId, secret);
+				addMember(handle, newMember);
+				await handle.persistence?.flush();
+			}
 			addProject({
 				roomId,
 				secret,
@@ -58,44 +92,39 @@
 				color: project.color,
 				lastActiveAt: Date.now()
 			});
-			setCurrentMember(roomId, pickedId);
+			setCurrentMember(roomId, memberId);
 			await goto(`/p/${roomId}`);
 		} catch (error) {
 			joinError = error instanceof Error ? error.message : 'Could not save the group on this device';
 		} finally { joining = false; }
 	}
 
-	async function joinAsNew(event?: Event) {
-		event?.preventDefault();
-		if (!project || joining) return;
+	function joinAsExisting() {
+		if (pickedId) return join(pickedId);
+	}
+
+	let joinedLinkedMember = false;
+	$effect(() => {
+		if (status !== 'ready' || joinedLinkedMember || !linkedMemberId) return;
+		if (!members.some((member) => member.id === linkedMemberId)) return;
+		joinedLinkedMember = true;
+		// a phone that already chose a member in this group keeps that choice
+		const alreadyChosen = getCurrentMember(roomId);
+		void join(alreadyChosen && members.some((member) => member.id === alreadyChosen) ? alreadyChosen : linkedMemberId);
+	});
+
+	function joinAsNew(event: Event) {
+		event.preventDefault();
 		const name = newName.trim();
 		if (!name) return;
-		joining = true;
-		joinError = null;
-		try {
-			const handle = openRoom(roomId, secret);
-			const member: Member = {
-				id: generateId(),
-				name,
-				color: pickMemberColor(members),
-				emoji: pickMemberEmoji(members),
-				createdAt: Date.now()
-			};
-			addMember(handle, member);
-			await handle.persistence?.flush();
-			addProject({
-				roomId,
-				secret,
-				name: project.name,
-				emoji: project.emoji,
-				color: project.color,
-				lastActiveAt: Date.now()
-			});
-			setCurrentMember(roomId, member.id);
-			await goto(`/p/${roomId}`);
-		} catch (error) {
-			joinError = error instanceof Error ? error.message : 'Could not save the group on this device';
-		} finally { joining = false; }
+		const member: Member = {
+			id: generateId(),
+			name,
+			color: pickMemberColor(members),
+			emoji: pickMemberEmoji(members),
+			createdAt: Date.now()
+		};
+		return join(member.id, member);
 	}
 </script>
 
@@ -113,26 +142,36 @@
 		<div class="row" style="flex-shrink: 0;"><div class="app-bar-title">Joining</div><SyncStatus variant="dot" /></div>
 		<div class="row gap-6" style="flex: 1;"></div>
 	</header>
-	<SyncBanner />
+	{#if status !== 'denied'}<SyncBanner />{/if}
 
 	<div class="scroll">
-		{#if status === 'invalid'}
+		{#snippet deadEnd(message: string)}
 			<EmptyCard>
-				<p>This invite link is missing the room or the secret. Ask the sender to share the full link from their <strong>Share</strong> button.</p>
+				<p>{message}</p>
 				<a href="/" class="btn btn-block back-btn">Back</a>
 			</EmptyCard>
+		{/snippet}
+
+		{#if status === 'invalid'}
+			{@render deadEnd(oldInvite ? OLD_INVITE_MESSAGE : INCOMPLETE_INVITE_MESSAGE)}
+		{:else if status === 'unreadable'}
+			{@render deadEnd(unreadableMessage)}
+		{:else if status === 'denied'}
+			{@render deadEnd(PROBLEM_LABELS.denied)}
+		{:else if status === 'storage'}
+			{@render deadEnd(LOCAL_STORAGE_MESSAGE)}
 		{:else if status === 'parsing' || status === 'syncing'}
 			<div class="loading-block">
 				<div class="loading-pulse" aria-hidden="true"></div>
 				<p class="dim mono loading-label">Reaching the group…</p>
 				<p class="dim loading-hint">
-					Decrypting with your secret token. The server never sees the contents.
+					Decrypting with your group key. The server never sees the contents.
 				</p>
 			</div>
 		{:else if status === 'empty'}
 			<EmptyCard>
 				<p>
-					Group data isn’t available for <strong>{roomId}</strong> yet. Check your connection and use the full invite link shared by your group.
+					Group data isn’t available yet. Check your connection and use the full invite link shared by your group.
 				</p>
 				<div class="row gap-8 retry-row">
 					<a href="/" class="btn">Cancel</a>
@@ -151,41 +190,21 @@
 					<div class="col">
 						<div class="eyebrow">Joining</div>
 						<div class="h2 hero-title">{project.name}</div>
-						<div class="dim mono hero-meta">{members.length} {members.length === 1 ? 'member' : 'members'} · {roomId}</div>
+						<div class="dim mono hero-meta">{plural(members.length, 'member', 'members')}</div>
 					</div>
 				</div>
 			</section>
 
 			<div class="section-head">
-				<div class="eyebrow">Which one are you?</div>
+				<div class="eyebrow">Which member are you?</div>
 				<span class="dim mono">PICK ANY · MULTIPLE DEVICES OK</span>
 			</div>
 
 			{#if members.length > 0}
-				<div class="card member-list">
-					{#each members as m, i (m.id)}
-						{#if i > 0}<hr class="hairline" style="margin-left: 56px;" />{/if}
-						<button
-							type="button"
-							class="member-row"
-							class:on={m.id === pickedId}
-							onclick={() => (pickedId = m.id)}
-						>
-							<Avatar member={m} size="md" />
-							<span class="col member-text">
-								<span class="member-name">{m.name}</span>
-							</span>
-							<span class="check" class:on={m.id === pickedId}>
-								{#if m.id === pickedId}
-									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
-								{/if}
-							</span>
-						</button>
-					{/each}
-				</div>
+				<MemberPicker {members} bind:selectedId={() => pickedId, (id) => (chosenId = id)} />
 			{:else}
 				<p class="dim no-members">
-					This project has no members yet. Add yourself below.
+					This group has no members yet. Add yourself below.
 				</p>
 			{/if}
 
@@ -204,7 +223,7 @@
 				</div>
 			</form>
 
-			{#if joinError}<p role="alert">{joinError}</p>{/if}
+			{#if joinError}<FormError message={joinError} />{/if}
 			<button
 				type="button"
 				class="btn btn-primary btn-block continue-btn"
@@ -288,59 +307,6 @@
 	.hero-meta {
 		font-size: 11px;
 		margin-top: 4px;
-	}
-
-	.member-list {
-		padding: 4px;
-	}
-
-	.member-row {
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		width: 100%;
-		padding: 14px 12px;
-		background: transparent;
-		border: 0;
-		color: inherit;
-		cursor: pointer;
-		font: inherit;
-		text-align: left;
-		border-radius: 14px;
-	}
-
-	.member-row.on {
-		background: color-mix(in oklab, var(--accent) 8%, transparent);
-	}
-
-	.member-text {
-		flex: 1;
-	}
-
-	.member-name {
-		font-size: 14px;
-		font-weight: 600;
-	}
-
-	.check {
-		width: 22px;
-		height: 22px;
-		border-radius: 999px;
-		border: 1.5px solid var(--line-2);
-		display: grid;
-		place-items: center;
-		color: transparent;
-	}
-
-	.check.on {
-		background: var(--accent);
-		color: var(--accent-ink);
-		border-color: var(--accent);
-	}
-
-	.check svg {
-		width: 13px;
-		height: 13px;
 	}
 
 	.no-members {

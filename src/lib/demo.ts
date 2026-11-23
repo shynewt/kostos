@@ -11,11 +11,9 @@ import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import demoArchive from './demo-seed.json';
 import { parseProjectArchive } from './io/projectArchive';
+import { archiveContents, seedRoom } from './io/createGroup';
 import { setCurrentMember } from './storage';
-import { addExpense, initProject, openRoom } from './sync/doc';
-import type { Project } from './types';
-
-const DEMO_ROOM_ID = 'DEMO';
+import { DEMO_ROOM_ID, openRoom } from './sync/doc';
 
 export async function enterDemo(): Promise<void> {
 	if (!browser) return;
@@ -27,33 +25,10 @@ export async function enterDemo(): Promise<void> {
 	if (!handle.project.has('id')) {
 		const parsed = parseProjectArchive(demoArchive);
 		if (!parsed.ok) return;
-		const a = parsed.archive;
-
-		const youId = a.members[0]?.id ?? null;
+		const { project, members, expenses } = archiveContents(parsed.archive);
+		const youId = members[0]?.id ?? null;
 		if (youId) setCurrentMember(DEMO_ROOM_ID, youId);
-
-		const project: Project = {
-			id: DEMO_ROOM_ID,
-			name: a.project.name,
-			description: a.project.description,
-			emoji: a.project.emoji,
-			color: a.project.color,
-			currency: a.project.currency,
-			currencySymbol: a.project.currencySymbol,
-			defaultSplit: a.project.defaultSplit,
-			splitDefault: a.project.splitDefault,
-			autoFetchRates: a.project.autoFetchRates,
-			paymentMethodsEnabled: a.project.paymentMethodsEnabled,
-			categories: a.project.categories,
-			paymentMethods: a.project.paymentMethods,
-			trips: a.project.trips ?? [],
-			createdAt: a.project.createdAt
-		};
-
-		initProject(handle, project, a.members);
-		handle.doc.transact(() => {
-			for (const e of a.expenses) addExpense(handle, e);
-		});
+		seedRoom(handle, { ...project, id: DEMO_ROOM_ID }, members, expenses);
 	}
 
 	await goto(`/p/${DEMO_ROOM_ID}`);

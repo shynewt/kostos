@@ -12,7 +12,8 @@ function handle(): RoomHandle {
 		members: doc.getArray('members'),
 		expenses: doc.getArray('expenses'),
 		activity: doc.getArray('activity'),
-		ready: Promise.resolve()
+		ready: Promise.resolve(),
+		legacy: false
 	};
 }
 

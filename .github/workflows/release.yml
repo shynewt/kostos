@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://kostos.shynewt.com
+      url: https://kostos.app
     permissions:
       contents: read
     steps:
@@ -30,6 +30,17 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Refuse to ship placeholders
+        run: |
+          test -f wrangler.toml
+          # built in two pieces so the repo-wide replace that picks the real domain can't rewrite
+          # this check into one that matches the finished config and refuses every release
+          placeholder="APP_""DOMAIN"
+          if grep -n "$placeholder" wrangler.toml || grep -nE "^ +url: https://$placeholder" .github/workflows/release.yml; then
+            echo "Replace $placeholder in wrangler.toml and the environment url of this workflow first"
+            exit 1
+          fi
 
       - name: Type-check
         run: npm run check

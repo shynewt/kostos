@@ -1,7 +1,7 @@
 /* Self-hosted Kostos server.
  *
  * Serves the SvelteKit static build (build/) over HTTP and relays encrypted
- * WebSocket traffic on /sync/<roomId>. Single process, single port. Designed
+ * WebSocket traffic on /sync/<relay room ID>. Single process, single port. Designed
  * to run inside a Docker container or any Node-capable host.
  *
  * Payloads are AES-GCM ciphertext from the client; the relay never holds the
@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { createRelay } from './relay.js';
 import { MAX_MESSAGE_BYTES } from '../src/lib/sync/relay-protocol.js';
+import { parseSyncRequest } from '../src/lib/sync/room-access.js';
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -117,26 +118,13 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES 
 server.on('upgrade', (request, socket, head) => {
 	// an unhandled 'error' (bad frame, oversized payload) would take the whole process down
 	socket.on('error', () => socket.destroy());
-	// fixed base so the Host header can't affect parsing; a malformed target still throws
-	let url;
-	try {
-		url = new URL(request.url ?? '/', 'http://localhost');
-	} catch {
-		socket.destroy();
-		return;
-	}
-	const match = url.pathname.match(/^\/sync\/(.+)$/);
-	if (!match) {
-		socket.destroy();
-		return;
-	}
-	const roomId = safeDecode(match[1])?.toUpperCase();
-	if (!roomId) {
+	const sync = parseSyncRequest(request.url, request.headers['sec-websocket-protocol']);
+	if (!sync) {
 		socket.destroy();
 		return;
 	}
 	wss.handleUpgrade(request, socket, head, (ws) => {
-		attachRelay(ws, roomId);
+		attachRelay(ws, sync.relayRoomId, sync.proof);
 	});
 });
 
@@ -159,5 +147,5 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 server.listen(PORT, HOST, () => {
 	console.log(`[kostos] static build: ${BUILD_DIR}`);
 	console.log(`[kostos] listening on http://${HOST}:${PORT}`);
-	console.log(`[kostos] sync upgrades on ws://${HOST}:${PORT}/sync/<roomId>`);
+	console.log(`[kostos] sync upgrades on ws://${HOST}:${PORT}/sync/<relay room ID>`);
 });

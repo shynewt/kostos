@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { describeSync } from './describe';
+import { LEGACY_GROUP_SUMMARY } from '$lib/legacy';
+import { describeSync, syncLine } from './describe';
 import { LOCAL_STATUS, type SyncStatus } from './status';
 
 const NOW = new Date('2026-10-05T12:00:00').getTime();
@@ -8,7 +9,7 @@ const status = (patch: Partial<SyncStatus>): SyncStatus => ({ ...LOCAL_STATUS, p
 describe('describeSync', () => {
 	it('stays quiet when up to date', () => {
 		const view = describeSync(status({}), null, NOW);
-		expect(view).toMatchObject({ tone: 'ok', label: null, banner: null, attention: false, retry: false });
+		expect(view).toMatchObject({ tone: 'ok', label: 'Up to date', banner: null, attention: false, retry: false });
 	});
 
 	it('names pending changes while syncing', () => {
@@ -34,13 +35,65 @@ describe('describeSync', () => {
 		expect(describeSync(status({}), local, NOW)).toMatchObject({ state: 'local-error', label: 'Not saved here', banner: null });
 	});
 
+	it('words a refused key as a terminal problem with no retry', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'denied' }), null, NOW);
+		expect(view).toMatchObject({ state: 'error', tone: 'warn', retry: false });
+		expect(view.body).toBe('This invite doesn’t match the group. Ask for a new invite link.');
+		expect(view.banner).toBe(view.body);
+	});
+
+	it('points to a backup when the server cannot store changes', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'storage' }), null, NOW);
+		expect(view.body).toContain('export a backup from Settings');
+		expect(view.banner).toContain('export a backup from Settings');
+	});
+
+	it('tells a full group to move to a new one, in the status and the banner', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'full' }), null, NOW);
+		expect(view).toMatchObject({ state: 'error', retry: true });
+		expect(view.body).toContain('This group is full');
+		expect(view.body).toContain('restore it as a new group');
+		expect(view.banner).toBe(view.body);
+	});
+
+	it('words a plain HTTP origin as terminal and names the fix', () => {
+		const view = describeSync(status({ phase: 'error', problem: 'insecure' }), null, NOW);
+		expect(view).toMatchObject({ state: 'error', retry: false });
+		expect(view.body).toContain('HTTPS');
+		expect(view.banner).toBe(view.body);
+	});
+
 	it('treats the demo group as plain local storage', () => {
 		expect(describeSync(LOCAL_STATUS, null, NOW, { demo: true })).toMatchObject({ tone: 'idle', banner: null, attention: false });
 		expect(describeSync(LOCAL_STATUS, null, NOW).banner).toContain('Invite link missing');
 	});
 
+	it('labels the demo group as local only', () => {
+		expect(describeSync(LOCAL_STATUS, null, NOW, { demo: true }).label).toBe('Only on this phone');
+	});
+
+	it('marks an old-format group as not syncing, without a banner or retry', () => {
+		const view = describeSync(LOCAL_STATUS, null, NOW, { legacy: true });
+		expect(view).toMatchObject({ state: 'legacy', label: 'Not syncing', banner: null, retry: false, attention: true });
+		expect(view.body).toBe(LEGACY_GROUP_SUMMARY);
+	});
+
 	it('says when nothing has synced yet', () => {
 		const view = describeSync(status({ phase: 'offline', lastSyncedAt: null }), null, NOW);
 		expect(view.facts[0].value).toBe('Not yet on this phone');
+	});
+});
+
+describe('syncLine', () => {
+	const secret = 'AAECAwQFBgcICQoLDA0ODw';
+
+	it('says when a group last synced', () => {
+		expect(syncLine({ secret, lastSyncedAt: NOW - 5 * 60_000 }, NOW)).toBe('Synced 5 minutes ago');
+		expect(syncLine({ secret }, NOW)).toBe('Not synced yet');
+	});
+
+	it('says a group that cannot sync no longer does, in words short enough for a phone', () => {
+		const line = syncLine({ secret: 'x'.repeat(43), lastSyncedAt: NOW }, NOW);
+		expect(line).toBe('No longer syncs');
 	});
 });

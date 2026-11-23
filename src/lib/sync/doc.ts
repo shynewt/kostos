@@ -16,6 +16,7 @@ import {
 	type Project,
 	type Trip
 } from '$lib/types';
+import { isLegacySecret } from '$lib/legacy';
 import { diffExpense } from './activity-diff';
 import { createSyncProvider, type EncryptedSyncProvider } from './provider';
 
@@ -27,6 +28,8 @@ function syncUrl(): string {
 	return `${scheme}://${location.host}/sync`;
 }
 
+export const DEMO_ROOM_ID = 'DEMO';
+
 export type RoomHandle = {
 	roomId: string;
 	doc: Y.Doc;
@@ -37,6 +40,8 @@ export type RoomHandle = {
 	ready: Promise<void>;
 	syncProvider?: EncryptedSyncProvider;
 	persistence?: RoomPersistence;
+	/** Made before v3: readable and exportable here, never synced. */
+	legacy: boolean;
 };
 
 type CacheEntry = {
@@ -51,11 +56,12 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 	const cached = cache.get(roomId);
 	if (cached) {
 		// A corrected invite must replace the provider using the previous key.
-		const effectiveSecret = secret ?? secretFromStorage(roomId);
-		if (browser && effectiveSecret && (!cached.handle.syncProvider || cached.secret !== effectiveSecret)) {
+		const access = resolveRoomSecret(roomId, secret);
+		cached.handle.legacy = access.legacy;
+		if (browser && access.syncSecret && (!cached.handle.syncProvider || cached.secret !== access.syncSecret)) {
 			cached.handle.syncProvider?.destroy();
-			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), roomId, effectiveSecret, cached.persistence) ?? undefined;
-			cached.secret = effectiveSecret;
+			cached.handle.syncProvider = createSyncProvider(cached.handle.doc, syncUrl(), access.syncSecret, cached.persistence) ?? undefined;
+			cached.secret = access.syncSecret;
 		}
 		return cached.handle;
 	}
@@ -75,13 +81,10 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		ready = Promise.resolve();
 	}
 
+	const access = resolveRoomSecret(roomId, secret);
 	let syncProvider: EncryptedSyncProvider | undefined;
-	if (browser) {
-		const effectiveSecret = secret ?? secretFromStorage(roomId);
-		if (effectiveSecret) {
-			syncProvider =
-				createSyncProvider(doc, syncUrl(), roomId, effectiveSecret, persistence) ?? undefined;
-		}
+	if (browser && access.syncSecret) {
+		syncProvider = createSyncProvider(doc, syncUrl(), access.syncSecret, persistence) ?? undefined;
 	}
 
 	const handle: RoomHandle = {
@@ -93,26 +96,33 @@ export function openRoom(roomId: string, secret?: string): RoomHandle {
 		activity,
 		ready,
 		syncProvider,
-		persistence
+		persistence,
+		legacy: access.legacy
 	};
-	cache.set(roomId, { handle, persistence, secret: secret ?? secretFromStorage(roomId) });
+	cache.set(roomId, { handle, persistence, secret: access.syncSecret });
 	return handle;
 }
 
-function secretFromStorage(roomId: string): string | undefined {
-	return findProject(roomId)?.secret;
+/** Only a current-format secret may reach the sync server; old groups stay local. */
+function resolveRoomSecret(roomId: string, secret?: string): { syncSecret: string | undefined; legacy: boolean } {
+	const known = secret ?? findProject(roomId)?.secret;
+	const legacy = known !== undefined && isLegacySecret(known);
+	return { syncSecret: legacy ? undefined : known, legacy };
 }
 
 export async function destroyRoom(roomId: string): Promise<void> {
 	const entry = cache.get(roomId);
 	if (!entry) return;
 	if (entry.handle.syncProvider) entry.handle.syncProvider.destroy();
-	if (entry.persistence) {
-		await entry.persistence.destroy();
-		await entry.persistence.clearData();
+	try {
+		if (entry.persistence) {
+			await entry.persistence.destroy();
+			await entry.persistence.clearData();
+		}
+	} finally {
+		entry.handle.doc.destroy();
+		cache.delete(roomId);
 	}
-	entry.handle.doc.destroy();
-	cache.delete(roomId);
 }
 
 export function readProject(handle: RoomHandle): Project | null {
@@ -600,10 +610,12 @@ function expenseLabel(handle: RoomHandle, expense: Expense): string {
 	return emoji ? `${emoji} ${name}` : name;
 }
 
-export function addExpense(handle: RoomHandle, expense: Expense): void {
+/** `silent` skips the activity log, for seeding a room with expenses that already happened. */
+export function addExpense(handle: RoomHandle, expense: Expense, { silent = false } = {}): void {
 	if (handle.expenses.toArray().some((e) => e.get('id') === expense.id)) return;
 	handle.doc.transact(() => {
 		handle.expenses.push([expenseMap(expense)]);
+		if (silent) return;
 		logActivity(
 			handle,
 			expense.isSettlement

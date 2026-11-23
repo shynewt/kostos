@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
 	import { fly, slide } from 'svelte/transition';
-	import { describeSync } from '$lib/sync/describe';
-	import type { RoomState } from '$lib/sync/useRoom.svelte';
+	import { useRoomContext } from '$lib/sync/useRoom.svelte';
 	import SyncIcon from './SyncIcon.svelte';
 
 	/** Appears while this phone is still fetching the latest changes (the data on screen may be
@@ -10,9 +8,9 @@
 	 *  invite, or an expense edited in two places. Healthy and offline states stay in the app bar. */
 	let { conflicts = false }: { conflicts?: boolean } = $props();
 
-	const context = getContext<{ readonly room: RoomState } | undefined>('kostos-room');
+	const context = useRoomContext();
 	const room = $derived(context?.room);
-	const view = $derived(room ? describeSync(room.sync, room.local, 0, { demo: room.handle.roomId === 'DEMO' }) : null);
+	const view = $derived(room ? room.syncView(0) : null);
 	const message = $derived(view?.banner ?? null);
 
 	// A short blip shouldn't flash a banner; wait before announcing a problem.

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { EncryptedSyncProvider } from './provider';
-import { deriveKey, decryptPayload, encryptPayload } from './crypto';
+import { deriveKey, deriveRoomAccess, decryptPayload, encryptPayload } from './crypto';
 import { frame, parse, MSG_UPDATE } from './protocol';
 import { payloadHash } from './relay-protocol.js';
+import { ROOM_FULL_MESSAGE } from './room-access.js';
 
 class Socket {
 	static OPEN = 1;
@@ -15,14 +16,14 @@ class Socket {
 	onclose: (() => void) | null = null;
 	onerror: (() => void) | null = null;
 	sent: (string | Uint8Array)[] = [];
-	constructor() { Socket.instances.push(this); }
+	constructor(public url = '', public protocols: string | string[] = []) { Socket.instances.push(this); }
 	open() { this.readyState = 1; this.onopen?.(); }
 	send(data: string | Uint8Array) { this.sent.push(data); }
 	close() { this.readyState = 3; this.onclose?.(); }
 	control(message: object) { this.onmessage?.({ data: JSON.stringify(message) }); }
 	binary(data: Uint8Array) { this.onmessage?.({ data: data.slice().buffer }); }
 }
-const secret = btoa(String.fromCharCode(...new Uint8Array(32).fill(1))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+const secret = btoa(String.fromCharCode(...new Uint8Array(16).fill(1))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 let provider: EncryptedSyncProvider;
 let doc: Y.Doc;
 let events: EventTarget;
@@ -38,9 +39,13 @@ beforeEach(() => {
 });
 afterEach(() => { provider?.destroy(); doc.destroy(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 async function start() {
-	provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
+	provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
 	await vi.waitFor(() => expect(Socket.instances).toHaveLength(1));
 	const ws = Socket.instances[0]; ws.open(); return ws;
+}
+// key derivation is real async crypto, so a single fake-timer tick may not show the socket yet
+async function socketsOpened(count = 1) {
+	await vi.waitFor(() => expect(Socket.instances).toHaveLength(count));
 }
 async function ready(ws: Socket, options = {}) {
 	ws.control({ type: 'ready', protocol: 3, revision: 0, durable: true, complete: true, ...options });
@@ -55,6 +60,12 @@ async function acknowledge(ws: Socket, revision = 1) {
 }
 
 describe('verified encrypted sync', () => {
+	it('connects to the derived room and offers the auth proof as a subprotocol', async () => {
+		await start();
+		const access = await deriveRoomAccess(secret);
+		expect(Socket.instances[0].url).toBe(`ws://test/${access.relayRoomId}`);
+		expect(Socket.instances[0].protocols).toEqual([`kostos1.${access.proof}`]);
+	});
 	it('does not claim freshness on socket open, replay or send without durable acknowledgement', async () => {
 		const ws = await start(); expect(provider.status).toBe('syncing');
 		await ready(ws); expect(provider.status).toBe('syncing');
@@ -138,7 +149,8 @@ describe('verified encrypted sync', () => {
 		expect(provider.status).toBe('offline'); expect(provider.snapshot.checking).toBe(false);
 	});
 	it('treats a server it cannot reach as offline, and keeps saying so while retrying', async () => {
-		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
+		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
 		await vi.advanceTimersByTimeAsync(6_001);
 		expect(provider.snapshot).toMatchObject({ phase: 'offline', checking: false, problem: null });
 		const seen: string[] = []; provider.onStatusChange((s) => seen.push(s.phase));
@@ -147,14 +159,14 @@ describe('verified encrypted sync', () => {
 		expect(new Set(seen)).toEqual(new Set(['offline']));
 	});
 	it('says offline when a connection is refused, not paused', async () => {
-		provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
 		await vi.waitFor(() => expect(Socket.instances).toHaveLength(1));
 		Socket.instances[0].onerror?.(); Socket.instances[0].close();
 		expect(provider.snapshot).toMatchObject({ phase: 'offline', problem: null });
 	});
 	it('keeps waiting while a long history is still arriving', async () => {
-		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
-		await vi.advanceTimersByTimeAsync(0);
+		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
 		const ws = Socket.instances[0]; ws.open();
 		const key = await deriveKey(secret);
 		const entry = await encryptPayload(key, frame(MSG_UPDATE, Y.encodeStateAsUpdate(new Y.Doc())));
@@ -163,8 +175,8 @@ describe('verified encrypted sync', () => {
 		expect(Socket.instances).toHaveLength(1);
 	});
 	it('reports a timeout, not an outdated server, when an open connection goes silent', async () => {
-		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', 'ROOM', secret);
-		await vi.advanceTimersByTimeAsync(0); Socket.instances[0].open();
+		vi.useFakeTimers(); provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened(); Socket.instances[0].open();
 		await vi.advanceTimersByTimeAsync(12_001);
 		expect(provider.snapshot.problem).toBe('timeout');
 	});
@@ -224,5 +236,143 @@ describe('verified encrypted sync', () => {
 		expect(new DataView(compact.buffer, compact.byteOffset).getUint32(5)).toBe(64);
 		const snapshot = new Y.Doc(); Y.applyUpdate(snapshot, parse(await decryptPayload(key, compact.slice(9))).body);
 		expect(snapshot.getArray('expenses').length).toBe(60);
+	});
+
+	it('stops for good when the server says the key does not belong to this group', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		const ws = Socket.instances[0]; ws.open();
+		ws.control({ type: 'denied' });
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('denied'));
+		// the server closes right after the message; the message task runs first in a browser too
+		ws.close();
+		expect(provider.status).toBe('error');
+		await vi.advanceTimersByTimeAsync(120_000);
+		document.dispatchEvent(new Event('visibilitychange'));
+		events.dispatchEvent(new Event('online'));
+		provider.retry();
+		expect(Socket.instances).toHaveLength(1);
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'denied', checking: false });
+	});
+
+	it('keeps a startup failure on screen when the device comes back online', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		vi.stubGlobal('navigator', { onLine: false });
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('insecure'));
+		vi.stubGlobal('navigator', { onLine: true });
+		events.dispatchEvent(new Event('online'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'insecure', checking: false });
+	});
+
+	it('keeps a startup failure on screen when the device goes offline', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('insecure'));
+		vi.stubGlobal('navigator', { onLine: false });
+		events.dispatchEvent(new Event('offline'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'insecure' });
+		vi.stubGlobal('navigator', { onLine: true });
+		events.dispatchEvent(new Event('online'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'insecure' });
+	});
+
+	it('does not pretend to retry a local storage failure at startup', async () => {
+		const ready = Promise.reject(new Error('blocked'));
+		ready.catch(() => {});
+		const persistence = { ready, state: { phase: 'error', pendingChanges: 0, lastSyncedAt: null, unverifiedSince: null }, onChange: () => () => {}, invalidate: () => {} };
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret, persistence as never);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('storage'));
+		provider.retry();
+		events.dispatchEvent(new Event('online'));
+		expect(Socket.instances).toHaveLength(0);
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'storage', checking: false });
+	});
+
+	it('says the group is full and waits minutes, not seconds, before replaying it again', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'full' }));
+		await vi.advanceTimersByTimeAsync(3 * 60_000);
+		expect(Socket.instances).toHaveLength(1);
+		await vi.advanceTimersByTimeAsync(3 * 60_000);
+		expect(Socket.instances.length).toBeGreaterThan(1);
+	});
+
+	it('still reads the full error when the server closes the socket right behind it', async () => {
+		const ws = await start();
+		const peer = new Y.Doc(); peer.getArray('expenses').push(['still decrypting']);
+		ws.binary(await encryptPayload(await deriveKey(secret), frame(MSG_UPDATE, Y.encodeStateAsUpdate(peer))));
+		ws.control(ROOM_FULL_MESSAGE);
+		ws.close();
+		await vi.waitFor(() => expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'full' }));
+		expect(Socket.instances).toHaveLength(1);
+		peer.destroy();
+	});
+
+	it('lets only the Try again button replay a full group before its wait is over', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('full'));
+		await vi.advanceTimersByTimeAsync(60_000);
+		document.dispatchEvent(new Event('visibilitychange'));
+		events.dispatchEvent(new Event('online'));
+		events.dispatchEvent(new Event('offline'));
+		events.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+		expect(Socket.instances).toHaveLength(1);
+		expect(provider.snapshot).toMatchObject({ phase: 'error', problem: 'full' });
+		provider.retry();
+		expect(Socket.instances).toHaveLength(2);
+	});
+
+	it('lets Try again override the wait of a full group even when it was tapped offline', async () => {
+		vi.useFakeTimers();
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('full'));
+		vi.stubGlobal('navigator', { onLine: false });
+		events.dispatchEvent(new Event('offline'));
+		provider.retry();
+		vi.stubGlobal('navigator', { onLine: true });
+		events.dispatchEvent(new Event('online'));
+		expect(Socket.instances).toHaveLength(2);
+	});
+
+	it('forgets the wait of a full group once its jittered timer replays it early', async () => {
+		vi.useFakeTimers();
+		vi.spyOn(Math, 'random').mockReturnValue(0);
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await socketsOpened();
+		Socket.instances[0].open();
+		Socket.instances[0].control(ROOM_FULL_MESSAGE);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('full'));
+		await vi.advanceTimersByTimeAsync(4 * 60_000 + 1_000);
+		expect(Socket.instances).toHaveLength(2);
+		Socket.instances[1].close();
+		await vi.advanceTimersByTimeAsync(5_000);
+		expect(Socket.instances).toHaveLength(3);
+	});
+
+	it('still reports a real storage failure as storage', async () => {
+		const ws = await start();
+		ws.control({ type: 'error', reason: 'storage' });
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('storage'));
+	});
+
+	it('reports a plain HTTP origin instead of a wrong invite link', async () => {
+		vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+		provider = new EncryptedSyncProvider(doc, 'ws://test', secret);
+		await vi.waitFor(() => expect(provider.snapshot.problem).toBe('insecure'));
+		expect(provider.snapshot).toMatchObject({ phase: 'error', checking: false });
+		expect(Socket.instances).toHaveLength(0);
 	});
 });

@@ -1,11 +1,9 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import Avatar from '$lib/components/Avatar.svelte';
+	import { afterNavigate, goto } from '$app/navigation';
+	import FormError from '$lib/components/FormError.svelte';
+	import MemberPicker from '$lib/components/MemberPicker.svelte';
 	import { parseProjectArchive, type ProjectArchive } from '$lib/io/projectArchive';
-	import { addProject, setCurrentMember } from '$lib/storage';
-	import { addExpense, initProject, openRoom } from '$lib/sync/doc';
-	import { generateRoomId, generateSecret } from '$lib/token';
-	import type { Project } from '$lib/types';
+	import { archiveContents, createGroup } from '$lib/io/createGroup';
 
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let archive = $state<ProjectArchive | null>(null);
@@ -13,6 +11,14 @@
 	let parseError = $state<string | null>(null);
 	let restoring = $state(false);
 	let youMemberId = $state<string | null>(null);
+
+	// Cancel returns to wherever the user came from (/new, or a legacy group's banner)
+	let arrivedByLink = false;
+	afterNavigate(({ type }) => { arrivedByLink = type !== 'enter'; });
+	function cancel() {
+		if (arrivedByLink) history.back();
+		else goto('/');
+	}
 
 	const canRestore = $derived(archive !== null && youMemberId !== null);
 
@@ -50,49 +56,7 @@
 		restoring = true;
 		parseError = null;
 		try {
-			const roomId = generateRoomId();
-			const secret = generateSecret();
-			const a = archive;
-
-			const project: Project = {
-				id: roomId,
-				name: a.project.name,
-				description: a.project.description,
-				emoji: a.project.emoji,
-				color: a.project.color,
-				currency: a.project.currency,
-				currencySymbol: a.project.currencySymbol,
-				defaultSplit: a.project.defaultSplit,
-				splitDefault: a.project.splitDefault,
-				autoFetchRates: a.project.autoFetchRates,
-				paymentMethodsEnabled: a.project.paymentMethodsEnabled,
-				categories: a.project.categories,
-				paymentMethods: a.project.paymentMethods,
-				trips: a.project.trips ?? [],
-				createdAt: a.project.createdAt
-			};
-
-			const handle = openRoom(roomId, secret);
-			await handle.ready;
-			initProject(handle, project, a.members);
-
-			// Seed expenses inside a single transaction so the IndexedDB write is one shot
-			// and Yjs only fires observers once.
-			handle.doc.transact(() => {
-				for (const e of a.expenses) addExpense(handle, e);
-			});
-
-			addProject({
-				roomId,
-				secret,
-				name: project.name,
-				emoji: project.emoji,
-				color: project.color,
-				lastActiveAt: Date.now()
-			});
-			setCurrentMember(roomId, youMemberId);
-
-			await handle.persistence?.flush();
+			const roomId = await createGroup(archiveContents(archive), youMemberId);
 			await goto(`/p/${roomId}`);
 		} catch (error) {
 			parseError = error instanceof Error ? error.message : 'Could not save the group on this device';
@@ -116,7 +80,7 @@
 <div class="screen" data-page="restore">
 	<header class="app-bar">
 		<div class="row gap-8" style="flex: 1;">
-			<button class="icon-btn" aria-label="Cancel" onclick={() => goto('/new')}>
+			<button class="icon-btn" aria-label="Cancel" onclick={cancel}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
 					<path d="M6 6l12 12M18 6L6 18" />
 				</svg>
@@ -140,15 +104,13 @@
 				<div class="pick-emoji">📦</div>
 				<h2 class="pick-title">Pick a Kostos backup file</h2>
 				<p class="pick-sub">
-					A JSON file exported from another project's Settings · Data section. This will create
-					a new group on this device with all the imported data.
+					A JSON backup file exported from a group's Settings. Restoring it creates a new group on
+					this device with the members and expenses it holds.
 				</p>
 				<button type="button" class="btn btn-primary pick-btn" onclick={() => fileInput?.click()}>
 					Choose file
 				</button>
-				{#if parseError}
-					<p class="error">{parseError}</p>
-				{/if}
+				{#if parseError}<FormError message={parseError} />{/if}
 				{#if fileName && !parseError}
 					<p class="dim file-hint">{fileName}</p>
 				{/if}
@@ -187,28 +149,11 @@
 			</div>
 
 			<div class="section-head">
-				<div class="eyebrow">Which member is you?</div>
+				<div class="eyebrow">Which member are you?</div>
 			</div>
-			<div class="card members-card">
-				{#each archive.members as m, i (m.id)}
-					{#if i > 0}<hr class="hairline" style="margin-left: 56px;" />{/if}
-					<button
-						type="button"
-						class="member-row"
-						class:on={youMemberId === m.id}
-						onclick={() => (youMemberId = m.id)}
-					>
-						<Avatar member={m} size="sm" />
-						<span class="member-name">{m.name}</span>
-						{#if youMemberId === m.id}
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="member-check">
-								<path d="M5 12l5 5L20 7" />
-							</svg>
-						{/if}
-					</button>
-				{/each}
-			</div>
+			<MemberPicker members={archive.members} bind:selectedId={youMemberId} />
 
+			{#if parseError}<FormError message={parseError} />{/if}
 			<button
 				type="button"
 				class="btn btn-primary btn-block submit-btn"
@@ -268,13 +213,6 @@
 		margin: 12px 0 0;
 	}
 
-	.error {
-		font-size: 12px;
-		color: var(--owe);
-		margin: 12px 0 0;
-		line-height: 1.4;
-	}
-
 	.preview-block {
 		display: flex;
 		flex-direction: column;
@@ -327,40 +265,6 @@
 	.stat-value {
 		font-size: 13px;
 		font-weight: 500;
-	}
-
-	.members-card {
-		padding: 4px;
-	}
-
-	.member-row {
-		width: 100%;
-		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 12px;
-		background: transparent;
-		border: 0;
-		color: inherit;
-		cursor: pointer;
-		font: inherit;
-		text-align: left;
-	}
-
-	.member-name {
-		flex: 1;
-		font-size: 14px;
-		font-weight: 500;
-	}
-
-	.member-row.on .member-name {
-		color: var(--accent);
-	}
-
-	.member-check {
-		width: 18px;
-		height: 18px;
-		color: var(--accent);
 	}
 
 	.submit-btn {

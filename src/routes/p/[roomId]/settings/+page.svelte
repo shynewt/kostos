@@ -9,10 +9,11 @@
 	import SettingsNavRow from '$lib/components/SettingsNavRow.svelte';
 	import SplitDefaultCard from '$lib/components/SplitDefaultCard.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
+	import { plural } from '$lib/plural';
 	import { getCurrentMember, removeProject, setCurrentMember } from '$lib/storage';
 	import { updateMember, updateProject } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
-	import { serializeProject, toCSV } from '$lib/io/projectArchive';
+	import { backupFile, saveFile, spreadsheetFile } from '$lib/io/exportFiles';
 	import type { ProjectColor, SplitDefault } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
@@ -91,45 +92,12 @@
 
 	const expenses = $derived(room.expenses);
 
-	function downloadFile(name: string, mime: string, contents: string) {
-		const blob = new Blob([contents], { type: mime });
-		const url = URL.createObjectURL(blob);
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = name;
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
-		// Revoke after the click finishes so Safari has time to start the download.
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
-	}
-
-	function slug(value: string): string {
-		const cleaned = value
-			.toLowerCase()
-			.normalize('NFKD')
-			.replace(/[^\w\s-]/g, '')
-			.trim()
-			.replace(/\s+/g, '-');
-		return cleaned || 'project';
-	}
-
 	function exportJson() {
-		if (!project) return;
-		const archive = serializeProject(project, members, expenses);
-		const date = new Date().toISOString().slice(0, 10);
-		downloadFile(
-			`kostos-${slug(project.name)}-${date}.json`,
-			'application/json',
-			JSON.stringify(archive, null, 2)
-		);
+		if (project) saveFile(backupFile(project, members, expenses));
 	}
 
 	function exportCsv() {
-		if (!project) return;
-		const csv = toCSV(project, members, expenses);
-		const date = new Date().toISOString().slice(0, 10);
-		downloadFile(`kostos-${slug(project.name)}-${date}.csv`, 'text/csv', csv);
+		if (project) saveFile(spreadsheetFile(project, members, expenses));
 	}
 </script>
 
@@ -149,7 +117,7 @@
 					onPick={(value) => updateProject(handle, { emoji: value })}
 				/>
 
-				<div class="swatch-row" role="radiogroup" aria-label="Project color">
+				<div class="swatch-row" role="radiogroup" aria-label="Group color">
 					{#each PROJECT_COLORS as c (c)}
 						<button
 							type="button"
@@ -294,7 +262,7 @@
 
 			<div class="section-head">
 				<div class="eyebrow">Data</div>
-				<span class="dim mono section-count">{expenses.length} expenses</span>
+				<span class="dim mono section-count">{plural(expenses.length, 'expense', 'expenses')}</span>
 			</div>
 			<div class="card data-card">
 				<button type="button" class="data-row" onclick={exportJson}>
@@ -306,7 +274,7 @@
 					</span>
 					<span class="col data-text">
 						<span class="data-title">Export backup (JSON)</span>
-						<span class="data-sub">Full lossless copy. Restore from "New project".</span>
+						<span class="data-sub">Full copy. To restore it, tap New group, then Restore instead.</span>
 					</span>
 				</button>
 				<hr class="hairline" />
@@ -326,10 +294,14 @@
 
 			<button class="btn btn-block sign-out-btn" type="button" onclick={signOut} disabled={signingOut}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 7V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-2M4 12h11M11 8l-3 4 3 4" /></svg>
-				<span>Forget this project on this device</span>
+				<span>Forget this group on this device</span>
 			</button>
 			<p class="dim sign-out-hint">
-				Your data stays in the group. Rejoin with the token to restore it.
+				{#if handle.legacy}
+					This group can’t be rejoined, so forgetting it deletes its data here. Export a backup first.
+				{:else}
+					Your data stays in the group. Rejoin with the invite link to restore it.
+				{/if}
 			</p>
 			<p class="dim version-line">Kostos v{version}</p>
 		</div>
