@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canRetryMove, exportWarning, moveStage, NEW_ORIGIN, newInviteLink, openOnNewSiteLink } from './migration';
+import { canRetryMove, exportWarning, moveStage, RETIREMENT_LABEL, retirementNotice, NEW_ORIGIN, newInviteLink, openOnNewSiteLink } from './migration';
 import type { MirrorStatus } from './move/provider';
 import { LOCAL_STATUS, type SyncStatus } from './sync/status';
 
@@ -64,5 +64,23 @@ describe('new site links', () => {
 	it('opens as the same member, or falls back to the picker when this phone never chose one', () => {
 		expect(openOnNewSiteLink(v3Secret, 'a1b2')).toBe(`${NEW_ORIGIN}/join#${v3Secret}&member=a1b2`);
 		expect(openOnNewSiteLink(v3Secret, null)).toBe(`${NEW_ORIGIN}/join#${v3Secret}`);
+	});
+});
+
+describe('retirementNotice', () => {
+	it('stays calm until 30 days before the switch-off', () => {
+		expect(retirementNotice(new Date(2026, 10, 23, 15))).toEqual({ urgent: false, daysLeft: 98 });
+		expect(retirementNotice(new Date(2027, 0, 29, 23))).toEqual({ urgent: false, daysLeft: 31 });
+	});
+
+	it('warns for the last 30 days and counts down by calendar day', () => {
+		expect(retirementNotice(new Date(2027, 0, 30, 0, 1))).toEqual({ urgent: true, daysLeft: 30 });
+		expect(retirementNotice(new Date(2027, 1, 28, 23, 59))).toEqual({ urgent: true, daysLeft: 1 });
+		expect(retirementNotice(new Date(2027, 2, 1, 9))).toEqual({ urgent: true, daysLeft: 0 });
+		expect(retirementNotice(new Date(2027, 2, 5))).toEqual({ urgent: true, daysLeft: 0 });
+	});
+
+	it('shows the date the way people write it', () => {
+		expect(RETIREMENT_LABEL).toBe('1 March 2027');
 	});
 });

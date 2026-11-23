@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import { backupFile, saveFile } from '$lib/io/exportFiles';
-	import { APP_HOST, canRetryMove, exportWarning, moveStage, NEW_ORIGIN, newInviteLink, openOnNewSiteLink, RETIREMENT_DATE } from '$lib/migration';
+	import { APP_HOST, canRetryMove, exportWarning, moveStage, NEW_ORIGIN, newInviteLink, openOnNewSiteLink, RETIREMENT_LABEL, retirementNotice, type RetirementNotice } from '$lib/migration';
 	import { getCurrentMember } from '$lib/storage';
 	import type { RoomState } from '$lib/sync/useRoom.svelte';
 
@@ -15,6 +15,13 @@
 	const stage = $derived(wasReady && currentStage !== 'failed' ? 'ready' : currentStage);
 	const warning = $derived(room ? exportWarning(room.sync, room.local) : null);
 	let copied = $state(false);
+	let notice = $state<RetirementNotice | null>(null);
+	$effect(() => { notice = retirementNotice(new Date()); });
+	const stopsWorking = $derived.by(() => {
+		if (!notice?.urgent) return `on ${RETIREMENT_LABEL}`;
+		if (notice.daysLeft === 0) return 'today';
+		return `in ${notice.daysLeft} ${notice.daysLeft === 1 ? 'day' : 'days'}`;
+	});
 
 	function exportBackup() {
 		if (room?.project) saveFile(backupFile(room.project, room.members, room.expenses));
@@ -34,13 +41,10 @@
 </script>
 
 {#if room?.project && stage}
-	<section class="move" data-move-card data-move-stage={stage} role="status">
+	<section class="move" class:alert={stage === 'failed' || notice?.urgent} data-move-card data-move-stage={stage} role="status">
 		{#if stage === 'ready' && v3Secret}
-			<p class="lead">This group is ready on {APP_HOST}</p>
-			<p class="body">
-				Everything came along, history included. Changes made here keep reaching it until {RETIREMENT_DATE}, and everyone
-				in the group gets this same button.
-			</p>
+			<p class="lead">This group now lives on {APP_HOST}</p>
+			<p class="body">Everything came along, history included. Keep using it there: this copy stops working {stopsWorking}.</p>
 			<div class="actions">
 				<a class="btn btn-primary" href={openOnNewSiteLink(v3Secret, getCurrentMember(room.handle.roomId))}>Open on {APP_HOST}</a>
 				<button type="button" class="btn" onclick={copyInvite}>{copied ? 'Copied' : 'Copy invite link'}</button>
@@ -61,13 +65,18 @@
 			<p class="body">This group moves by itself as soon as this phone can reach {APP_HOST}. Keep this page open, or come back later.</p>
 		{:else}
 			<p class="lead">Moving this group to {APP_HOST}…</p>
-			<p class="body">Nothing to do, it only takes a moment.</p>
+			<p class="body">It copies itself with its full history. Nothing to do, it takes a moment.</p>
 		{/if}
 	</section>
 {/if}
 
 <style>
-	.move { margin: 0 22px 10px; padding: 12px; border-radius: var(--radius-sm); background: color-mix(in oklab, var(--warn) 11%, transparent); color: var(--ink); font-size: 13px; line-height: 1.4; }
+	.move {
+		--tone: var(--accent);
+		margin: 0 22px 10px; padding: 12px; border: 1px solid color-mix(in oklab, var(--tone) 45%, transparent); border-radius: var(--radius-sm);
+		background: color-mix(in oklab, var(--tone) 12%, var(--bg-2)); color: var(--ink); font-size: 13px; line-height: 1.4;
+	}
+	.move.alert { --tone: var(--warn); }
 	.lead { margin: 0 0 4px; font-weight: 600; }
 	.body, .warning { margin: 0 0 8px; }
 	.body:last-child { margin-bottom: 0; }

@@ -4,9 +4,28 @@ import type { MirrorStatus } from './move/provider';
 
 /** Both placeholders must be replaced before release; release-legacy.yml refuses to deploy otherwise. */
 export const APP_HOST = 'kostos.app';
-export const RETIREMENT_DATE = '1 March 2027';
+/** The day the old site is switched off, as YYYY-MM-DD. */
+export const RETIREMENT_DATE = '2027-03-01';
 // a local v3 server stands in for the real one in development and the cross-version e2e run
 export const NEW_ORIGIN = (import.meta.env.VITE_NEW_ORIGIN as string | undefined) || `https://${APP_HOST}`;
+
+const DAY_MS = 86_400_000;
+/** How long before the switch-off the banner turns into a warning. */
+const URGENT_DAYS = 30;
+const retirementDay = new Date(`${RETIREMENT_DATE}T00:00:00`);
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// spelled out by hand: a runtime without full locale data ignores 'en-GB' and prints "March 1, 2027"
+export const RETIREMENT_LABEL = `${retirementDay.getDate()} ${MONTHS[retirementDay.getMonth()]} ${retirementDay.getFullYear()}`;
+
+export type RetirementNotice = { urgent: boolean; daysLeft: number };
+
+/** Days counted in the viewer's own calendar, so "in 1 day" means tomorrow wherever they are. */
+export function retirementNotice(now: Date): RetirementNotice {
+	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	const daysLeft = Math.max(0, Math.round((retirementDay.getTime() - today.getTime()) / DAY_MS));
+	return { urgent: daysLeft <= URGENT_DAYS, daysLeft };
+}
 
 export const UPDATE_NOTICE_TEXT = 'Update to see an important notice about Kostos moving.';
 
