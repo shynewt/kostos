@@ -49,7 +49,8 @@ const config = {
 			strict: true
 		}),
 		prerender: {
-			entries: ['/']
+			// nothing links to a bare /join, so it is listed for its link-preview card
+			entries: ['/', '/join']
 		}
 	}
 };

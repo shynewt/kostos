@@ -535,6 +535,7 @@ function writeExpenseVersion(handle: RoomHandle, expense: Expense, parents?: str
 	const revisions = handle.doc.getMap<ExpenseVersion>(`expense-revisions:${expense.id}`);
 	for (const head of heads) if (!revisions.has(head.id)) revisions.set(head.id, head);
 	const id = generateId();
+	// a JSON round trip on purpose: it drops undefined fields and Svelte proxies, where structuredClone keeps or throws on them
 	revisions.set(id, { id, expense: JSON.parse(JSON.stringify(expense)), parents: parents ?? heads.map((v) => v.id), at: Date.now(), by: getCurrentMember(handle.roomId) });
 	// Mirror fields for pre-revision clients without deleting the stable record.
 	for (const key of [...entry.keys()]) if (!(key in expense)) entry.delete(key);

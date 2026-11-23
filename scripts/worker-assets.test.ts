@@ -44,6 +44,12 @@ describe('static requests', () => {
 		expect(await route.text()).toBe('app shell');
 	});
 
+	it('keeps the app shell out of search results but not real pages', async () => {
+		expect((await mf.dispatchFetch('http://local/p/abc/expenses')).headers.get('X-Robots-Tag')).toBe('noindex');
+		expect((await mf.dispatchFetch('http://local/wp-admin')).headers.get('X-Robots-Tag')).toBe('noindex');
+		expect((await mf.dispatchFetch('http://local/')).headers.get('X-Robots-Tag')).toBeNull();
+	});
+
 	it('refuses a request with a body instead of crashing on it', async () => {
 		const response = await mf.dispatchFetch('http://local/wp-login.php', { method: 'POST', body: 'log=admin&pwd=admin' });
 		expect(response.status).toBe(405);

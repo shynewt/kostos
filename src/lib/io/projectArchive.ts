@@ -163,7 +163,7 @@ export function toCSV(project: Project, members: Member[], expenses: Expense[]):
 	const tripName = nameLookup(project.trips ?? []);
 
 	const rows = [CSV_HEADERS.join(',')];
-	const sorted = [...expenses].sort((a, b) => a.date - b.date);
+	const sorted = expenses.toSorted((a, b) => a.date - b.date);
 	for (const e of sorted) {
 		rows.push(
 			[

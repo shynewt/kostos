@@ -8,15 +8,15 @@
 import type { ActivityChange, Expense, ExpenseSplit, Payment } from '$lib/types';
 
 function serializePayments(payments: Payment[]): string {
-	return [...payments]
-		.sort((a, b) => a.memberId.localeCompare(b.memberId))
+	return payments
+		.toSorted((a, b) => a.memberId.localeCompare(b.memberId))
 		.map((p) => `${p.memberId}:${p.amount}`)
 		.join(',');
 }
 
 function serializeSplits(splits: ExpenseSplit[]): string {
-	return [...splits]
-		.sort((a, b) => a.memberId.localeCompare(b.memberId))
+	return splits
+		.toSorted((a, b) => a.memberId.localeCompare(b.memberId))
 		.map((s) => `${s.memberId}:${s.shares ?? ''}:${s.amount ?? ''}`)
 		.join(',');
 }

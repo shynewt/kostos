@@ -12,7 +12,7 @@
 
 	const currentMemberId = $derived.by(() => getCurrentMember(roomId));
 	const membersById = $derived(room.membersById);
-	const events = $derived([...room.activity].reverse());
+	const events = $derived(room.activity.toReversed());
 </script>
 
 <div class="screen" data-page="activity">

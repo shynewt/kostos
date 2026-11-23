@@ -93,7 +93,7 @@
 
 	const allGroups = $derived.by<DayGroup[]>(() => {
 		const buckets = new Map<string, DayGroup>();
-		const sorted = [...filtered].sort((a, b) => b.date - a.date || b.createdAt - a.createdAt);
+		const sorted = filtered.toSorted((a, b) => b.date - a.date || b.createdAt - a.createdAt);
 		for (const e of sorted) {
 			const key = dayKey(e.date);
 			let bucket = buckets.get(key);

@@ -278,7 +278,7 @@
 	});
 
 	const topExpenses = $derived(
-		[...periodBase].sort((a, b) => b.amount - a.amount).slice(0, 5)
+		periodBase.toSorted((a, b) => b.amount - a.amount).slice(0, 5)
 	);
 
 	const insight = $derived.by<string | null>(() => {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ShareMeta from '$lib/components/ShareMeta.svelte';
 	import { syncLine } from '$lib/sync/describe';
 	import { version } from '$app/environment';
 	import { goto } from '$app/navigation';
@@ -51,6 +52,14 @@
 		return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 	}
 </script>
+
+<ShareMeta
+	title="Kostos · Group expense splitter, no accounts"
+	description="Kostos is a free group expense splitter. Share an invite link, split bills, sync live across devices. No accounts, end-to-end encrypted, works offline."
+	image="/og-image.png"
+	imageAlt="Kostos, the free and private group expense splitter"
+	path="/"
+/>
 
 <svelte:head>
 	<title>Kostos · Group expense splitter, no accounts needed</title>

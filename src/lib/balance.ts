@@ -77,7 +77,7 @@ export function expenseShares(expense: Expense): Map<string, number> {
 		assigned += cents;
 	}
 	let drift = expense.amount - assigned;
-	const byShares = [...weighted].sort((a, b) => b.shares - a.shares);
+	const byShares = weighted.toSorted((a, b) => b.shares - a.shares);
 	let i = 0;
 	while (drift !== 0 && byShares.length > 0) {
 		const id = byShares[i % byShares.length].memberId;
