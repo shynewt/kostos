@@ -70,7 +70,6 @@
 	// a link from the old site names the member this phone already was, so the picker can be skipped
 	const linkedMemberId = $derived(mounted ? memberFromInviteHash(page.url.hash) : null);
 	const NAMES_SHOWN = 3;
-	// "Alvaro, Eulàlia and Oscar", or "Alvaro, Eulàlia, Oscar and 2 more" for bigger groups
 	const memberNames = $derived.by(() => {
 		const names = members.map((member) => member.name);
 		if (names.length <= NAMES_SHOWN + 1) return new Intl.ListFormat('en-GB', { type: 'conjunction' }).format(names);
