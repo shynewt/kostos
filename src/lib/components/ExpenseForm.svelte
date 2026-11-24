@@ -41,6 +41,7 @@
 		Member,
 		PaymentMethodItem,
 		Project,
+		RepeatFrequency,
 		SplitMode
 	} from '$lib/types';
 
@@ -52,7 +53,11 @@
 		initial?: Expense;
 		/** The group's expenses, used to guess a category from the description. */
 		expenses?: Expense[];
-		onSave: (expense: Expense) => void | Promise<void>;
+		/** the frequency of the active repeating rule this expense belongs to */
+		initialRepeat?: RepeatFrequency | null;
+		/** that rule's start day, which its copies count from */
+		ruleStartDay?: string;
+		onSave: (expense: Expense, repeat: RepeatFrequency | null) => void | Promise<void>;
 		onCancel: () => void;
 		onAddCategory: (item: Category) => void;
 		onAddPaymentMethod: (item: PaymentMethodItem) => void;
@@ -66,6 +71,8 @@
 		mode,
 		initial,
 		expenses = [],
+		initialRepeat = null,
+		ruleStartDay,
 		onSave,
 		onCancel,
 		onAddCategory,
@@ -146,6 +153,9 @@
 	let shares = $state<Record<string, number>>(seedShares());
 	let amounts = $state<Record<string, string>>(seedAmounts());
 	let notes = $state(seed?.notes ?? '');
+	let repeat = $state<RepeatFrequency | null>(untrack(() => initialRepeat));
+	// a frequency change starts a new rule from this expense's date
+	const repeatStartDay = $derived(repeat === initialRepeat && ruleStartDay ? ruleStartDay : dateStr);
 	let categoryId = $state<string | undefined>(seed?.categoryId);
 	let paymentMethodId = $state<string | undefined>(seed?.paymentMethodId);
 	let tripId = $state<string | undefined>(
@@ -588,12 +598,13 @@
 			splits: buildSplits(),
 			notes: notes.trim() || undefined,
 			isSettlement: seed?.isSettlement,
+			recurrenceId: seed?.recurrenceId,
 			createdAt: seed?.createdAt ?? Date.now(),
 			createdBy: seed?.createdBy ?? currentMemberId ?? payers[0]?.memberId ?? ''
 		};
 
 		try {
-			await onSave(expense);
+			await onSave(expense, repeat);
 		} catch {
 			saveFailure = 'Couldn’t save on this phone. Your entries are still here, so you can try again.';
 		} finally {
@@ -762,6 +773,9 @@
 				manageTripsHref="/p/{project.id}/settings/trips"
 				bind:dateStr
 				bind:notes
+				repeat={seed?.isSettlement ? undefined : repeat}
+				{repeatStartDay}
+				onSelectRepeat={(frequency) => (repeat = frequency)}
 			/>
 
 			<PaidBySection

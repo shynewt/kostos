@@ -3,7 +3,9 @@
 	import LoadingScreen from '$lib/components/LoadingScreen.svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
+	import { todayDay } from '$lib/recurring';
 	import { updateProjectMetadata } from '$lib/storage';
+	import { generateDueCopies } from '$lib/sync/recurring';
 	import { provideRoomContext, useRoom } from '$lib/sync/useRoom.svelte';
 	let { children } = $props();
 	const roomId = $derived(page.params.roomId ?? '');
@@ -18,6 +20,12 @@
 		localError = false;
 		room.handle.ready.then(() => { if (!disposed) loadedRoomId = id; }).catch(() => { if (!disposed) localError = true; });
 		return () => { disposed = true; };
+	});
+	$effect(() => {
+		// wait for the first sync check so an online phone sees copies others already made;
+		// two phones making the same copy is still safe, just untidy
+		if (loadedRoomId !== roomId || room.checking || room.rules.length === 0) return;
+		generateDueCopies(room.handle, todayDay());
 	});
 	$effect(() => {
 		const project = room.project;

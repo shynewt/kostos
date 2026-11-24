@@ -1,4 +1,4 @@
-import type { Expense, Member, Project } from '$lib/types';
+import type { ArchivedRule, Expense, Member, Project } from '$lib/types';
 import { serializeProject, toCSV } from './projectArchive';
 
 type DownloadableFile = { name: string; mime: string; contents: string };
@@ -17,11 +17,17 @@ function fileName(project: Project, now: Date, extension: string): string {
 	return `kostos-${slug(project.name)}-${now.toISOString().slice(0, 10)}.${extension}`;
 }
 
-export function backupFile(project: Project, members: Member[], expenses: Expense[], now = new Date()): DownloadableFile {
+export function backupFile(
+	project: Project,
+	members: Member[],
+	expenses: Expense[],
+	now = new Date(),
+	recurring: ArchivedRule[] = []
+): DownloadableFile {
 	return {
 		name: fileName(project, now, 'json'),
 		mime: 'application/json',
-		contents: JSON.stringify(serializeProject(project, members, expenses), null, 2)
+		contents: JSON.stringify(serializeProject(project, members, expenses, recurring), null, 2)
 	};
 }
 

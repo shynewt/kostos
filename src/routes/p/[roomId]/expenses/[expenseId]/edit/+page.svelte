@@ -11,8 +11,10 @@
 		expenseVersions,
 		updateExpense
 	} from '$lib/sync/doc';
+	import { todayDay } from '$lib/recurring';
+	import { saveRepeat } from '$lib/sync/recurring';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
-	import type { Category, Expense, PaymentMethodItem } from '$lib/types';
+	import type { Category, Expense, PaymentMethodItem, RepeatFrequency } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
 	const expenseId = $derived(page.params.expenseId ?? '');
@@ -37,9 +39,10 @@
 	});
 
 	const currentMemberId = $derived.by(() => getCurrentMember(roomId));
+	const rule = $derived(initial?.recurrenceId ? room.activeRulesById.get(initial.recurrenceId) : undefined);
 
-	async function onSave(expense: Expense) {
-		updateExpense(handle, expense, initialVersions);
+	async function onSave(expense: Expense, repeat: RepeatFrequency | null) {
+		handle.doc.transact(() => updateExpense(handle, saveRepeat(handle, expense, repeat, todayDay()), initialVersions));
 		await handle.persistence?.flush();
 		// replace so back from the detail doesn't land on the edit form again
 		await goto(`/p/${roomId}/expenses/${expense.id}`, { replaceState: true });
@@ -65,6 +68,8 @@
 		expenses={room.expenses}
 		mode="edit"
 		{initial}
+		initialRepeat={rule?.frequency ?? null}
+		ruleStartDay={rule?.startDay}
 		{onSave}
 		{onCancel}
 		onAddCategory={(cat: Category) => addCategory(handle, cat)}
