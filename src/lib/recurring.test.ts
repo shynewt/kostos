@@ -75,3 +75,26 @@ describe('repeatSummary', () => {
 		expect(repeatSummary('weekly', '2026-11-23', 'en-US')).toBe('Every Monday');
 	});
 });
+
+describe('rules starting long ago', () => {
+	it('find the catch-up periods without walking every period since the start', () => {
+		const rule = { startDay: '0001-01-01', frequency: 'weekly' as const, firstPeriod: 1 };
+		const started = performance.now();
+		const due = duePeriods(rule, '2026-03-04');
+		expect(performance.now() - started).toBeLessThan(50);
+		const windowStart = dayOf(Date.parse('2026-03-04') - (CATCH_UP_DAYS - 1) * 86_400_000);
+		const days = due.map((period) => periodDay(rule.startDay, 'weekly', period));
+		expect(days.every((day) => day >= windowStart && day <= '2026-03-04')).toBe(true);
+		expect(due.every((period, index) => index === 0 || period === due[index - 1] + 1)).toBe(true);
+		expect(periodDay(rule.startDay, 'weekly', due[0] - 1) < windowStart).toBe(true);
+		expect(periodDay(rule.startDay, 'weekly', due.at(-1)! + 1) > '2026-03-04').toBe(true);
+	});
+
+	it('find the first period after a day without walking every period', () => {
+		const started = performance.now();
+		const period = firstPeriodAfter('0001-01-31', 'monthly', '2026-03-04');
+		expect(performance.now() - started).toBeLessThan(50);
+		expect(periodDay('0001-01-31', 'monthly', period) > '2026-03-04').toBe(true);
+		expect(periodDay('0001-01-31', 'monthly', period - 1) <= '2026-03-04').toBe(true);
+	});
+});

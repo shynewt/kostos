@@ -247,6 +247,34 @@ describe('saveRepeat', () => {
 		const weekly = readExpenses(room).filter((e) => e.recurrenceId === edited.recurrenceId && e.id !== 'rent');
 		expect(weekly.map((e) => new Date(e.date).toISOString().slice(0, 10))).toEqual(['2026-04-04', '2026-04-11']);
 	});
+
+	it('never copies a future-dated expense onto its own day when the frequency changes', () => {
+		const room = handle();
+		const nextFriday = { ...rent, date: Date.parse('2026-02-06') };
+		const source = addRepeating(room, nextFriday);
+		let edited = source;
+		room.doc.transact(() => {
+			edited = saveRepeat(room, source, 'weekly', '2026-01-31');
+			updateExpense(room, edited);
+		});
+		generateDueCopies(room, '2026-02-06');
+		const onItsDay = readExpenses(room).filter((e) => e.date === nextFriday.date);
+		expect(onItsDay.map((e) => e.id)).toEqual(['rent']);
+	});
+
+	it('never copies a future-dated expense onto its own day when repeat is turned off and on again', () => {
+		const room = handle();
+		const nextFriday = { ...rent, date: Date.parse('2026-02-06') };
+		let current = addRepeating(room, nextFriday);
+		for (const repeat of [null, 'monthly'] as const) {
+			room.doc.transact(() => {
+				current = saveRepeat(room, current, repeat, '2026-01-31');
+				updateExpense(room, current);
+			});
+		}
+		generateDueCopies(room, '2026-02-06');
+		expect(readExpenses(room).filter((e) => e.date === nextFriday.date).map((e) => e.id)).toEqual(['rent']);
+	});
 });
 
 describe('backups', () => {

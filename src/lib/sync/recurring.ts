@@ -129,10 +129,11 @@ export function saveRepeat(
 	}
 	if (active) stopRule(handle, rule.id, today);
 	if (repeat === null) return expense;
-	// an expense that already belonged to a rule has copies around it; starting after today
-	// keeps the new rule from repeating periods the old one covered
+	// period 0 is this expense itself, so a rule never starts before period 1. An expense that
+	// already belonged to a rule has copies around it; starting after today keeps the new rule
+	// from repeating periods the old one covered
 	const firstPeriod = expense.recurrenceId
-		? firstPeriodAfter(dayOf(expense.date), repeat, today)
+		? Math.max(1, firstPeriodAfter(dayOf(expense.date), repeat, today))
 		: 1;
 	return { ...expense, recurrenceId: startRule(handle, expense, repeat, firstPeriod) };
 }

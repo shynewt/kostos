@@ -37,10 +37,27 @@ export function periodDay(startDay: string, frequency: RepeatFrequency, period: 
 }
 
 /** The first period that lands strictly after `day`. */
+/** The first period from `from` on whose day is past `day`. Period days only grow, so this
+ *  gallops then bisects instead of walking, which matters for a rule dated long ago. */
+function firstPeriodPast(startDay: string, frequency: RepeatFrequency, day: string, from: number): number {
+	if (periodDay(startDay, frequency, from) > day) return from;
+	let low = from;
+	let step = 1;
+	while (periodDay(startDay, frequency, low + step) <= day) {
+		low += step;
+		step *= 2;
+	}
+	let high = low + step;
+	while (high - low > 1) {
+		const middle = Math.floor((low + high) / 2);
+		if (periodDay(startDay, frequency, middle) <= day) low = middle;
+		else high = middle;
+	}
+	return high;
+}
+
 export function firstPeriodAfter(startDay: string, frequency: RepeatFrequency, day: string): number {
-	let period = 0;
-	while (periodDay(startDay, frequency, period) <= day) period += 1;
-	return period;
+	return firstPeriodPast(startDay, frequency, day, 0);
 }
 
 /** Periods whose day has come, oldest first, limited to the catch-up window. */
@@ -51,7 +68,8 @@ export function duePeriods(
 	const windowStart = dayOf(Date.parse(today) - (CATCH_UP_DAYS - 1) * DAY_MS);
 	const lastDay = rule.endDay && rule.endDay < today ? rule.endDay : today;
 	const due: number[] = [];
-	for (let period = rule.firstPeriod; ; period++) {
+	const firstInWindow = firstPeriodPast(rule.startDay, rule.frequency, dayOf(Date.parse(windowStart) - DAY_MS), rule.firstPeriod);
+	for (let period = firstInWindow; ; period++) {
 		const day = periodDay(rule.startDay, rule.frequency, period);
 		if (day > lastDay) break;
 		if (day >= windowStart) due.push(period);
