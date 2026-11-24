@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { pickMemberColor, pickMemberEmoji } from '$lib/avatar';
+	import Avatar from '$lib/components/Avatar.svelte';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import FormError from '$lib/components/FormError.svelte';
@@ -18,7 +19,6 @@
 	import { isOldInvite, memberFromInviteHash, OLD_INVITE_MESSAGE, parseInvite } from '$lib/invite';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
-	import { plural } from '$lib/plural';
 	import { PROBLEM_LABELS } from '$lib/sync/status';
 	import { provideRoomContext, useRoom } from '$lib/sync/useRoom.svelte';
 
@@ -69,6 +69,13 @@
 
 	// a link from the old site names the member this phone already was, so the picker can be skipped
 	const linkedMemberId = $derived(mounted ? memberFromInviteHash(page.url.hash) : null);
+	const NAMES_SHOWN = 3;
+	// "Alvaro, Eulàlia and Oscar", or "Alvaro, Eulàlia, Oscar and 2 more" for bigger groups
+	const memberNames = $derived.by(() => {
+		const names = members.map((member) => member.name);
+		if (names.length <= NAMES_SHOWN + 1) return new Intl.ListFormat('en-GB', { type: 'conjunction' }).format(names);
+		return `${names.slice(0, NAMES_SHOWN).join(', ')} and ${names.length - NAMES_SHOWN} more`;
+	});
 	let chosenId = $state<string | null>(null);
 	// a choice made in another group (the hash can change in place) falls back to the first member
 	const pickedId = $derived(members.some((member) => member.id === chosenId) ? chosenId : (members[0]?.id ?? null));
@@ -153,7 +160,7 @@
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
 			</a>
 		</div>
-		<div class="row" style="flex-shrink: 0;"><div class="app-bar-title">Joining</div><SyncStatus variant="dot" /></div>
+		<div class="row" style="flex-shrink: 0;"><SyncStatus variant="dot" /></div>
 		<div class="row gap-6" style="flex: 1;"></div>
 	</header>
 	{#if status !== 'denied'}<SyncBanner />{/if}
@@ -194,25 +201,27 @@
 			</EmptyCard>
 		{:else if project}
 			<section class="hero">
-				<div class="row gap-10 hero-row">
-					<span
-						class="hero-tile"
-						style="background: {tileBackground(project.color)}; color: {PROJECT_COLOR_VALUES[project.color]};"
-					>
-						{project.emoji}
-					</span>
-					<div class="col">
-						<div class="eyebrow">Joining</div>
-						<div class="h2 hero-title">{project.name}</div>
-						<div class="dim mono hero-meta">{plural(members.length, 'member', 'members')}</div>
+				<span
+					class="hero-tile"
+					style="background: {tileBackground(project.color)}; color: {PROJECT_COLOR_VALUES[project.color]};"
+				>
+					{project.emoji}
+				</span>
+				<h1 class="hero-title">Join {project.name}</h1>
+				{#if members.length > 0}
+					<div class="hero-members">
+						<span class="avatar-stack" aria-hidden="true">
+							{#each members.slice(0, 4) as member (member.id)}<Avatar {member} size="sm" />{/each}
+						</span>
+						<span class="dim hero-names">{memberNames}</span>
 					</div>
-				</div>
+				{/if}
 			</section>
 
-			<div class="section-head">
-				<div class="eyebrow">Which member are you?</div>
-				<span class="dim mono">PICK ANY · MULTIPLE DEVICES OK</span>
-			</div>
+			<h2 class="question">{members.length > 0 ? 'Who are you?' : 'Add yourself'}</h2>
+			{#if members.length > 0}
+				<p class="dim question-hint">Pick your name. You can use it on more than one device.</p>
+			{/if}
 
 			{#if members.length > 0}
 				<MemberPicker {members} bind:selectedId={() => pickedId, (id) => (chosenId = id)} />
@@ -223,7 +232,7 @@
 			{/if}
 
 			<form class="card new-member-card" onsubmit={joinAsNew}>
-				<div class="eyebrow new-member-eyebrow">Or add a new member</div>
+				<div class="new-member-title">{members.length > 0 ? 'Not on the list?' : 'Your name'}</div>
 				<div class="row gap-8">
 					<input
 						class="input new-member-input"
@@ -248,7 +257,7 @@
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
 			</button>
 
-			<p class="dim privacy-hint mono">NO PASSWORD · NO EMAIL · LIVES ON YOUR DEVICE</p>
+			<p class="dim privacy-hint">No password, no email. The group lives on your device, encrypted.</p>
 		{/if}
 	</div>
 </div>
@@ -298,30 +307,70 @@
 	}
 
 	.hero {
-		padding: 18px 0 12px;
-	}
-
-	.hero-row {
+		display: flex;
+		flex-direction: column;
 		align-items: center;
+		gap: 10px;
+		padding: 22px 0 26px;
+		text-align: center;
 	}
 
 	.hero-tile {
-		width: 48px;
-		height: 48px;
-		border-radius: 14px;
+		width: 76px;
+		height: 76px;
+		border-radius: 22px;
 		display: grid;
 		place-items: center;
-		font-size: 26px;
-		flex-shrink: 0;
+		font-size: 38px;
 	}
 
 	.hero-title {
-		margin-top: 2px;
+		margin: 6px 0 0;
+		font-size: 28px;
+		font-weight: 700;
+		letter-spacing: -0.02em;
+		line-height: 1.15;
+		text-wrap: balance;
 	}
 
-	.hero-meta {
-		font-size: 11px;
-		margin-top: 4px;
+	.hero-members {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		max-width: 100%;
+	}
+
+	.avatar-stack {
+		display: flex;
+		flex: none;
+	}
+
+	.avatar-stack :global(> *) {
+		box-shadow: 0 0 0 2px var(--bg);
+		border-radius: 50%;
+	}
+
+	.avatar-stack :global(> * + *) {
+		margin-left: -5px;
+	}
+
+	.hero-names {
+		font-size: 14px;
+		line-height: 1.35;
+		text-align: start;
+	}
+
+	.question {
+		margin: 0;
+		font-size: 20px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+
+	.question-hint {
+		margin: 4px 0 14px;
+		font-size: 13px;
+		line-height: 1.45;
 	}
 
 	.no-members {
@@ -338,8 +387,9 @@
 		gap: 8px;
 	}
 
-	.new-member-eyebrow {
-		font-size: 10px;
+	.new-member-title {
+		font-size: 14px;
+		font-weight: 600;
 	}
 
 	.new-member-input {
@@ -371,6 +421,6 @@
 		font-size: 11px;
 		text-align: center;
 		margin: 14px 0 0;
-		letter-spacing: 0.04em;
+		line-height: 1.5;
 	}
 </style>
