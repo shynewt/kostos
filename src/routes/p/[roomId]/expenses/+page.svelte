@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -84,10 +85,32 @@
 		expenses.reduce((n, e) => (e.tripId === tripId ? n + 1 : n), 0)
 	);
 
+	// "none" means no category; settlements never have one, so they stay out of that list
+	const categoryFilter = $derived(page.url.searchParams.get('category'));
+	const filterCategory = $derived(
+		categoryFilter && categoryFilter !== 'none' ? categoryById.get(categoryFilter) : undefined
+	);
+	const categoryFilterLabel = $derived(
+		filterCategory ? `${filterCategory.emoji} ${filterCategory.name}` : categoryFilter === 'none' ? 'No category' : 'Removed category'
+	);
+	const categoryScoped = $derived(
+		categoryFilter === null
+			? scopedExpenses
+			: categoryFilter === 'none'
+				? scopedExpenses.filter((e) => !e.categoryId && !e.isSettlement)
+				: scopedExpenses.filter((e) => e.categoryId === categoryFilter)
+	);
+
+	function clearCategoryFilter() {
+		const url = new URL(page.url);
+		url.searchParams.delete('category');
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
+
 	const filtered = $derived.by(() => {
 		const trimmed = query.trim().toLowerCase();
-		if (!trimmed) return scopedExpenses;
-		return scopedExpenses.filter((e) => matchesQuery(e, trimmed));
+		if (!trimmed) return categoryScoped;
+		return categoryScoped.filter((e) => matchesQuery(e, trimmed));
 	});
 
 	type DayGroup = { key: string; label: string; total: number; items: Expense[] };
@@ -115,6 +138,7 @@
 	// Reset window whenever the filter changes so search results start at the top.
 	$effect(() => {
 		query;
+		categoryFilter;
 		visibleDays = INITIAL_DAYS;
 	});
 
@@ -213,6 +237,15 @@
 			onClose={() => (tripSheetOpen = false)}
 		/>
 
+		{#if categoryFilter !== null}
+			<div class="filter-row">
+				<button type="button" class="chip category-filter" onclick={clearCategoryFilter} aria-label="Remove filter: {categoryFilterLabel}">
+					<span>{categoryFilterLabel}</span>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
+				</button>
+			</div>
+		{/if}
+
 		<section class="card summary-card">
 			<div class="col">
 				<div class="eyebrow summary-eyebrow">
@@ -240,9 +273,13 @@
 			<EmptyState>
 				<p>No expenses yet. Tap the + button to add the first one.</p>
 			</EmptyState>
-		{:else if filtered.length === 0}
+		{:else if filtered.length === 0 && query.trim()}
 			<EmptyCard>
 				<p>No expenses match <strong>“{query.trim()}”</strong>.</p>
+			</EmptyCard>
+		{:else if filtered.length === 0}
+			<EmptyCard>
+				<p>No expenses in <strong>{categoryFilterLabel}</strong> here.</p>
 			</EmptyCard>
 		{:else}
 			{#each visibleGroups as g (g.key)}
@@ -280,6 +317,25 @@
 </div>
 
 <style>
+	.filter-row {
+		display: flex;
+		margin: 0 0 10px;
+	}
+
+	.category-filter {
+		background: color-mix(in oklab, var(--accent) 16%, var(--bg-2));
+		border-color: var(--accent);
+		color: var(--ink);
+		cursor: pointer;
+		font-family: var(--font-sans);
+	}
+
+	.category-filter svg {
+		width: 13px;
+		height: 13px;
+		opacity: 0.7;
+	}
+
 	.summary-card {
 		display: flex;
 		justify-content: space-between;

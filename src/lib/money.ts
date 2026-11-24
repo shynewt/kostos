@@ -24,6 +24,12 @@ export function formatAmount(cents: number, symbol: string, currency?: string): 
 	return `${sign}${symbol}${formatBase(cents, decimals)}`;
 }
 
+/** Rounded to whole units, for rough figures like a daily average. */
+export function formatWholeAmount(cents: number, symbol: string, currency?: string): string {
+	const whole = Math.round(cents / 10 ** currencyDecimals(currency));
+	return `${whole < 0 ? MINUS : ''}${symbol}${formatBase(whole, 0)}`;
+}
+
 export function formatSigned(cents: number, symbol: string, currency?: string): string {
 	const decimals = currencyDecimals(currency);
 	if (cents === 0) return `${symbol}${formatBase(0, decimals)}`;

@@ -1,26 +1,42 @@
 <script lang="ts">
-	import BalanceSkeleton from '$lib/components/BalanceSkeleton.svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import CategoryBreakdown from '$lib/components/CategoryBreakdown.svelte';
-	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
-	import type { CategoryRollup } from '$lib/components/CategoryBreakdown.svelte';
-	import DailyBars from '$lib/components/DailyBars.svelte';
+	import BalanceSkeleton from '$lib/components/BalanceSkeleton.svelte';
+	import CategoryBars, { type CategoryRow } from '$lib/components/CategoryBars.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import PerPersonCard from '$lib/components/PerPersonCard.svelte';
+	import PeriodSheet from '$lib/components/PeriodSheet.svelte';
+	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
+	import SpendBars from '$lib/components/SpendBars.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import MemberBars from '$lib/components/MemberBars.svelte';
-	import type { MemberContribution } from '$lib/components/MemberBars.svelte';
 	import TopExpensesCard from '$lib/components/TopExpensesCard.svelte';
 	import TripSheet from '$lib/components/TripSheet.svelte';
 	import TripStrip from '$lib/components/TripStrip.svelte';
-	import { expenseShares } from '$lib/balance';
-	import { exchangeFee, expenseInBase } from '$lib/currency-convert';
-	import { formatAmount } from '$lib/money';
+	import { filteredSpreadsheetFile, saveFile } from '$lib/io/exportFiles';
+	import { formatAmount, formatWholeAmount } from '$lib/money';
+	import { plural } from '$lib/plural';
+	import {
+		ALL_TIME,
+		biggestExpenses,
+		exchangeFees,
+		inPeriod,
+		monthOf,
+		monthsWithExpenses,
+		parsePeriodKey,
+		perPerson,
+		periodKey,
+		periodLabel,
+		spendByCategory,
+		spendByPaymentMethod,
+		spendLines,
+		spendOverTime,
+		summarize,
+		type Period,
+		type Viewpoint
+	} from '$lib/stats';
 	import { getCurrentMember } from '$lib/storage';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 	import { readTripSelection, scopeExpenses, writeTripSelection } from '$lib/trips';
-	import type { Expense } from '$lib/types';
-
-	type Period = 'all' | 'week' | 'month';
 
 	const roomId = $derived(page.params.roomId ?? '');
 	const room = $derived(useRoom(roomId));
@@ -29,44 +45,41 @@
 	const project = $derived(room.project);
 	const members = $derived(room.members);
 	const expenses = $derived(room.expenses);
-	let period = $state<Period>('all');
-
-	const currentMemberId = $derived.by(() => getCurrentMember(roomId));
 	const currencySymbol = $derived(room.currencySymbol);
 	const currency = $derived(room.currency);
 	const membersById = $derived(room.membersById);
 	const categoryById = $derived(room.categoryById);
 	const methodById = $derived(room.methodById);
 
-	const SLICE_COLORS = [
-		'var(--accent)',
-		'#88c0ff',
-		'#ffc457',
-		'#ff8a6b',
-		'#b29cff',
-		'#5eead4',
-		'#f9a8d4'
-	];
+	const storedMemberId = $derived.by(() => getCurrentMember(roomId));
+	const currentMemberId = $derived(storedMemberId && membersById.has(storedMemberId) ? storedMemberId : null);
 
-	function periodCutoff(p: Period): number {
-		if (p === 'all') return 0;
-		return Date.now() - (p === 'week' ? 7 : 30) * 86400 * 1000;
+	const METHOD_COLORS = ['var(--accent)', '#88c0ff', '#ffc457', '#ff8a6b', '#b29cff', '#5eead4', '#f9a8d4'];
+
+	// period and view live in the URL so coming back from a drilled-down list restores them
+	const period = $derived(parsePeriodKey(page.url.searchParams.get('period')));
+	const isJustMe = $derived(currentMemberId !== null && page.url.searchParams.get('view') === 'me');
+	const viewpoint = $derived<Viewpoint>(
+		isJustMe && currentMemberId ? { kind: 'member', memberId: currentMemberId } : { kind: 'group' }
+	);
+
+	function updateParams(changes: Record<string, string | null>) {
+		const url = new URL(page.url);
+		for (const [key, value] of Object.entries(changes)) {
+			if (value === null) url.searchParams.delete(key);
+			else url.searchParams.set(key, value);
+		}
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
-	function startOfDay(ts: number): number {
-		const d = new Date(ts);
-		d.setHours(0, 0, 0, 0);
-		return d.getTime();
+	let periodSheetOpen = $state(false);
+	function selectPeriod(next: Period) {
+		periodSheetOpen = false;
+		updateParams({ period: next.kind === 'all' ? null : periodKey(next) });
 	}
 
-	function formatDay(ts: number): string {
-		return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
-	}
-
-	function periodLabel(p: Period): string {
-		if (p === 'week') return 'Last 7 days';
-		if (p === 'month') return 'Last 30 days';
-		return 'All time';
+	function setJustMe(justMe: boolean) {
+		updateParams({ view: justMe ? 'me' : null });
 	}
 
 	const trips = $derived(room.trips);
@@ -76,7 +89,7 @@
 		selectedTripId =
 			saved && trips.some((t) => t.id === saved && t.closedAt === undefined) ? saved : null;
 	});
-	const scopedExpenses = $derived(scopeExpenses(expenses, selectedTripId));
+	const selectedTrip = $derived(trips.find((t) => t.id === selectedTripId) ?? null);
 
 	function selectTrip(tripId: string | null) {
 		selectedTripId = tripId;
@@ -93,209 +106,115 @@
 		expenses.reduce((n, e) => (e.tripId === tripId ? n + 1 : n), 0)
 	);
 
-	// Settlements are internal transfers; they never count as "spend".
-	const realExpenses = $derived(scopedExpenses.filter((e) => !e.isSettlement));
-	const periodExpenses = $derived.by(() => {
-		const cutoff = periodCutoff(period);
-		if (cutoff === 0) return realExpenses;
-		return realExpenses.filter((e) => e.date >= cutoff);
-	});
-	// Normalise to the base currency so cross-currency groups sum correctly everywhere.
-	const periodBase = $derived(periodExpenses.map((e) => expenseInBase(e, currency)));
+	const tripExpenses = $derived(scopeExpenses(expenses, selectedTripId).filter((e) => !e.isSettlement));
+	const periodMonths = $derived(monthsWithExpenses(tripExpenses));
+	const periodExpenses = $derived(inPeriod(tripExpenses, period));
+	const lines = $derived(spendLines(periodExpenses, currency, viewpoint));
+	const summary = $derived(summarize(lines));
+	const series = $derived(spendOverTime(lines));
+	const fees = $derived(exchangeFees(lines, currency));
+	const people = $derived(isJustMe ? [] : perPerson(periodExpenses, currency));
+	const biggest = $derived(biggestExpenses(lines));
 
-	const totalSpent = $derived(periodBase.reduce((s, e) => s + e.amount, 0));
-
-	// only expenses that stored a market rate can say what exchange cost; older ones are
-	// left out rather than counted as free
-	const fees = $derived.by(() => {
-		let fee = 0;
-		let atMarket = 0;
-		let count = 0;
-		for (const e of periodExpenses) {
-			const f = exchangeFee(e, currency);
-			if (!f) continue;
-			fee += f.fee;
-			atMarket += f.atMarket;
-			count++;
-		}
-		return count > 0 ? { fee, count, percent: (fee / atMarket) * 100 } : null;
-	});
-	// what each member actually consumed, honouring solo and uneven splits; one pass over the period
-	const shareByMember = $derived.by(() => {
-		const totals = new Map<string, number>();
-		for (const e of periodBase) {
-			for (const [memberId, cents] of expenseShares(e)) {
-				totals.set(memberId, (totals.get(memberId) ?? 0) + cents);
-			}
-		}
-		return totals;
-	});
-	const yourShare = $derived(
-		currentMemberId && membersById.has(currentMemberId) ? (shareByMember.get(currentMemberId) ?? 0) : null
-	);
-	const perPerson = $derived(
-		yourShare ?? (members.length > 0 ? Math.round(totalSpent / members.length) : 0)
-	);
-	const expenseCount = $derived(periodExpenses.length);
-	const avgExpense = $derived(expenseCount > 0 ? Math.round(totalSpent / expenseCount) : 0);
-	const daysWithActivity = $derived(
-		new Set(periodExpenses.map((e) => startOfDay(e.date))).size
+	const categoryRows = $derived<CategoryRow[]>(
+		spendByCategory(lines).map(({ id, amount, percent }) => {
+			const category = id ? categoryById.get(id) : undefined;
+			return {
+				key: id ?? 'none',
+				name: category?.name ?? (id ? 'Removed category' : 'No category'),
+				emoji: category?.emoji ?? '📦',
+				amount,
+				percent,
+				href: `/p/${roomId}/expenses?category=${encodeURIComponent(id ?? 'none')}`
+			};
+		})
 	);
 
-	type SpendBucket = { date: number; total: number };
-	type BucketSize = 'day' | 'week' | 'month';
+	const insight = $derived.by(() => {
+		const top = categoryRows[0];
+		if (!top || categoryRows.length < 2) return null;
+		return top.percent >= 50
+			? `Mostly ${top.emoji} ${top.name} (${top.percent}%)`
+			: `Biggest category: ${top.emoji} ${top.name} (${top.percent}%)`;
+	});
 
-	function startOfWeek(ts: number): number {
-		const d = new Date(ts);
-		d.setHours(0, 0, 0, 0);
-		// snap to Monday
-		const day = (d.getDay() + 6) % 7;
-		d.setDate(d.getDate() - day);
-		return d.getTime();
+	const methodRows = $derived.by(() => {
+		if (project?.paymentMethodsEnabled !== true) return [];
+		const rows = spendByPaymentMethod(lines);
+		if (rows.filter((r) => r.id !== null).length < 2) return [];
+		return rows.map((row, i) => {
+			const method = row.id ? methodById.get(row.id) : undefined;
+			return {
+				...row,
+				key: row.id ?? 'none',
+				name: method?.name ?? 'Not set',
+				emoji: method?.emoji ?? '',
+				color: METHOD_COLORS[i % METHOD_COLORS.length]
+			};
+		});
+	});
+
+	function formatDateRange(first: number, last: number): string {
+		const firstYear = new Date(first).getUTCFullYear();
+		const lastYear = new Date(last).getUTCFullYear();
+		const showYear = firstYear !== lastYear || lastYear !== new Date().getUTCFullYear();
+		// expense days are UTC days, see $lib/stats
+		return new Intl.DateTimeFormat(undefined, {
+			day: 'numeric',
+			month: 'short',
+			year: showYear ? 'numeric' : undefined,
+			timeZone: 'UTC'
+		}).formatRange(first, last);
 	}
 
-	function startOfMonth(ts: number): number {
-		const d = new Date(ts);
-		d.setHours(0, 0, 0, 0);
-		d.setDate(1);
-		return d.getTime();
+	const heroLine = $derived.by(() => {
+		if (!summary) return '';
+		const parts = [
+			`${isJustMe ? 'Your share of' : 'Spent on'} ${plural(summary.count, 'expense', 'expenses')}`,
+			formatDateRange(summary.firstDate, summary.lastDate)
+		];
+		if (summary.days > 1) {
+			parts.push(`${formatWholeAmount(summary.total / summary.days, currencySymbol, currency)} a day`);
+		}
+		return parts.join(' · ');
+	});
+
+	const emptyMessage = $derived.by(() => {
+		if (expenses.length === 0) return 'No expenses yet. Add one and its spending shows up here.';
+		const where = period.kind !== 'all' ? ` in ${periodLabel(period)}` : selectedTrip ? ` on ${selectedTrip.name}` : '';
+		if (isJustMe && spendLines(periodExpenses, currency, { kind: 'group' }).length > 0) {
+			return `You had no share in anything spent${where}.`;
+		}
+		return `Nothing spent${where}${period.kind === 'all' ? ' yet' : ''}.`;
+	});
+
+	function downloadSpreadsheet() {
+		if (!project) return;
+		const rows = isJustMe ? lines.map((line) => line.expense) : periodExpenses;
+		const scope = [selectedTrip?.name ?? 'all', period.kind === 'all' ? 'all-time' : periodKey(period)];
+		if (isJustMe) scope.push('mine');
+		saveFile(filteredSpreadsheetFile(project, members, rows, scope));
 	}
-
-	const spendBucketSize = $derived.by<BucketSize>(() => {
-		if (periodExpenses.length === 0) return 'day';
-		const cutoff = periodCutoff(period);
-		const startMs = cutoff > 0 ? cutoff : Math.min(...periodExpenses.map((e) => e.date));
-		const days = Math.ceil((Date.now() - startMs) / (86400 * 1000));
-		if (days > 365) return 'month';
-		if (days > 60) return 'week';
-		return 'day';
-	});
-
-	const spendBuckets = $derived.by<SpendBucket[]>(() => {
-		if (periodExpenses.length === 0) return [];
-		const cutoff = periodCutoff(period);
-		const startMs = cutoff > 0 ? cutoff : Math.min(...periodExpenses.map((e) => e.date));
-
-		if (spendBucketSize === 'day') {
-			const start = startOfDay(startMs);
-			const end = startOfDay(Date.now());
-			const buckets: SpendBucket[] = [];
-			for (let t = start; t <= end; t += 86400 * 1000) {
-				buckets.push({ date: t, total: 0 });
-			}
-			for (const e of periodBase) {
-				const idx = Math.round((startOfDay(e.date) - start) / (86400 * 1000));
-				if (idx >= 0 && idx < buckets.length) buckets[idx].total += e.amount;
-			}
-			return buckets;
-		}
-
-		if (spendBucketSize === 'week') {
-			const startW = startOfWeek(startMs);
-			const endW = startOfWeek(Date.now());
-			const buckets: SpendBucket[] = [];
-			for (let t = startW; t <= endW; t += 7 * 86400 * 1000) {
-				buckets.push({ date: t, total: 0 });
-			}
-			for (const e of periodBase) {
-				const idx = Math.round((startOfWeek(e.date) - startW) / (7 * 86400 * 1000));
-				if (idx >= 0 && idx < buckets.length) buckets[idx].total += e.amount;
-			}
-			return buckets;
-		}
-
-		// monthly: variable month lengths, so iterate explicitly
-		const buckets: SpendBucket[] = [];
-		const cursor = new Date(startOfMonth(startMs));
-		const endMs = startOfMonth(Date.now());
-		while (cursor.getTime() <= endMs) {
-			buckets.push({ date: cursor.getTime(), total: 0 });
-			cursor.setMonth(cursor.getMonth() + 1);
-		}
-		const indexByMonth = new Map(buckets.map((b, i) => [b.date, i]));
-		for (const e of periodBase) {
-			const idx = indexByMonth.get(startOfMonth(e.date));
-			if (idx !== undefined) buckets[idx].total += e.amount;
-		}
-		return buckets;
-	});
-
-	const byCategory = $derived.by<CategoryRollup[]>(() => {
-		const totals = new Map<string, number>();
-		for (const e of periodBase) {
-			const id = e.categoryId ?? 'uncategorised';
-			totals.set(id, (totals.get(id) ?? 0) + e.amount);
-		}
-		const rows = [...totals.entries()]
-			.map(([id, amount]) => {
-				const cat = categoryById.get(id);
-				return {
-					id,
-					name: cat?.name ?? 'Uncategorised',
-					emoji: cat?.emoji ?? '📦',
-					amount
-				};
-			})
-			.sort((a, b) => b.amount - a.amount);
-		return rows.map((r, i) => ({ ...r, color: SLICE_COLORS[i % SLICE_COLORS.length] }));
-	});
-
-	const byMemberPaid = $derived.by<MemberContribution[]>(() => {
-		const totals = new Map<string, number>();
-		for (const m of members) totals.set(m.id, 0);
-		for (const e of periodBase) {
-			for (const p of e.payments) {
-				totals.set(p.memberId, (totals.get(p.memberId) ?? 0) + p.amount);
-			}
-		}
-		return [...totals.entries()]
-			.map(([id, paid]) => {
-				const m = membersById.get(id);
-				return { id, name: m?.name ?? '—', color: m?.color, emoji: m?.emoji, paid };
-			})
-			.sort((a, b) => b.paid - a.paid);
-	});
-
-	type MethodRollup = { id: string; name: string; emoji: string; amount: number; color: string };
-	const byMethod = $derived.by<MethodRollup[]>(() => {
-		const totals = new Map<string, number>();
-		for (const e of periodBase) {
-			const id = e.paymentMethodId ?? 'unknown';
-			totals.set(id, (totals.get(id) ?? 0) + e.amount);
-		}
-		return [...totals.entries()]
-			.map(([id, amount], i) => {
-				const m = methodById.get(id);
-				return {
-					id,
-					name: m?.name ?? 'Unspecified',
-					emoji: m?.emoji ?? '·',
-					amount,
-					color: SLICE_COLORS[i % SLICE_COLORS.length]
-				};
-			})
-			.sort((a, b) => b.amount - a.amount);
-	});
-
-	const topExpenses = $derived(
-		periodBase.toSorted((a, b) => b.amount - a.amount).slice(0, 5)
-	);
-
-	const insight = $derived.by<string | null>(() => {
-		if (totalSpent === 0) return null;
-		const top = byCategory[0];
-		const biggest = topExpenses[0];
-		if (!top || !biggest) return null;
-		const topPct = Math.round((top.amount / totalSpent) * 100);
-		const biggestPayer = membersById.get(biggest.payments[0]?.memberId ?? '')?.name ?? '—';
-		const biggestLabel = biggest.description || 'Untitled expense';
-		return `${topPct}% went to ${top.emoji} ${top.name}. Biggest single hit: ${biggestLabel} (${formatAmount(biggest.amount, currencySymbol, currency)}, paid by ${biggestPayer}).`;
-	});
 </script>
 
 <svelte:head>
 	<title>Stats · {project?.name ?? 'Kostos'}</title>
 </svelte:head>
+
+{#snippet periodChip()}
+	<button
+		type="button"
+		class="period-chip"
+		class:on={period.kind !== 'all'}
+		aria-haspopup="dialog"
+		aria-label="Period: {periodLabel(period)}"
+		onclick={() => (periodSheetOpen = true)}
+	>
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+		<span>{periodLabel(period)}</span>
+		<svg class="period-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+	</button>
+{/snippet}
 
 <div class="screen" data-page="stats">
 	<ProjectAppBar {roomId} {project} />
@@ -310,6 +229,7 @@
 			{expenseCountForTrip}
 			onSelect={selectTrip}
 			onOverflowOpen={() => (tripSheetOpen = true)}
+			leading={periodChip}
 		/>
 
 		<TripSheet
@@ -321,133 +241,110 @@
 			onClose={() => (tripSheetOpen = false)}
 		/>
 
-		<div class="tabs-pill period-picker">
-			<button class:on={period === 'week'} type="button" onclick={() => (period = 'week')}>Week</button>
-			<button class:on={period === 'month'} type="button" onclick={() => (period = 'month')}>Month</button>
-			<button class:on={period === 'all'} type="button" onclick={() => (period = 'all')}>All</button>
-		</div>
+		{#if periodSheetOpen}
+			<PeriodSheet
+				selected={period}
+				months={periodMonths}
+				now={Date.now()}
+				onSelect={selectPeriod}
+				onClose={() => (periodSheetOpen = false)}
+			/>
+		{/if}
 
-		{#if expenseCount === 0}
+		<section class="stats-hero">
+			{#if currentMemberId}
+				<div class="tabs-pill view-switch" role="group" aria-label="Whose spending">
+					<button type="button" class:on={!isJustMe} aria-pressed={!isJustMe} onclick={() => setJustMe(false)}>Group</button>
+					<button type="button" class:on={isJustMe} aria-pressed={isJustMe} onclick={() => setJustMe(true)}>Just me</button>
+				</div>
+			{/if}
+
+			{#if summary}
+				<div class="hero-amount">
+					<span class="symbol">{currencySymbol}</span>{formatAmount(summary.total, '', currency)}
+				</div>
+				<p class="hero-line">{heroLine}</p>
+				{#if insight}<p class="hero-insight">{insight}</p>{/if}
+				<p class="dim hero-note">Settlements aren’t counted.</p>
+			{/if}
+		</section>
+
+		{#if !summary}
 			<EmptyState>
-				<p>No spending in {periodLabel(period).toLowerCase()} yet. Add an expense or widen the period.</p>
+				<p>{emptyMessage}</p>
+				{#if period.kind !== 'all'}
+					<button type="button" class="btn" onclick={() => selectPeriod(ALL_TIME)}>Show all time</button>
+				{/if}
 			</EmptyState>
 		{:else}
-			<div class="row gap-8 hero-row">
-				<div class="stat hero-tile">
-					<div class="stat-label">Total spent</div>
-					<div class="stat-value mono">{formatAmount(totalSpent, currencySymbol, currency)}</div>
-					<div class="stat-sub">{periodLabel(period)}</div>
-				</div>
-				<div class="stat hero-tile">
-					<div class="stat-label">{yourShare === null ? 'Per person' : 'Your share'}</div>
-					<div class="stat-value mono">{formatAmount(perPerson, currencySymbol, currency)}</div>
-					<div class="stat-sub">{yourShare === null ? `across ${members.length} ${members.length === 1 ? 'member' : 'members'}` : 'of what was spent for you'}</div>
-				</div>
-			</div>
+			<SpendBars {series} symbol={currencySymbol} {currency} onPickMonth={(start) => selectPeriod(monthOf(start))} />
 
-			<div class="row gap-8 mini-row">
-				<div class="stat mini-tile">
-					<div class="stat-label">Expenses</div>
-					<div class="num mini-value">{expenseCount}</div>
-				</div>
-				<div class="stat mini-tile">
-					<div class="stat-label">Avg expense</div>
-					<div class="num mini-value">{formatAmount(avgExpense, currencySymbol, currency)}</div>
-				</div>
-				<div class="stat mini-tile">
-					<div class="stat-label">Days active</div>
-					<div class="num mini-value">{daysWithActivity}</div>
-				</div>
+			<div class="section-head">
+				<h2 class="eyebrow">By category</h2>
 			</div>
+			<CategoryBars rows={categoryRows} symbol={currencySymbol} {currency} />
 
-			{#if fees}
+			{#if people.length > 0}
+				<div class="section-head">
+					<h2 class="eyebrow">Per person</h2>
+				</div>
+				<p class="dim section-intro">Each person’s share of these expenses, what they paid, and the difference.</p>
+				<PerPersonCard rows={people} {membersById} {currentMemberId} symbol={currencySymbol} {currency} />
+			{/if}
+
+			<div class="section-head">
+				<h2 class="eyebrow">Biggest expenses</h2>
+			</div>
+			<TopExpensesCard
+				lines={biggest}
+				{categoryById}
+				{membersById}
+				{currentMemberId}
+				symbol={currencySymbol}
+				{currency}
+				hrefBase="/p/{roomId}/expenses"
+			/>
+
+			{#if fees && fees.fee !== 0}
 				<div class="stat fee-tile">
 					<div class="row between fee-top">
-						<div class="stat-label">Exchange fees</div>
+						<div class="stat-label">{isJustMe ? 'Your exchange fees' : 'Exchange fees'}</div>
 						<div class="num fee-value" class:over={fees.fee > 0} class:under={fees.fee < 0}>
 							{fees.fee < 0 ? '−' : ''}{formatAmount(Math.abs(fees.fee), currencySymbol, currency)}
 						</div>
 					</div>
 					<div class="stat-sub">
-						{Math.abs(fees.percent).toFixed(1)}% {fees.fee < 0 ? 'below' : 'over'} the market rate on {fees.count}
-						foreign {fees.count === 1 ? 'expense' : 'expenses'}
+						{Math.abs(fees.percent).toFixed(1)}% {fees.fee < 0 ? 'below' : 'over'} the market rate on {plural(fees.count, 'foreign expense', 'foreign expenses')}
 					</div>
 				</div>
 			{/if}
 
-			<DailyBars
-				buckets={spendBuckets}
-				bucketSize={spendBucketSize}
-				symbol={currencySymbol}
-				{currency}
-			/>
-
-			{#if byCategory.length > 0}
+			{#if methodRows.length > 0}
 				<div class="section-head">
-					<div class="eyebrow">By category</div>
-					<span class="dim mono section-count">{byCategory.length}</span>
-				</div>
-				<CategoryBreakdown rows={byCategory} total={totalSpent} symbol={currencySymbol} {currency} />
-			{/if}
-
-			{#if byMemberPaid.length > 0}
-				<div class="section-head">
-					<div class="eyebrow">Out of pocket</div>
-					<span class="dim mono section-count">WHO PAID</span>
-				</div>
-				<MemberBars rows={byMemberPaid} {currentMemberId} symbol={currencySymbol} {currency} />
-			{/if}
-
-			{#if byMethod.length > 0 && project?.paymentMethodsEnabled !== false}
-				<div class="section-head">
-					<div class="eyebrow">By payment method</div>
+					<h2 class="eyebrow">Payment methods</h2>
 				</div>
 				<div class="card method-card">
-					<div class="method-bar">
-						{#each byMethod as m (m.id)}
-							{@const w = totalSpent > 0 ? (m.amount / totalSpent) * 100 : 0}
-							<div
-								class="method-seg"
-								style="width: {w}%; background: {m.color};"
-								title="{m.emoji} {m.name}: {formatAmount(m.amount, currencySymbol, currency)}"
-							></div>
+					<div class="method-bar" aria-hidden="true">
+						{#each methodRows as m (m.key)}
+							<div class="method-seg" style="width: {m.percent}%; background: {m.color};"></div>
 						{/each}
 					</div>
-					<div class="row method-legend">
-						{#each byMethod as m (m.id)}
-							{@const pct = totalSpent > 0 ? Math.round((m.amount / totalSpent) * 100) : 0}
-							<span class="row gap-6 method-chip">
+					<ul class="method-legend">
+						{#each methodRows as m (m.key)}
+							<li class="method-chip">
 								<span class="swatch-dot" style="background: {m.color};"></span>
-								<span class="method-name">{m.emoji} {m.name}</span>
-								<span class="dim mono">{pct}%</span>
-							</span>
+								<span class="method-name">{m.emoji ? `${m.emoji} ${m.name}` : m.name}</span>
+								<span class="dim mono">{m.percent}%</span>
+							</li>
 						{/each}
-					</div>
+					</ul>
 				</div>
 			{/if}
 
-			{#if topExpenses.length > 0}
-				<div class="section-head">
-					<div class="eyebrow">Biggest expenses</div>
-				</div>
-				<TopExpensesCard
-					expenses={topExpenses}
-					{categoryById}
-					{membersById}
-					{currentMemberId}
-					symbol={currencySymbol} {currency}
-					hrefBase="/p/{roomId}/expenses"
-				/>
-			{/if}
-
-			{#if insight}
-				<div class="card insight-card">
-					<div class="row gap-8 insight-row">
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="insight-icon"><path d="M13 3L5 14h6l-1 7 8-11h-6l1-7z" /></svg>
-						<p class="insight-body">{insight}</p>
-					</div>
-				</div>
-			{/if}
+			<button type="button" class="export-link" onclick={downloadSpreadsheet}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>
+				Download as a spreadsheet
+			</button>
 		{/if}
 		</div>
 		{/if}
@@ -457,30 +354,99 @@
 </div>
 
 <style>
-	.period-picker {
-		width: 100%;
-		margin-top: 4px;
-		margin-bottom: 12px;
+	.period-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		padding: 6px 8px 6px 10px;
+		background: var(--bg-2);
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		color: var(--ink-2);
+		font-family: var(--font-sans);
+		font-size: 12px;
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
 	}
 
-	.period-picker button {
-		flex: 1;
+	.period-chip svg {
+		width: 14px;
+		height: 14px;
 	}
 
-	.hero-row {
-		align-items: stretch;
+	.period-chip.on {
+		background: color-mix(in oklab, var(--accent) 16%, var(--bg-2));
+		border-color: var(--accent);
+		color: var(--ink);
 	}
 
-	.hero-tile {
-		flex: 1;
+	.period-caret {
+		opacity: 0.7;
 	}
 
-	.stat-sub {
-		margin-top: 6px;
+	.stats-hero {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		padding: 10px 0 4px;
+	}
+
+	.view-switch {
+		margin-bottom: 18px;
+	}
+
+	.view-switch button {
+		min-width: 84px;
+	}
+
+	.hero-amount {
+		font-family: var(--font-display);
+		font-size: 56px;
+		line-height: 1;
+		letter-spacing: -0.03em;
+	}
+
+	.hero-amount .symbol {
+		font-size: 28px;
+		vertical-align: top;
+		margin-right: 4px;
+		opacity: 0.7;
+	}
+
+	.hero-line {
+		margin: 12px 0 0;
+		font-size: 13px;
+		color: var(--ink-2);
+		text-wrap: balance;
+	}
+
+	.hero-insight {
+		margin: 6px 0 0;
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	.hero-note {
+		margin: 10px 0 0;
+		font-size: 12px;
+	}
+
+	.section-head h2 {
+		margin: 0;
+	}
+
+	.section-intro {
+		margin: -4px 4px 10px;
+		font-size: 12px;
+		line-height: 1.45;
 	}
 
 	.fee-tile {
-		margin-top: 8px;
+		margin-top: 12px;
 	}
 
 	.fee-top {
@@ -500,40 +466,13 @@
 		color: var(--owed);
 	}
 
-	.mini-row {
-		margin-top: 8px;
-		align-items: stretch;
-	}
-
-	.mini-tile {
-		flex: 1;
-		padding: 10px 12px;
-	}
-
-	.mini-value {
-		font-size: 18px;
-		font-weight: 600;
-		margin-top: 4px;
-	}
-
-	.section-count {
-		font-size: 11px;
-	}
-
-	.swatch-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 2px;
-		flex-shrink: 0;
-	}
-
 	.method-card {
 		padding: 14px 16px;
 	}
 
 	.method-bar {
 		display: flex;
-		height: 14px;
+		height: 10px;
 		border-radius: 999px;
 		overflow: hidden;
 		background: var(--line);
@@ -544,41 +483,52 @@
 	}
 
 	.method-legend {
-		margin-top: 12px;
+		display: flex;
 		flex-wrap: wrap;
-		gap: 12px;
-		font-size: 11px;
+		gap: 8px 14px;
+		margin: 12px 0 0;
+		padding: 0;
+		list-style: none;
+		font-size: 12px;
 	}
 
 	.method-chip {
-		font-family: var(--font-mono);
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
 		color: var(--ink-2);
+	}
+
+	.swatch-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 2px;
+		flex-shrink: 0;
 	}
 
 	.method-name {
 		color: var(--ink);
 	}
 
-	.insight-card {
-		margin-top: 14px;
-		background: color-mix(in oklab, var(--accent) 6%, var(--bg-2));
-		border-color: color-mix(in oklab, var(--accent) 22%, var(--line));
-	}
-
-	.insight-row {
-		align-items: flex-start;
-	}
-
-	.insight-icon {
-		width: 18px;
-		height: 18px;
+	.export-link {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 8px;
+		width: 100%;
+		margin: 22px 0 8px;
+		padding: 12px;
+		background: transparent;
+		border: 0;
 		color: var(--accent);
-		flex-shrink: 0;
+		font: inherit;
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
 	}
 
-	.insight-body {
-		margin: 0;
-		font-size: 13px;
-		line-height: 1.5;
+	.export-link svg {
+		width: 16px;
+		height: 16px;
 	}
 </style>
