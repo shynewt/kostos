@@ -117,8 +117,7 @@
 		>
 			<span class="line-avatars">
 				<Avatar member={membersById.get(t.from)} size="md" />
-				<svg class="line-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-				<Avatar member={membersById.get(t.to)} size="md" />
+				<span class="avatar-front"><Avatar member={membersById.get(t.to)} size="md" /></span>
 			</span>
 			<span class="line-head">
 				<strong>{label(t.from)}</strong>
@@ -184,7 +183,7 @@
 	.line {
 		display: flex;
 		align-items: center;
-		gap: 14px;
+		gap: 12px;
 		width: 100%;
 		padding: 14px;
 		background: var(--bg-2);
@@ -203,17 +202,25 @@
 		border-color: color-mix(in oklab, var(--accent) 32%, var(--line));
 	}
 
+	/* an overlapping pair; the row's text already says who pays whom */
 	.line-avatars {
 		display: inline-flex;
 		align-items: center;
-		gap: 4px;
 		flex-shrink: 0;
 	}
 
-	.line-arrow {
-		width: 14px;
-		height: 14px;
-		color: var(--ink-3);
+	/* avatar tints are translucent, so the front one needs a solid backing to hide the overlap */
+	.avatar-front {
+		display: inline-flex;
+		margin-left: -10px;
+		border-radius: 50%;
+		background: var(--bg-2);
+		box-shadow: 0 0 0 2px var(--bg-2);
+	}
+
+	.line.involves-you .avatar-front {
+		background: color-mix(in oklab, var(--accent) 7%, var(--bg-2));
+		box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 7%, var(--bg-2));
 	}
 
 	.line-head {
