@@ -12,6 +12,7 @@
 	import '$lib/styles/app.css';
 
 	import MathToolbar from '$lib/components/MathToolbar.svelte';
+	import Toast from '$lib/components/Toast.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
 	const isProd = !import.meta.env.DEV;
@@ -27,4 +28,5 @@
 
 {@render children()}
 <MathToolbar />
+<Toast />
 <UpdateBanner />

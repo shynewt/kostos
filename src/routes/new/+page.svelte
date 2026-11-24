@@ -7,15 +7,9 @@
 	import EmojiTilePicker from '$lib/components/EmojiTilePicker.svelte';
 	import FormError from '$lib/components/FormError.svelte';
 	import { CURRENCY_PRESETS, type CurrencyPreset } from '$lib/currencies';
-	import { createGroup } from '$lib/io/createGroup';
+	import { createGroup, newGroupProject } from '$lib/io/createGroup';
 	import { generateId } from '$lib/sync/doc';
-	import {
-		DEFAULT_CATEGORIES,
-		DEFAULT_PAYMENT_METHODS,
-		type Member,
-		type Project,
-		type ProjectColor
-	} from '$lib/types';
+	import type { Member, ProjectColor } from '$lib/types';
 
 	type DraftMember = { id: string; name: string };
 
@@ -32,7 +26,6 @@
 	let submitting = $state(false);
 	let createError = $state<string | null>(null);
 
-	const filledOthers = $derived(others.filter((m) => m.name.trim().length > 0));
 	const canCreate = $derived(name.trim().length > 0 && yourName.trim().length > 0);
 
 	// nudge throwaway "test" groups toward the local demo so they don't pile up.
@@ -100,19 +93,14 @@
 				otherMembers.push(m);
 			}
 
-			const project: Omit<Project, 'id'> = {
+			const project = newGroupProject({
 				name: name.trim(),
 				description: description.trim() || undefined,
 				emoji,
 				color,
 				currency: currencyCode,
-				currencySymbol: currencySym,
-				defaultSplit: 'even',
-				categories: DEFAULT_CATEGORIES,
-				paymentMethods: DEFAULT_PAYMENT_METHODS,
-				trips: [],
-				createdAt: Date.now()
-			};
+				currencySymbol: currencySym
+			});
 
 			const roomId = await createGroup({ project, members: [creator, ...otherMembers], expenses: [] }, creator.id);
 			await goto(`/p/${roomId}`);
@@ -136,28 +124,10 @@
 			</button>
 		</div>
 		<div class="app-bar-title">New group</div>
-		<div class="row gap-6" style="flex: 1; justify-content: flex-end;">
-			<button
-				type="button"
-				class="btn btn-primary"
-				style="padding: 8px 14px; font-size: 13px;"
-				disabled={!canCreate || submitting}
-				onclick={() => onSubmit()}
-			>
-				Create
-			</button>
-		</div>
+		<div class="row" style="flex: 1;"></div>
 	</header>
 
 	<form class="scroll" onsubmit={onSubmit} style="padding-top: 8px;">
-		<a class="restore-link" href="/restore">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-				<path d="M3 3v5h5" />
-			</svg>
-			<span>Got a backup file? Restore instead</span>
-		</a>
-
 		<div class="col emoji-block">
 			<EmojiTilePicker {emoji} {color} onPick={(value) => (emoji = value)} />
 
@@ -207,10 +177,8 @@
 			/>
 		</div>
 
-		<div class="section-head">
-			<div class="eyebrow">Add members</div>
-			<span class="dim mono members-count">YOU + {filledOthers.length} OTHERS</span>
-		</div>
+		<h2 class="question">Who’s in the group?</h2>
+		<p class="dim question-hint">Start with your name. Anyone you leave out can join later from the invite link.</p>
 
 		<div class="card members-card">
 			<div class="list-item member-row">
@@ -262,6 +230,7 @@
 		>
 			{submitting ? 'Creating…' : 'Create group'}
 		</button>
+		<p class="dim restore-line">Have a backup? <a class="restore-link" href="/restore">Restore it</a></p>
 	</form>
 </div>
 
@@ -298,30 +267,34 @@
 		cursor: default;
 	}
 
-	.restore-link {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		gap: 8px;
-		padding: 10px 12px;
-		margin: 0 0 6px;
-		border-radius: 10px;
-		border: 1px dashed var(--line-2);
-		background: transparent;
-		color: var(--ink-2);
-		font-size: 12px;
-		font-weight: 500;
-		text-decoration: none;
+	.question {
+		margin: 28px 0 0;
+		font-size: 20px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
 	}
 
-	.restore-link svg {
-		width: 14px;
-		height: 14px;
+	.question-hint {
+		margin: 4px 0 14px;
+		font-size: 13px;
+		line-height: 1.45;
+	}
+
+	.restore-line {
+		margin: 16px 0 8px;
+		font-size: 13px;
+		text-align: center;
+	}
+
+	.restore-link {
+		color: var(--ink-2);
+		font-weight: 600;
+		text-decoration: underline;
+		text-underline-offset: 3px;
 	}
 
 	.restore-link:hover {
 		color: var(--accent);
-		border-color: color-mix(in oklab, var(--accent) 40%, var(--line));
 	}
 
 	.emoji-block {
@@ -357,10 +330,6 @@
 
 	.members-card {
 		padding: 4px;
-	}
-
-	.members-count {
-		font-size: 11px;
 	}
 
 	.member-row {

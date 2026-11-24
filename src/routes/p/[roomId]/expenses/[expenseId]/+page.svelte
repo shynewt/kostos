@@ -11,8 +11,10 @@
 	import { exchangeFee, expenseBaseAmount, formatRate } from '$lib/currency-convert';
 	import { formatAmount, formatSigned } from '$lib/money';
 	import { getCurrentMember } from '$lib/storage';
-	import { removeExpense } from '$lib/sync/doc';
+	import { removeExpense, restoreExpense, type RoomHandle } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
+	import { showToast } from '$lib/toast.svelte';
+	import type { Expense } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
 	const expenseId = $derived(page.params.expenseId ?? '');
@@ -23,7 +25,6 @@
 	const project = $derived(room.project);
 	const members = $derived(room.members);
 	const expenses = $derived(room.expenses);
-	let confirmingDelete = $state(false);
 	let deleting = $state(false);
 	let deleteError = $state(false);
 
@@ -103,17 +104,36 @@
 		return `even · ${pct}%`;
 	}
 
+	// kept outside `expense` so a retry after a failed save can still offer undo
+	let deletedExpense: Expense | null = null;
+
 	async function onDelete() {
 		if (deleting || (!expense && !deleteError)) return;
-		if (!confirmingDelete) { confirmingDelete = true; return; }
 		deleting = true;
 		deleteError = false;
 		try {
-			if (expense) removeExpense(handle, expense.id);
+			if (expense) {
+				deletedExpense = $state.snapshot(expense);
+				removeExpense(handle, expense.id);
+			}
 			await handle.persistence?.flush();
+			if (deletedExpense) offerUndo(handle, deletedExpense);
 			await goto(`/p/${roomId}/expenses`);
 		} catch { deleteError = true; }
 		finally { deleting = false; }
+	}
+
+	function offerUndo(roomHandle: RoomHandle, deleted: Expense) {
+		showToast('Expense deleted', { label: 'Undo', run: () => undoDelete(roomHandle, deleted) });
+	}
+
+	async function undoDelete(roomHandle: RoomHandle, deleted: Expense) {
+		restoreExpense(roomHandle, deleted);
+		try {
+			await roomHandle.persistence?.flush();
+		} catch {
+			showToast('Couldn’t save the undo on this phone', { label: 'Try again', run: () => undoDelete(roomHandle, deleted) });
+		}
 	}
 
 	function onEdit() {
@@ -151,7 +171,7 @@
 				<div class="row gap-12 hero-top">
 					<span class="cat-tile hero-icon">{category?.emoji ?? '📦'}</span>
 					<div class="col">
-						<div class="eyebrow">{category?.name ?? 'Uncategorised'} · {formatDate(expense.date)}</div>
+						<div class="hero-meta">{category?.name ?? 'Uncategorised'} · {formatDate(expense.date)}</div>
 						<div class="h2 hero-title">{expense.description || 'Expense'}</div>
 					</div>
 				</div>
@@ -274,14 +294,9 @@
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
 					<span>Edit</span>
 				</button>
-				<button
-					class="btn action-btn delete-btn"
-					class:confirming={confirmingDelete}
-					type="button"
-					onclick={onDelete}
-				>
+				<button class="btn action-btn delete-btn" type="button" onclick={onDelete}>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" /></svg>
-					<span>{deleting ? 'Deleting…' : deleteError ? 'Try again' : confirmingDelete ? 'Tap again to delete' : 'Delete'}</span>
+					<span>{deleting ? 'Deleting…' : deleteError ? 'Try again' : 'Delete'}</span>
 				</button>
 			</div>
 		</div>
@@ -323,6 +338,11 @@
 		border-radius: 18px;
 		font-size: 26px;
 		background: color-mix(in oklab, var(--accent) 16%, transparent);
+	}
+
+	.hero-meta {
+		font-size: 13px;
+		color: var(--ink-2);
 	}
 
 	.hero-title {
@@ -472,10 +492,5 @@
 
 	.delete-btn {
 		color: var(--owe);
-	}
-
-	.delete-btn.confirming {
-		background: color-mix(in oklab, var(--owe) 14%, transparent);
-		border-color: var(--owe);
 	}
 </style>

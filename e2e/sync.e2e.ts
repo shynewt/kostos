@@ -289,7 +289,6 @@ describe('mobile sync and freshness', () => {
 		await page.getByText('Seafood dinner', { exact: true }).click();
 		await abortLocalWrites(page);
 		await page.getByRole('button', { name: 'Delete', exact: true }).click();
-		await page.getByRole('button', { name: 'Tap again to delete', exact: true }).click();
 		await page.getByRole('alert').filter({ hasText: 'Couldn’t delete this on your phone' }).waitFor();
 		expect(page.url()).toContain('/expenses/dinner');
 		await screenshot(page, '15-deletion-save-error');
@@ -300,6 +299,22 @@ describe('mobile sync and freshness', () => {
 		await second.goto(`${BASE}/p/${ref.roomId}/expenses`); await synced(second);
 		expect(await second.getByText('Seafood dinner', { exact: true }).count()).toBe(0);
 		expect(await second.getByText('Sofia → Anna', { exact: true }).count()).toBe(1);
+	});
+	it('undoes a deletion from the toast and keeps the expense after a reload', async () => {
+		const page = await phone(); const ref = await seed(page);
+		await page.goto(`${BASE}/p/${ref.roomId}/expenses`); await synced(page);
+		await page.getByText('Seafood dinner', { exact: true }).click();
+		await page.getByRole('button', { name: 'Delete', exact: true }).click();
+		await page.waitForURL(`${BASE}/p/${ref.roomId}/expenses`);
+		await page.getByRole('status').filter({ hasText: 'Expense deleted' }).waitFor();
+		expect(await page.getByText('Seafood dinner', { exact: true }).count()).toBe(0);
+		await page.getByRole('button', { name: 'Undo', exact: true }).click();
+		await page.getByText('Seafood dinner', { exact: true }).waitFor();
+		await page.reload(); await synced(page);
+		expect(await page.getByText('Seafood dinner', { exact: true }).count()).toBe(1);
+		await page.getByText('Seafood dinner', { exact: true }).click();
+		await page.waitForSelector('[data-page="expense-detail"]');
+		expect(await page.locator('[data-page="expense-detail"]').getByText('Edited on two phones').count()).toBe(0);
 	});
 	it('opens the existing y-indexeddb schema without resetting saved project data', async () => {
 		const page = await phone(); await page.goto(`${BASE}/`);
@@ -346,7 +361,7 @@ describe('mobile sync and freshness', () => {
 		const page = await phone(); await page.goto(`${BASE}/new`);
 		await page.fill('input[placeholder="Group name"]', 'Weekend');
 		await page.fill('input[placeholder="Your name"]', 'Anna');
-		await page.getByRole('button', { name: 'Create', exact: true }).click();
+		await page.getByRole('button', { name: 'Create group', exact: true }).click();
 		await page.waitForURL(LOCAL_ID); await synced(page);
 	});
 	it('rejects old invites with a message that names the older version', async () => {

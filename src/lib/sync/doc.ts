@@ -649,6 +649,29 @@ export function removeExpense(handle: RoomHandle, id: string): void {
 	});
 }
 
+/** Undo for removeExpense. Revision maps outlive the removal, so re-adding the same record
+ *  brings back its history; the removal event is dropped from the log as if it never happened. */
+export function restoreExpense(handle: RoomHandle, expense: Expense): void {
+	if (handle.expenses.toArray().some((e) => e.get('id') === expense.id)) return;
+	const winner = versionHeads(handle, expense.id, []).at(-1);
+	handle.doc.transact(() => {
+		const entry = expenseMap(expense);
+		handle.expenses.push([entry]);
+		// the re-added entry has a new Yjs identity, which would otherwise read as a fresh legacy
+		// version competing with the stored ones. linking it to the winning head keeps one head per
+		// branch, and legacy ids sort after hex ids so the same branch keeps winning.
+		if (winner) {
+			const id = `legacy:${entry._item?.id.client}:${entry._item?.id.clock}`;
+			const revisions = handle.doc.getMap<ExpenseVersion>(`expense-revisions:${expense.id}`);
+			revisions.set(id, { id, expense: JSON.parse(JSON.stringify(expense)), parents: [winner.id], at: Date.now(), by: getCurrentMember(handle.roomId) });
+		}
+		const removal = handle.activity
+			.toArray()
+			.findLastIndex((event) => event.get('kind') === 'expense.remove' && event.get('expenseId') === expense.id);
+		if (removal >= 0) handle.activity.delete(removal, 1);
+	});
+}
+
 export function updateExpense(handle: RoomHandle, expense: Expense, parents?: string[]): void {
 	const prev = readExpenses(handle).find((e) => e.id === expense.id);
 	if (!prev) return;

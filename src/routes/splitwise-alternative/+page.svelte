@@ -25,7 +25,7 @@
 <JsonLd data={faqSchema(FAQS)} />
 
 <ArticleLayout>
-	<p class="updated">Compared on {COMPARED_ON}</p>
+	<p class="updated dateline">Compared on {COMPARED_ON}</p>
 	<h1>A free Splitwise alternative, with no account</h1>
 	<p class="lede">
 		Kostos does what most people open Splitwise for: a shared list of expenses, fair splits, and a short list of who pays whom
