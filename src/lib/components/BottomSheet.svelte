@@ -61,7 +61,7 @@
 		border-top-right-radius: 20px;
 		border: 1px solid var(--line);
 		border-bottom: 0;
-		padding: 6px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+		padding: 6px 20px calc(20px + max(env(safe-area-inset-bottom, 0px), var(--math-toolbar-space, 0px)));
 		z-index: 1101;
 		display: flex;
 		flex-direction: column;

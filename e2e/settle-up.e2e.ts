@@ -69,7 +69,9 @@ describe('balance breakdown', () => {
 		await dialog.waitFor();
 
 		const parts = (await dialog.locator('.sum-row:not(.sum-result) dd').allInnerTexts()).map(toCents);
-		expect(parts).toHaveLength(4);
+		// the demo has no settlements paid by you, so that zero row is left out
+	expect(parts).toHaveLength(3);
+	expect(await dialog.getByText('You paid back').count()).toBe(0);
 		const result = toCents(await dialog.locator('.sum-result dd').innerText());
 		// the home screen shows the balance unsigned, under "You're owed" or "You owe"
 		expect(Math.abs(parts.reduce((total, part) => total + part, 0))).toBe(balance);

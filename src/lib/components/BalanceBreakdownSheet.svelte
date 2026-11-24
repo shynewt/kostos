@@ -17,9 +17,9 @@
 	const rows = $derived([
 		{ label: 'You paid', note: 'towards group expenses', value: breakdown.paid },
 		{ label: 'Your share', note: 'your part of each expense', value: -breakdown.share },
-		{ label: 'Settlements you paid', note: 'money you sent', value: breakdown.settlementsPaid },
-		{ label: 'Settlements you received', note: 'money sent to you', value: -breakdown.settlementsReceived }
-	]);
+		{ label: 'You paid back', note: 'settlements you sent', value: breakdown.settlementsPaid },
+		{ label: 'Paid back to you', note: 'settlements you received', value: -breakdown.settlementsReceived }
+	].filter((row, index) => index < 2 || row.value !== 0));
 
 	const resultLabel = $derived(
 		breakdown.net > 0 ? 'You’re owed' : breakdown.net < 0 ? 'You owe' : 'You’re settled up'
