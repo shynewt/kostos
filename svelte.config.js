@@ -50,7 +50,7 @@ const config = {
 		}),
 		prerender: {
 			// nothing links to a bare /join, so it is listed for its link-preview card
-			entries: ['/', '/join']
+			entries: ['/', '/join', '/splitwise-alternative', '/tricount-alternative', '/split-trip-expenses']
 		}
 	}
 };

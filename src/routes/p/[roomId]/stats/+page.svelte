@@ -5,7 +5,7 @@
 	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
 	import type { CategoryRollup } from '$lib/components/CategoryBreakdown.svelte';
 	import DailyBars from '$lib/components/DailyBars.svelte';
-	import EmptyCard from '$lib/components/EmptyCard.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import MemberBars from '$lib/components/MemberBars.svelte';
 	import type { MemberContribution } from '$lib/components/MemberBars.svelte';
@@ -328,9 +328,9 @@
 		</div>
 
 		{#if expenseCount === 0}
-			<EmptyCard>
+			<EmptyState>
 				<p>No spending in {periodLabel(period).toLowerCase()} yet. Add an expense or widen the period.</p>
-			</EmptyCard>
+			</EmptyState>
 		{:else}
 			<div class="row gap-8 hero-row">
 				<div class="stat hero-tile">

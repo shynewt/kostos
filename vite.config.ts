@@ -21,9 +21,13 @@ export default defineConfig({
 			// landing page, or a reload on /p/<room> renders the landing page
 			kit: { adapterFallback: '200.html', spa: true },
 			manifest: {
+				// a stable identity, so a changed start_url never looks like a different app
+				id: '/',
 				name: 'Kostos',
 				short_name: 'Kostos',
-				description: 'Privacy-first group expense splitter. No accounts, encrypted, offline-ready.',
+				description: 'Split group expenses with friends. No accounts, end-to-end encrypted, works offline.',
+				lang: 'en',
+				categories: ['finance', 'productivity'],
 				start_url: '/',
 				scope: '/',
 				display: 'standalone',
@@ -45,6 +49,8 @@ export default defineConfig({
 			},
 			workbox: {
 				globPatterns: ['client/**/*.{js,css,ico,png,svg,webp,woff,woff2}'],
+				// link preview cards are for chat apps' servers, not worth storing on every phone
+				globIgnores: ['**/og-*.png'],
 				// drop precaches from older builds so a stale SW can't keep serving dead
 				// CSS/JS chunk names (the pre-refactor "unstyled on mobile" bug). No
 				// clientsClaim: with precaching it would hand the live old page to the new

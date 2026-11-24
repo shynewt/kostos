@@ -43,7 +43,7 @@ beforeEach(async () => {
 	const context = await browser.newContext();
 	page = await context.newPage();
 	await page.goto(`${BASE}/`);
-	await page.click('.demo-cta');
+	await page.getByRole('button', { name: /live demo/ }).click();
 	await page.waitForURL(/\/p\/DEMO$/);
 });
 

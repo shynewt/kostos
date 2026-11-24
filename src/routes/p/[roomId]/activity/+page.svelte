@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import ActivityList from '$lib/components/ActivityList.svelte';
-	import EmptyCard from '$lib/components/EmptyCard.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
 	import { getCurrentMember } from '$lib/storage';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
@@ -19,9 +19,9 @@
 	<ScreenAppBar title="Activity" backHref="/p/{roomId}" />
 	<div class="scroll activity-scroll">
 		{#if events.length === 0}
-			<EmptyCard>
+			<EmptyState>
 				<p>No activity yet. Adding, editing, or settling expenses shows up here.</p>
-			</EmptyCard>
+			</EmptyState>
 		{:else}
 			<ActivityList {events} {membersById} {currentMemberId} {roomId} />
 		{/if}
