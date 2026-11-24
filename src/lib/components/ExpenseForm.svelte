@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import AmountField from './AmountField.svelte';
-	import CurrencyPicker from './CurrencyPicker.svelte';
+	import CurrencySheet from './CurrencySheet.svelte';
 	import type { EmojiItem } from './EmojiOptionList.svelte';
 	import ExpenseDetails, { type DetailPanel } from './ExpenseDetails.svelte';
 	import PaidBySection from './PaidBySection.svelte';
@@ -113,11 +113,13 @@
 		if (seed.payments.length === 1) {
 			return [{ id: generateId(), memberId: seed.payments[0].memberId, amount: '' }];
 		}
-		return seed.payments.map((p) => ({
-			id: generateId(),
-			memberId: p.memberId,
-			amount: toInputValue(p.amount, seed.currency)
-		}));
+		const paidBy = new Map(seed.payments.map((p) => [p.memberId, toInputValue(p.amount, seed.currency)]));
+		return memberPayerRows((memberId) => paidBy.get(memberId) ?? '');
+	}
+
+	/** Multi-payer mode lists every member; a row left empty means that person didn't pay. */
+	function memberPayerRows(amountFor: (memberId: string) => string): PaymentRow[] {
+		return members.map((m) => ({ id: generateId(), memberId: m.id, amount: amountFor(m.id) }));
 	}
 
 	function seedInvolved(): Set<string> {
@@ -338,7 +340,8 @@
 	const paymentsValid = $derived(
 		payers.length > 0 &&
 			payers.every((p) => p.memberId) &&
-			(!isMultiPayer || (paidTotal === amountCents && payerCents.every((c) => c > 0)))
+			(!isMultiPayer ||
+				(paidTotal === amountCents && payerInputs.every((p) => !p.invalid) && payerCents.some((c) => c > 0)))
 	);
 
 	const splitInputs = $derived(
@@ -478,33 +481,21 @@
 		payers = payers.map((p) => (p.id === id ? { ...p, ...updates } : p));
 	}
 
-	function nextAvailableMember(): string {
-		const taken = new Set(payers.map((p) => p.memberId));
-		const free = members.find((m) => !taken.has(m.id));
-		return free?.id ?? members[0]?.id ?? '';
+	function splitAcrossPayers() {
+		const singlePayerId = payers[0]?.memberId || currentMemberId || members[0]?.id || '';
+		if (members.length < 2) return;
+		payers = memberPayerRows(() => '');
+		// keep the person already chosen first, so their row is where the eye lands
+		payers.sort((a, b) => Number(b.memberId === singlePayerId) - Number(a.memberId === singlePayerId));
 	}
 
-	function addPayer() {
-		if (payers.length === 0) {
-			payers = [
-				{ id: generateId(), memberId: currentMemberId ?? members[0]?.id ?? '', amount: '' }
-			];
-			return;
-		}
-		if (payers.length === 1) {
-			payers = [
-				{ ...payers[0], amount: amountStr(amountCents) },
-				{ id: generateId(), memberId: nextAvailableMember(), amount: '' }
-			];
-			return;
-		}
-		payers = [...payers, { id: generateId(), memberId: nextAvailableMember(), amount: '' }];
-	}
-
-	function removePayer(id: string) {
-		if (payers.length <= 1) return;
-		payers = payers.filter((p) => p.id !== id);
-		if (payers.length === 1) payers = [{ ...payers[0], amount: '' }];
+	function useSinglePayer() {
+		const largest = payers.reduce<{ memberId: string; cents: number } | null>((best, p, i) => {
+			const cents = payerCents[i];
+			return cents > (best?.cents ?? 0) ? { memberId: p.memberId, cents } : best;
+		}, null);
+		const memberId = largest?.memberId ?? payers[0]?.memberId ?? currentMemberId ?? members[0]?.id ?? '';
+		payers = [{ id: generateId(), memberId, amount: '' }];
 	}
 
 	function fillPayerRow(id: string) {
@@ -578,7 +569,7 @@
 		saveFailure = null;
 
 		const finalPayments = isMultiPayer
-			? payers.map((p, i) => ({ memberId: p.memberId, amount: payerCents[i] }))
+			? payers.map((p, i) => ({ memberId: p.memberId, amount: payerCents[i] })).filter((p) => p.amount > 0)
 			: [{ memberId: payers[0].memberId, amount: amountCents }];
 
 		const conversion = isForeign ? fxForSave(fx, fxCtx, Date.now()) : null;
@@ -644,36 +635,26 @@
 				</p>
 			{/if}
 
+			<div class="currency-chip-row">
+				<button
+					type="button"
+					class="currency-chip"
+					aria-label="Change currency ({currencyCode})"
+					aria-haspopup="dialog"
+					onclick={() => (currencyOpen = true)}
+				>
+					<span class="num currency-chip-sym">{currencySymbol}</span>
+					<span class="currency-chip-code">{currencyCode}</span>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="currency-chip-chevron" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+				</button>
+			</div>
 			{#if currencyOpen}
-				<div class="card field-card currency-card">
-					<CurrencyPicker
-						code={currencyCode}
-						symbol={currencySymbol}
-						label="Currency"
-						startOpen
-						onSelect={(p) => {
-							pickCurrency(p);
-							currencyOpen = false;
-						}}
-						onCustom={(s) => {
-							pickCustomCurrency(s);
-							currencyOpen = false;
-						}}
-					/>
-				</div>
-			{:else}
-				<div class="currency-chip-row">
-					<button
-						type="button"
-						class="currency-chip"
-						aria-label="Change currency ({currencyCode})"
-						onclick={() => (currencyOpen = true)}
-					>
-						<span class="num currency-chip-sym">{currencySymbol}</span>
-						<span class="currency-chip-code">{currencyCode}</span>
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="currency-chip-chevron" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-					</button>
-				</div>
+				<CurrencySheet
+					code={currencyCode}
+					onSelect={pickCurrency}
+					onCustom={pickCustomCurrency}
+					onclose={() => (currencyOpen = false)}
+				/>
 			{/if}
 
 			{#if isForeign}
@@ -815,8 +796,8 @@
 				{currency}
 				{currentMemberId}
 				onUpdatePayer={setPayerRow}
-				onAddPayer={addPayer}
-				onRemovePayer={removePayer}
+				onSplitAcrossPayers={splitAcrossPayers}
+				onUseSinglePayer={useSinglePayer}
 				onFillPayer={fillPayerRow}
 			/>
 
@@ -905,11 +886,6 @@
 		color: var(--ink);
 		font-size: 13px;
 		line-height: 1.45;
-	}
-
-	.currency-card {
-		padding: 4px;
-		margin-bottom: 10px;
 	}
 
 	.currency-chip-row {

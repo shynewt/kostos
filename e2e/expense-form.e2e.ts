@@ -179,12 +179,41 @@ describe('rounding notes', () => {
 	});
 
 	it('flags paid-by rows that round', async () => {
-		await page.getByText('Add another payer').first().click();
+		await page.getByRole('button', { name: 'Several people paid' }).click();
 		const rows = page.locator('input[aria-label^="Amount paid by"]');
 		await rows.nth(0).fill('1.234');
 		await rows.nth(1).fill('1.236');
 		const notes = await page.locator('.rounding-note').allInnerTexts();
 		expect(notes).toEqual(expect.arrayContaining(['Saved as 1.23', 'Saved as 1.24']));
+	});
+});
+
+describe('several payers', () => {
+	it('lists every member, ignores empty rows and saves only who paid', async () => {
+		await openAddForm();
+		await amountInput().fill('30');
+		await page.getByRole('button', { name: 'Several people paid' }).click();
+		const rows = page.locator('input[aria-label^="Amount paid by"]');
+		expect(await rows.count()).toBe(4);
+		const status = page.locator('.paid-status');
+		expect(await status.innerText()).toContain('€30.00 left');
+		await rows.nth(0).fill('20');
+		await rows.nth(1).fill('15');
+		expect(await status.innerText()).toContain('€5.00 too much');
+		await rows.nth(1).fill('10');
+		expect(await status.innerText()).toContain('All paid');
+		await saveAndOpen('E2E two payers');
+		await page.getByText('€20.00').first().waitFor();
+		expect(await page.getByText('€10.00').count()).toBeGreaterThan(0);
+	});
+
+	it('goes back to a single payer', async () => {
+		await openAddForm();
+		await amountInput().fill('30');
+		await page.getByRole('button', { name: 'Several people paid' }).click();
+		await page.getByRole('button', { name: 'Just one payer' }).click();
+		expect(await page.locator('input[aria-label^="Amount paid by"]').count()).toBe(0);
+		expect(await page.getByRole('button', { name: 'Several people paid' }).count()).toBe(1);
 	});
 });
 
