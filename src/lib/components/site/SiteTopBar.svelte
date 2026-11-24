@@ -17,5 +17,7 @@
 	.logo-tile { display: grid; place-items: center; width: 2.25rem; height: 2.25rem; border-radius: 0.65rem; background: var(--accent); color: var(--accent-ink); }
 	.logo-name { font-size: 1.5rem; }
 	.source { color: var(--ink-2); font-size: 0.9rem; text-decoration: none; }
-	.source:hover { color: var(--ink); }
+	@media (hover: hover) {
+		.source:hover { color: var(--ink); }
+	}
 </style>

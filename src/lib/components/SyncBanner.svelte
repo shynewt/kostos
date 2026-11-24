@@ -82,7 +82,12 @@
 		flex-shrink: 0; border: 0; background: transparent; color: var(--ink); font: inherit; font-weight: 600;
 		padding: 6px 8px; border-radius: 999px; cursor: pointer; transition: background-color 140ms;
 	}
-	.action:hover, .action:focus-visible { background: color-mix(in oklab, var(--ink) 9%, transparent); }
+	.action:focus-visible { background: color-mix(in oklab, var(--ink) 9%, transparent); }
+	@media (hover: hover) {
+		.action:hover { background: color-mix(in oklab, var(--ink) 9%, transparent); }
+	}
 	.review { transition: background-color 140ms; }
-	.review:hover { background: color-mix(in oklab, var(--warn) 17%, transparent); }
+	@media (hover: hover) {
+		.review:hover { background: color-mix(in oklab, var(--warn) 17%, transparent); }
+	}
 </style>

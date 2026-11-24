@@ -89,8 +89,10 @@
 		cursor: pointer;
 	}
 
-	.period-row:hover {
-		background: color-mix(in oklab, var(--ink) 6%, transparent);
+	@media (hover: hover) {
+		.period-row:hover {
+			background: color-mix(in oklab, var(--ink) 6%, transparent);
+		}
 	}
 
 	.period-row.on {

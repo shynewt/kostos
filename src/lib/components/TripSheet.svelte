@@ -175,8 +175,10 @@
 		border-radius: 10px;
 	}
 
-	.sheet-row:hover {
-		background: color-mix(in oklab, var(--ink) 6%, transparent);
+	@media (hover: hover) {
+		.sheet-row:hover {
+			background: color-mix(in oklab, var(--ink) 6%, transparent);
+		}
 	}
 
 	.sheet-row.on {

@@ -80,7 +80,9 @@
 		background: color-mix(in oklab, var(--ink) 4%, transparent); cursor: pointer;
 		box-shadow: inset 0 0 0 1.5px transparent; transition: background-color 160ms, box-shadow 160ms;
 	}
-	.option:hover { background: color-mix(in oklab, var(--ink) 7%, transparent); }
+	@media (hover: hover) {
+		.option:hover { background: color-mix(in oklab, var(--ink) 7%, transparent); }
+	}
 	.option.selected { background: color-mix(in oklab, var(--accent) 10%, transparent); box-shadow: inset 0 0 0 1.5px var(--accent); }
 	.option:has(.sr:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 	.sr { position: absolute; opacity: 0; pointer-events: none; }

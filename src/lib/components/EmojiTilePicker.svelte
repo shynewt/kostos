@@ -159,8 +159,10 @@
 		transition: background 0.12s ease, transform 0.12s ease;
 	}
 
-	.emoji-cell:hover {
-		background: color-mix(in oklab, var(--ink) 6%, transparent);
+	@media (hover: hover) {
+		.emoji-cell:hover {
+			background: color-mix(in oklab, var(--ink) 6%, transparent);
+		}
 	}
 
 	.emoji-cell.on {

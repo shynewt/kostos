@@ -298,8 +298,10 @@
 		text-underline-offset: 3px;
 	}
 
-	.restore-link:hover {
-		color: var(--accent);
+	@media (hover: hover) {
+		.restore-link:hover {
+			color: var(--accent);
+		}
 	}
 
 	.emoji-block {
@@ -324,8 +326,10 @@
 		transition: transform 0.12s ease;
 	}
 
-	.swatch:hover {
-		transform: scale(1.08);
+	@media (hover: hover) {
+		.swatch:hover {
+			transform: scale(1.08);
+		}
 	}
 
 	.swatch.on {

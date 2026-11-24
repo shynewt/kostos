@@ -274,9 +274,11 @@
 		transition: background 0.12s ease, border-color 0.12s ease;
 	}
 
-	.auto-fill:hover {
-		background: color-mix(in oklab, var(--accent) 18%, transparent);
-		border-color: var(--accent);
+	@media (hover: hover) {
+		.auto-fill:hover {
+			background: color-mix(in oklab, var(--accent) 18%, transparent);
+			border-color: var(--accent);
+		}
 	}
 
 	.auto-fill svg {
