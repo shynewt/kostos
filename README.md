@@ -52,12 +52,12 @@ Kostos is a small web app for splitting bills with friends, housemates, or trip 
 <sub>Math toolbar</sub>
 </td>
 <td align="center" width="33%">
-<img src="docs/screenshots/06-stats.png" width="240" alt="Stats page with spend and who-paid breakdowns" /><br/>
+<img src="docs/screenshots/06-stats.png" width="240" alt="Stats page with total spent, spending over time and a breakdown by category" /><br/>
 <sub>Stats</sub>
 </td>
 <td align="center" width="33%">
-<img src="docs/screenshots/07-trips.png" width="240" alt="Manage trips screen with active and past trips" /><br/>
-<sub>Manage trips</sub>
+<img src="docs/screenshots/08-group.png" width="240" alt="Group tab with the group details, members, invite and currency settings" /><br/>
+<sub>Group and members</sub>
 </td>
 </tr>
 </table>
