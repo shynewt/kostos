@@ -76,7 +76,7 @@ async function join(page: Page, ref: { roomId: string; secret: string }) {
 async function add(page: Page, roomId: string, description: string, amount: string) {
 	await page.goto(`${BASE}/p/${roomId}/add`);
 	await page.fill('[aria-label="Amount, accepts math expressions"]', amount);
-	await page.fill('input[placeholder="What was it for?"]', description);
+	await page.getByLabel('What for?', { exact: true }).fill(description);
 	await page.click('.save-btn'); await page.waitForURL(`${BASE}/p/${roomId}`);
 }
 async function screenshot(page: Page, name: string) {
@@ -259,7 +259,7 @@ describe('mobile sync and freshness', () => {
 		await page.goto(`${BASE}/p/${ref.roomId}/add`);
 		await abortLocalWrites(page);
 		await page.fill('[aria-label="Amount, accepts math expressions"]', '12');
-		await page.fill('input[placeholder="What was it for?"]', 'Retry after local storage failure');
+		await page.getByLabel('What for?', { exact: true }).fill('Retry after local storage failure');
 		await page.click('.save-btn');
 		await page.waitForSelector('[data-sync-state="local-error"]', { state: 'attached' });
 		await page.getByRole('alert').filter({ hasText: 'Couldn’t save on this phone' }).waitFor();

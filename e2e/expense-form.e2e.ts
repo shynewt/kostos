@@ -71,7 +71,7 @@ const chargedInput = () => page.locator('[aria-label="Amount charged in EUR"]');
 const delta = () => page.locator('.fx-delta');
 
 async function saveAndOpen(title: string): Promise<string> {
-	await page.fill('input[placeholder="What was it for?"]', title);
+	await page.getByLabel('What for?', { exact: true }).fill(title);
 	await page.click('.save-btn');
 	await page.waitForURL(/\/p\/DEMO$/);
 	await page.goto(`${BASE}/p/DEMO/expenses`);
@@ -191,7 +191,7 @@ describe('rounding notes', () => {
 describe('validation message timing', () => {
 	it('waits for the latest edit before showing a problem, while Save disables at once', async () => {
 		await openAddForm();
-		await page.fill('input[placeholder="What was it for?"]', 'E2E timing');
+		await page.getByLabel('What for?', { exact: true }).fill('E2E timing');
 		await amountInput().fill('1+');
 		expect(await page.locator('.save-btn').isDisabled()).toBe(true);
 		await page.waitForTimeout(550);

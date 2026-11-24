@@ -60,8 +60,8 @@
 <div class="card split-card">
 	<div class="row between" style="margin-bottom: 12px;">
 		<div class="eyebrow">Split</div>
-		<div class="dim mono split-summary">
-			{involvedList.length} OF {members.length} INVOLVED
+		<div class="dim split-summary">
+			{involvedList.length} of {members.length} people
 		</div>
 	</div>
 
@@ -213,7 +213,7 @@
 	}
 
 	.split-summary {
-		font-size: 11px;
+		font-size: 12px;
 	}
 
 	.split-tabs {

@@ -16,7 +16,6 @@
 		symbol: string;
 		currency: string;
 		currentMemberId: string | null;
-		dateStr: string;
 		onUpdatePayer: (id: string, updates: Partial<PaymentRow>) => void;
 		onAddPayer: () => void;
 		onRemovePayer: (id: string) => void;
@@ -34,7 +33,6 @@
 		symbol,
 		currency,
 		currentMemberId,
-		dateStr = $bindable(),
 		onUpdatePayer,
 		onAddPayer,
 		onRemovePayer,
@@ -196,24 +194,14 @@
 				<span>Add another payer</span>
 			</button>
 			<span
-				class="paid-status mono"
+				class="paid-status"
 				class:tone-owed={paidShort === 0}
 				class:tone-owe={paidShort !== 0}
 			>
-				PAID {formatAmount(paidTotal, symbol, currency)} / {formatAmount(amountCents, symbol, currency)}
+				Paid <span class="num">{formatAmount(paidTotal, symbol, currency)}</span> of <span class="num">{formatAmount(amountCents, symbol, currency)}</span>
 			</span>
 		</div>
 	{/if}
-	<hr class="hairline" />
-	<div class="field">
-		<span class="cat-tile field-tile">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
-		</span>
-		<span class="col field-text">
-			<span class="field-label">Date</span>
-			<input class="date-input" type="date" bind:value={dateStr} />
-		</span>
-	</div>
 </div>
 
 <style>
@@ -309,16 +297,6 @@
 
 	.payer-row.on .payer-name {
 		color: var(--accent);
-	}
-
-	.date-input {
-		background: transparent;
-		border: 0;
-		padding: 4px 0 0;
-		font-size: 14px;
-		color: var(--ink);
-		outline: none;
-		font-family: var(--font-sans);
 	}
 
 	.multi-payer-header {
@@ -438,8 +416,7 @@
 	}
 
 	.paid-status {
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 600;
-		letter-spacing: 0.06em;
 	}
 </style>
