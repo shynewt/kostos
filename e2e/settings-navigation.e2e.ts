@@ -183,6 +183,24 @@ describe('group tab', () => {
 		await expect(memberRow('Daniel').count()).resolves.toBe(0);
 	});
 
+	it('offers invite in the demo too, explaining there is no link to share', async () => {
+		for (const open of [
+			() => page.getByRole('button', { name: 'Share invite' }).click(),
+			async () => {
+				await openSettings();
+				await page.getByRole('button', { name: /Invite people/ }).click();
+			}
+		]) {
+			await open();
+			const sheet = page.getByRole('dialog', { name: 'Invite people' });
+			await sheet.getByText('The demo only lives on this phone').waitFor();
+			expect(await sheet.getByRole('link', { name: 'Create a group' }).getAttribute('href')).toBe('/new');
+			expect(await sheet.getByLabel('Invite link').count()).toBe(0);
+			await sheet.getByRole('button', { name: 'Close' }).click();
+			await sheet.waitFor({ state: 'detached' });
+		}
+	});
+
 	it('gives the header one switcher link and a sync button', async () => {
 		await page.goto(`${BASE}/p/DEMO`);
 		const header = page.locator('header.app-bar');

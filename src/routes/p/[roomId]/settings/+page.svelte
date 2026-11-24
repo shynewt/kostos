@@ -23,7 +23,7 @@
 	import { plural } from '$lib/plural';
 	import { SPLIT_DEFAULT_LABELS } from '$lib/split-default';
 	import { getCurrentMember, getTheme, removeProject, setCurrentMember } from '$lib/storage';
-	import { addMember, generateId, memberHistoryCount, removeMember, updateMember, updateProject } from '$lib/sync/doc';
+	import { addMember, DEMO_ROOM_ID, generateId, memberHistoryCount, removeMember, updateMember, updateProject } from '$lib/sync/doc';
 	import { archiveRules } from '$lib/sync/recurring';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 	import type { SplitDefault } from '$lib/types';
@@ -56,6 +56,7 @@
 	});
 
 	const inviteUrl = $derived(groupInviteUrl(roomId));
+	const canOpenInvite = $derived(inviteUrl !== null || roomId === DEMO_ROOM_ID);
 	const currencyLocked = $derived(expenses.length > 0);
 	const autoFetchRates = $derived(project?.autoFetchRates ?? true);
 	const paymentMethodsEnabled = $derived(project?.paymentMethodsEnabled ?? true);
@@ -190,7 +191,7 @@
 				<SettingsRow title="Add member" onopen={() => (openSheet = 'add-member')}>
 					{#snippet icon()}<path d="M12 5v14M5 12h14" />{/snippet}
 				</SettingsRow>
-				{#if inviteUrl}
+				{#if canOpenInvite}
 					<SettingsRow title="Invite people" onopen={() => (openSheet = 'invite')}>
 						{#snippet icon()}<path d="M12 4v12M8 8l4-4 4 4M5 14v5h14v-5" />{/snippet}
 					</SettingsRow>
@@ -310,7 +311,7 @@
 					</div>
 				</form>
 			</BottomSheet>
-		{:else if openSheet === 'invite' && inviteUrl}
+		{:else if openSheet === 'invite' && canOpenInvite}
 			<InviteSheet url={inviteUrl} groupName={project.name} onclose={() => (openSheet = null)} />
 		{:else if openSheet === 'currency'}
 			<CurrencySheet code={project.currency} onSelect={pickCurrency} onCustom={customCurrency} onclose={() => (openSheet = null)} />

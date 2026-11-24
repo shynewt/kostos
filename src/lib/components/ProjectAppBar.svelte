@@ -1,5 +1,6 @@
 <script lang="ts">
 	import InviteSheet, { groupInviteUrl } from './InviteSheet.svelte';
+	import { DEMO_ROOM_ID } from '$lib/sync/doc';
 	import LegacyGroupBanner from './LegacyGroupBanner.svelte';
 	import SyncBanner from './SyncBanner.svelte';
 	import SyncStatus from './SyncStatus.svelte';
@@ -22,6 +23,8 @@
 
 	let showInvite = $state(false);
 	const inviteUrl = $derived(groupInviteUrl(roomId));
+	// the demo shows the button too, and its sheet explains why there's nothing to share
+	const canOpenInvite = $derived(inviteUrl !== null || roomId === DEMO_ROOM_ID);
 </script>
 
 <header class="app-bar">
@@ -46,7 +49,7 @@
 		</span>
 	</a>
 	<div class="actions">
-		{#if inviteUrl}
+		{#if canOpenInvite}
 			<button class="icon-btn" type="button" aria-label="Share invite" aria-haspopup="dialog" onclick={() => (showInvite = true)}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 4v12M8 8l4-4 4 4M5 14v5h14v-5" /></svg>
 			</button>
@@ -57,7 +60,7 @@
 <SyncBanner conflicts />
 <LegacyGroupBanner />
 
-{#if inviteUrl && showInvite}
+{#if canOpenInvite && showInvite}
 	<InviteSheet url={inviteUrl} groupName={name} onclose={() => (showInvite = false)} />
 {/if}
 
