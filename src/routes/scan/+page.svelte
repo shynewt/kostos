@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { newSiteJoinLink } from '$lib/migration';
 	import { goto } from '$app/navigation';
 	import { parseToken } from '$lib/token';
 	import { onMount } from 'svelte';
@@ -14,6 +15,12 @@
 		const value = raw.trim();
 		if (!value) return false;
 
+		const onNewSite = newSiteJoinLink(value);
+		if (onNewSite) {
+			status = 'matched';
+			location.assign(onNewSite);
+			return true;
+		}
 		const parsed = parseToken(value);
 		if (parsed) {
 			status = 'matched';

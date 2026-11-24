@@ -14,10 +14,17 @@
 	import MathToolbar from '$lib/components/MathToolbar.svelte';
 	import MigrationBanner from '$lib/components/MigrationBanner.svelte';
 	import UpdateBanner from '$lib/components/UpdateBanner.svelte';
+	import { page } from '$app/state';
+	import { NEW_ORIGIN, NEW_SITE_PATHS } from '$lib/migration';
 
 	const isProd = !import.meta.env.DEV;
 
 	let { children } = $props();
+
+	// a cached app or an old bookmark can still open these here; new groups start on the new site
+	$effect(() => {
+		if (NEW_SITE_PATHS.includes(page.url.pathname)) location.replace(`${NEW_ORIGIN}${page.url.pathname}`);
+	});
 </script>
 
 <svelte:head>

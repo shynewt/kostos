@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canRetryMove, exportWarning, isLockedHere, moveStage, RETIREMENT_LABEL, retirementNotice, NEW_ORIGIN, newInviteLink, openOnNewSiteLink } from './migration';
+import { canRetryMove, exportWarning, isLockedHere, newSiteJoinLink, moveStage, RETIREMENT_LABEL, retirementNotice, NEW_ORIGIN, newInviteLink, openOnNewSiteLink } from './migration';
 import type { MirrorStatus } from './move/provider';
 import { LOCAL_STATUS, type SyncStatus } from './sync/status';
 
@@ -93,5 +93,22 @@ describe('isLockedHere', () => {
 
 	it('never locks a group that has not moved', () => {
 		expect(isLockedHere(false, new Date(2027, 1, 20))).toBe(false);
+	});
+});
+
+describe('newSiteJoinLink', () => {
+	const v3Secret = 'Iqt5oQ0PyKFW98ffHaY8aA';
+
+	it('sends new-site invites, as a link or a bare key, to the new site', () => {
+		expect(newSiteJoinLink(`https://kostos.app/join#${v3Secret}`)).toBe(`${NEW_ORIGIN}/join#${v3Secret}`);
+		expect(newSiteJoinLink(`  ${v3Secret}  `)).toBe(`${NEW_ORIGIN}/join#${v3Secret}`);
+		expect(newSiteJoinLink(`https://kostos.app/join#${v3Secret}&member=anna`)).toBe(`${NEW_ORIGIN}/join#${v3Secret}`);
+	});
+
+	it('leaves old invites to this site', () => {
+		const oldSecret = Buffer.alloc(32, 2).toString('base64url');
+		expect(newSiteJoinLink(`https://kostos.shynewt.com/join?room=PRT-AB12-CD34#${oldSecret}`)).toBeNull();
+		expect(newSiteJoinLink(`PRT-AB12-CD34.${oldSecret}`)).toBeNull();
+		expect(newSiteJoinLink(oldSecret)).toBeNull();
 	});
 });

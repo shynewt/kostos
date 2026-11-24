@@ -11,6 +11,21 @@ export const FREEZE_DATE = '2027-01-31';
 // a local v3 server stands in for the real one in development and the cross-version e2e run
 export const NEW_ORIGIN = (import.meta.env.VITE_NEW_ORIGIN as string | undefined) || `https://${APP_HOST}`;
 
+/** Screens that only make sense on the new site: starting a group there, not here. */
+export const NEW_SITE_PATHS = ['/new', '/restore', '/import'];
+
+const V3_SECRET = /^[A-Za-z0-9_-]{22}$/;
+
+/** A pasted or scanned invite from the new site (`/join#<22 characters>` or the bare key) belongs there. */
+export function newSiteJoinLink(raw: string): string | null {
+	const text = raw.trim();
+	if (text.includes('room=')) return null;
+	const hash = text.indexOf('#');
+	const fragment = hash === -1 ? text : text.slice(hash + 1);
+	const secret = fragment.split('&')[0];
+	return V3_SECRET.test(secret) ? `${NEW_ORIGIN}/join#${secret}` : null;
+}
+
 const DAY_MS = 86_400_000;
 /** How long before the switch-off the banner turns into a warning. */
 const URGENT_DAYS = 30;
