@@ -66,7 +66,7 @@
 	<Figure
 		src="/landing/currency.webp"
 		width={780}
-		height={738}
+		height={610}
 		alt="A $45 expense where the bank charged €42.10, 1.7% more than the market rate of 0.92"
 		caption="A $45 expense, with the €42.10 the bank actually charged."
 	/>
