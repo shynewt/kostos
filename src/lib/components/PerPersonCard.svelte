@@ -44,7 +44,7 @@
 					</span>
 				</div>
 				<div class="person-meta">
-					<span class="dim">Share {formatAmount(row.cost, symbol, currency)} · paid {formatAmount(row.paid, symbol, currency)}</span>
+					<span class="dim">Share {formatAmount(row.cost, symbol, currency)} · Paid {formatAmount(row.paid, symbol, currency)}</span>
 					<span class="dim person-standing">{standing(row.difference)}</span>
 				</div>
 				<div class="gap-track" aria-hidden="true">

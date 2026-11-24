@@ -79,6 +79,16 @@ describe('stats', () => {
 		await expect.poll(heroAmount).toBe('€1,729.45');
 	});
 
+	it('captions the busiest period, then whichever bar is tapped', async () => {
+		const caption = page.locator('.spend-caption');
+		expect(await caption.innerText()).toMatch(/^Busiest: Week of/);
+		const bars = page.locator('.spend-col');
+		await bars.first().click();
+		await expect.poll(() => caption.innerText()).not.toMatch(/^Busiest/);
+		expect(await bars.first().getAttribute('aria-pressed')).toBe('true');
+		expect(await caption.innerText()).toContain(await bars.first().getAttribute('aria-label').then((label) => label!.split(': ')[1]));
+	});
+
 	it('shows an empty state for a month with no spending and offers all time', async () => {
 		await periodChip().click();
 		await periodSheet().getByRole('button', { name: /^This month/ }).click();

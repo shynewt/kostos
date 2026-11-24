@@ -43,6 +43,12 @@
 	});
 
 	const describe = (b: SpendBucket) => `${formatBucket(b.start, series.size)}: ${formatAmount(b.total, symbol, currency)}`;
+
+	let pickedStart = $state<number | null>(null);
+	const peak = $derived(series.buckets.reduce<SpendBucket | null>((best, b) => (b.total > (best?.total ?? 0) ? b : best), null));
+	// a pick from an earlier filter no longer exists once the series changes
+	const picked = $derived(series.buckets.find((b) => b.start === pickedStart) ?? null);
+	const shown = $derived(picked ?? peak);
 </script>
 
 <div class="card spend-card">
@@ -53,29 +59,30 @@
 	<div class="spend-bars">
 		{#each series.buckets as b (b.start)}
 			{@const heightPct = (b.total / max) * 100}
-			{@const isPeak = b.total === max && b.total > 0}
-			{#if series.size === 'month'}
-				<button
-					type="button"
-					class="spend-col is-month"
-					aria-label="{describe(b)}. Show this month"
-					title={describe(b)}
-					onclick={() => onPickMonth(b.start)}
-				>
-					<span class="spend-bar" class:peak={isPeak} style="height: max(2px, {heightPct}%);"></span>
-				</button>
-			{:else}
-				<div class="spend-col" role="img" aria-label={describe(b)} title={describe(b)}>
-					<span class="spend-bar" class:peak={isPeak} style="height: max(2px, {heightPct}%);"></span>
-				</div>
-			{/if}
+			<button
+				type="button"
+				class="spend-col"
+				aria-label={describe(b)}
+				aria-pressed={shown?.start === b.start}
+				onclick={() => (pickedStart = b.start)}
+			>
+				<span class="spend-bar" class:on={shown?.start === b.start} style="height: max(2px, {heightPct}%);"></span>
+			</button>
 		{/each}
 	</div>
 	<div class="row between spend-axis" aria-hidden="true">
 		{#each axisLabels as label, i (i)}<span>{label}</span>{/each}
 	</div>
-	{#if series.size === 'month'}
-		<p class="dim spend-hint">Tap a month to see just that month.</p>
+	{#if shown}
+		<div class="row between spend-caption" aria-live="polite">
+			<span>
+				<span class="dim">{picked ? '' : 'Busiest: '}{formatBucket(shown.start, series.size)}</span>
+				<span class="num spend-caption-amount">{formatAmount(shown.total, symbol, currency)}</span>
+			</span>
+			{#if series.size === 'month'}
+				<button type="button" class="spend-only" onclick={() => onPickMonth(shown.start)}>Show only this month</button>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -115,12 +122,12 @@
 		border-radius: 4px;
 	}
 
-	.spend-col.is-month {
+	.spend-col {
 		cursor: pointer;
 		-webkit-tap-highlight-color: transparent;
 	}
 
-	.spend-col.is-month:focus-visible {
+	.spend-col:focus-visible {
 		outline: 2px solid var(--accent);
 		outline-offset: 2px;
 	}
@@ -133,12 +140,14 @@
 		transition: background 0.12s ease;
 	}
 
-	.spend-bar.peak {
+	.spend-bar.on {
 		background: var(--accent);
 	}
 
-	.spend-col.is-month:hover .spend-bar:not(.peak) {
-		background: var(--ink-3);
+	@media (hover: hover) {
+		.spend-col:hover .spend-bar:not(.on) {
+			background: var(--ink-3);
+		}
 	}
 
 	.spend-axis {
@@ -149,8 +158,27 @@
 		letter-spacing: 0.04em;
 	}
 
-	.spend-hint {
-		margin: 10px 0 0;
-		font-size: 12px;
+	.spend-caption {
+		margin-top: 12px;
+		padding-top: 10px;
+		border-top: 1px solid var(--line);
+		gap: 10px;
+		flex-wrap: wrap;
+		font-size: 13px;
+	}
+
+	.spend-caption-amount {
+		margin-left: 6px;
+		font-weight: 600;
+	}
+
+	.spend-only {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: var(--accent);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
 	}
 </style>

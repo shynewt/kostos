@@ -425,9 +425,9 @@
 	}
 
 	.hero-insight {
-		margin: 6px 0 0;
+		margin: 4px 0 0;
 		font-size: 13px;
-		font-weight: 600;
+		color: var(--ink-2);
 	}
 
 	.hero-note {
@@ -440,7 +440,7 @@
 	}
 
 	.section-intro {
-		margin: -4px 4px 10px;
+		margin: -4px 0 10px;
 		font-size: 12px;
 		line-height: 1.45;
 	}

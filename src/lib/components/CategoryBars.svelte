@@ -67,8 +67,11 @@
 		-webkit-tap-highlight-color: transparent;
 	}
 
-	.category-row:hover {
-		background: color-mix(in oklab, var(--ink) 4%, transparent);
+	/* touch screens keep :hover after a tap, which would leave a row looking selected */
+	@media (hover: hover) {
+		.category-row:hover {
+			background: color-mix(in oklab, var(--ink) 4%, transparent);
+		}
 	}
 
 	.category-row:focus-visible {

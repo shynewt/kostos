@@ -37,7 +37,7 @@
 			<span class="cat-tile top-cat">{cat?.emoji ?? '📦'}</span>
 			<div class="col top-text">
 				<span class="top-title">{e.description || 'Expense'}</span>
-				<span class="dim mono top-meta">
+				<span class="dim top-meta">
 					{formatDay(e.date)} · {e.payments[0]?.memberId === currentMemberId ? 'You' : payerName} paid{#if amount !== base.amount}{` ${formatAmount(base.amount, symbol, currency)}`}{/if}
 				</span>
 			</div>
@@ -79,7 +79,7 @@
 	}
 
 	.top-meta {
-		font-size: 11px;
+		font-size: 12px;
 		margin-top: 2px;
 	}
 
