@@ -6,7 +6,7 @@
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
 	import { formatAmount } from '$lib/money';
 	import { listProjects, type ProjectRef } from '$lib/storage';
-	import { NEW_ORIGIN } from '$lib/migration';
+	import { NEW_ORIGIN, newSiteJoinLink } from '$lib/migration';
 	import { parseToken } from '$lib/token';
 
 	let projects = $state<ProjectRef[]>([]);
@@ -26,15 +26,19 @@
 	}
 
 	$effect(() => {
-		projects = listProjects();
+		// read into a local first: reading `projects` right after writing it would rerun this effect forever
+		const stored = listProjects();
+		projects = stored;
 		// nothing to move from this phone, so the old site has nothing left to offer it
-		if (projects.length === 0) location.replace(NEW_ORIGIN);
+		if (stored.length === 0) location.replace(NEW_ORIGIN);
 	});
 
 	const hasProjects = $derived(projects.length > 0);
 
 	function onJoinSubmit(event: SubmitEvent) {
 		event.preventDefault();
+		const onNewSite = newSiteJoinLink(token);
+		if (onNewSite) { location.assign(onNewSite); return; }
 		const parsed = parseToken(token);
 		if (!parsed) {
 			error = 'That token does not look right. Paste the full invite link, or `ROOM.SECRET`.';
@@ -240,7 +244,7 @@
 			</section>
 
 			<div class="row gap-8 action-row">
-				<a class="btn action-btn" href="/new">
+				<a class="btn action-btn" href="{NEW_ORIGIN}/new">
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 6v12M6 12h12" /></svg>
 					<span>New group</span>
 				</a>
@@ -260,7 +264,7 @@
 			{/if}
 		{:else}
 			<div class="cta-stack">
-				<a class="btn btn-primary btn-block primary-cta" href="/new">
+				<a class="btn btn-primary btn-block primary-cta" href="{NEW_ORIGIN}/new">
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12" /></svg>
 					<span>Create a group</span>
 				</a>
