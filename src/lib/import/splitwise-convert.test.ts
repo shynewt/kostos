@@ -139,3 +139,11 @@ describe('convertSplitwise', () => {
 		expect(mostUsedCurrency(parseOk(fixture('splitwise-trip.csv')))).toBe('EUR');
 	});
 });
+
+describe('splitwiseCategoryId with odd names', () => {
+	it('matches only real categories, never inherited object keys', () => {
+		for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+			expect(splitwiseCategoryId(name)).toBeUndefined();
+		}
+	});
+});

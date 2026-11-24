@@ -15,6 +15,9 @@
 	import { plural } from '$lib/plural';
 	import type { Member } from '$lib/types';
 
+	// well above any one group's export; it only stops a wrong file from freezing the tab
+	const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let file = $state<SplitwiseFile | null>(null);
 	let members = $state<Member[]>([]);
@@ -49,10 +52,12 @@
 	const paymentCount = $derived(file ? file.rows.filter((row) => row.isPayment).length : 0);
 	const dateRange = $derived.by(() => {
 		if (!file) return '';
+		// rows hold UTC days, and spreading a huge array into Math.min would overflow the stack
 		const dates = file.rows.map((row) => row.date);
-		const format = (ms: number) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-		const oldest = format(Math.min(...dates));
-		const newest = format(Math.max(...dates));
+		const format = (ms: number) =>
+			new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+		const oldest = format(dates.reduce((min, date) => Math.min(min, date)));
+		const newest = format(dates.reduce((max, date) => Math.max(max, date)));
 		return oldest === newest ? oldest : `${oldest} to ${newest}`;
 	});
 	const notes = $derived.by(() => {
@@ -75,6 +80,11 @@
 		if (!picked) return;
 		reset();
 		fileName = picked.name;
+		if (picked.size > MAX_FILE_BYTES) {
+			parseError = 'That file is too big to be a Splitwise export. Pick the CSV you exported from one group.';
+			input.value = '';
+			return;
+		}
 		const result = parseSplitwiseCsv(await picked.text());
 		if (!result.ok) {
 			parseError = result.error;

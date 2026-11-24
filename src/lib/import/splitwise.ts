@@ -164,13 +164,13 @@ function readCurrency(raw: string, line: number): string {
 	return code;
 }
 
-/** A local-noon timestamp, so the day doesn't shift when shown in another timezone. */
+/** The day's UTC midnight, the same convention the expense form saves dates with. */
 function readDate(raw: string, line: number): number {
 	const iso = raw.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:$|[T ])/);
 	if (iso) {
 		const [, year, month, day] = iso.map(Number);
-		const date = new Date(year, month - 1, day, 12);
-		if (date.getMonth() === month - 1 && date.getDate() === day) return date.getTime();
+		const date = new Date(Date.UTC(year, month - 1, day));
+		if (date.getUTCMonth() === month - 1 && date.getUTCDate() === day) return date.getTime();
 	}
 	throw new RowError(`Line ${line} has “${raw}” where a date like 2024-05-31 should be.`);
 }
@@ -198,6 +198,9 @@ function readAmount(raw: string, decimals: number, line: number, allowEmpty: boo
 		throw new RowError(`Line ${line} has “${raw}” where an amount should be.`);
 	}
 	const scaled = Number(`${integerPart || '0'}.${fractionPart || '0'}`) * 10 ** decimals;
+	if (!Number.isSafeInteger(Math.round(scaled))) {
+		throw new RowError(`Line ${line} has an amount too large to import: “${raw}”.`);
+	}
 	const value = Math.abs(scaled - Math.round(scaled)) < 1e-6 ? Math.round(scaled) : scaled;
 	return negative ? -value : value;
 }

@@ -13,12 +13,15 @@ export function parseCsv(input: string, delimiter = detectDelimiter(input)): str
 	const rows: string[][] = [];
 	let row: string[] = [];
 	let field = '';
+	// a quote only opens a quoted field when nothing but spaces came before it in the field
+	let fieldIsBlank = true;
 	let inQuotes = false;
 	let index = 0;
 
 	const endField = () => {
 		row.push(field);
 		field = '';
+		fieldIsBlank = true;
 	};
 	const endRow = () => {
 		endField();
@@ -42,7 +45,7 @@ export function parseCsv(input: string, delimiter = detectDelimiter(input)): str
 			index++;
 			continue;
 		}
-		if (char === '"' && field.trim() === '') {
+		if (char === '"' && fieldIsBlank) {
 			field = '';
 			inQuotes = true;
 		} else if (char === delimiter) {
@@ -52,6 +55,7 @@ export function parseCsv(input: string, delimiter = detectDelimiter(input)): str
 			if (char === '\r' && text[index + 1] === '\n') index++;
 		} else {
 			field += char;
+			if (fieldIsBlank && char.trim() !== '') fieldIsBlank = false;
 		}
 		index++;
 	}

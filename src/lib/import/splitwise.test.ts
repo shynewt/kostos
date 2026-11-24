@@ -46,9 +46,8 @@ describe('parseSplitwiseCsv', () => {
 		expect(file.warnings).toEqual([]);
 	});
 
-	it('stores dates at local noon of the exported day', () => {
-		const date = new Date(parseOk(fixture('splitwise-flat.csv')).rows[0].date);
-		expect([date.getFullYear(), date.getMonth() + 1, date.getDate(), date.getHours()]).toEqual([2024, 3, 1, 12]);
+	it('stores dates the way the rest of the app does, as the UTC day, so no timezone shifts them', () => {
+		expect(parseOk(fixture('splitwise-flat.csv')).rows[0].date).toBe(Date.UTC(2024, 2, 1));
 	});
 
 	it('sums the rows to the total row in every currency', () => {
@@ -138,5 +137,20 @@ describe('groupNameFromFileName', () => {
 		expect(groupNameFromFileName('weekend-in-lisbon_2024-05-31_export.csv')).toBe('Weekend in lisbon');
 		expect(groupNameFromFileName('Flat 12 (1).csv')).toBe('Flat 12');
 		expect(groupNameFromFileName('export.csv')).toBe('Splitwise group');
+	});
+});
+
+describe('hostile files', () => {
+	it('rejects an amount too large to keep exact, instead of poisoning every balance', () => {
+		const huge = '9'.repeat(400);
+		const text = `Date,Description,Category,Cost,Currency,Alice,Bob\n2024-03-01,Rent,General,${huge},EUR,10.00,-10.00\n`;
+		const result = parseSplitwiseCsv(text);
+		expect(result.ok).toBe(false);
+	});
+
+	it('reads a long field full of quotes in linear time', () => {
+		const started = performance.now();
+		parseCsv(`a,${'x"'.repeat(200_000)}\n`);
+		expect(performance.now() - started).toBeLessThan(500);
 	});
 });

@@ -52,7 +52,8 @@ const CATEGORY_IDS: Record<string, string> = {
 };
 
 export function splitwiseCategoryId(category: string): string | undefined {
-	return CATEGORY_IDS[category.trim().toLowerCase()];
+	const key = category.trim().toLowerCase();
+	return Object.hasOwn(CATEGORY_IDS, key) ? CATEGORY_IDS[key] : undefined;
 }
 
 /** The currency most rows use, which makes the fewest expenses need a rate. */
