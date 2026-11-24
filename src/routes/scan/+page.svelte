@@ -114,7 +114,7 @@
 			{/if}
 		</div>
 
-		<p class="dim hint mono">POINT AT A KOSTOS INVITE QR</p>
+		<p class="dim hint">Point your camera at a Kostos invite QR code.</p>
 
 		{#if detail}
 			<p class="detail" role="alert">{detail}</p>
@@ -171,8 +171,8 @@
 
 	.hint {
 		text-align: center;
-		font-size: 11px;
-		letter-spacing: 0.06em;
+		font-size: 13px;
+		line-height: 1.45;
 		margin: 0;
 	}
 

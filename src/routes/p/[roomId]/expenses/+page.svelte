@@ -176,7 +176,8 @@
 			bind:this={searchEl}
 			bind:value={query}
 			class="search-input"
-			placeholder="Search title, payer, category, method, notes"
+			placeholder="Search expenses"
+			aria-label="Search expenses by title, payer, category, payment method or note"
 			type="search"
 			autocomplete="off"
 			spellcheck="false"
@@ -251,14 +252,13 @@
 				</div>
 				<div class="card day-card">
 					{#each g.items as e, i (e.id)}
-						{#if i > 0}<hr class="hairline" style="margin-left: 56px;" />{/if}
+						{#if i > 0}<hr class="hairline" style="margin-left: 66px;" />{/if}
 						<ExpenseRow
 							expense={e}
 							href="/p/{roomId}/expenses/{e.id}"
 							{membersById}
 							{categoryById}
-							{methodById}
-							{tripsById}
+							tripsById={selectedTripId ? undefined : tripsById}
 							{currentMemberId}
 							symbol={currencySymbol} {currency}
 							totalMembers={members.length}
@@ -308,7 +308,7 @@
 	}
 
 	.day-head {
-		margin: 22px 0 8px;
+		margin: 20px 4px 8px;
 	}
 
 	/* match the list's first-gap so the empty state isn't crammed under the summary */
@@ -321,7 +321,8 @@
 	}
 
 	.day-card {
-		padding: 4px;
+		padding: 2px 0;
+		border-radius: var(--radius);
 		content-visibility: auto;
 		contain-intrinsic-size: auto 200px;
 	}

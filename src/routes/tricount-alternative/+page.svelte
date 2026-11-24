@@ -25,7 +25,7 @@
 <JsonLd data={faqSchema(FAQS)} />
 
 <ArticleLayout>
-	<p class="updated">Compared on {COMPARED_ON}</p>
+	<p class="updated dateline">Compared on {COMPARED_ON}</p>
 	<h1>An open source Tricount alternative</h1>
 	<p class="lede">
 		Tricount is free and shows no ads, and so does Kostos. They differ in what happens to your data: Kostos is open source,

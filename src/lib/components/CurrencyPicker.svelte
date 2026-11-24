@@ -306,11 +306,9 @@
 
 	.picker-custom-label {
 		display: block;
-		font-family: var(--font-mono);
-		font-size: 10px;
+		font-size: 13px;
+		font-weight: 500;
 		color: var(--ink-2);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
 		margin-bottom: 8px;
 	}
 
