@@ -4,6 +4,7 @@
 	import type { EditorItem } from '$lib/components/EmojiListEditor.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
 	import { addPaymentMethod, generateId, removePaymentMethod, updatePaymentMethod } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 
@@ -33,7 +34,7 @@
 	<div class="scroll">
 		{#if project && !(project.paymentMethodsEnabled ?? true)}
 			<EmptyCard>
-				<p>Payment methods are off. Turn on "Track payment method" in settings to edit them.</p>
+				<p>Payment methods are off. Turn on Track payment methods on the Group tab to edit them.</p>
 			</EmptyCard>
 		{:else if project}
 			<p class="dim intro">Note how each expense was paid, like cash or card.</p>
@@ -52,6 +53,7 @@
 			</div>
 		{/if}
 	</div>
+	<TabBar {roomId} active="group" />
 </div>
 
 <style>

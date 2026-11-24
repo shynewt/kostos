@@ -84,8 +84,9 @@ async function screenshot(page: Page, name: string) {
 	await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
+const syncButton = (page: Page) => page.getByRole('button', { name: /^Sync status:/ });
 async function openSheet(page: Page) {
-	await page.locator('.sync-line').click(); await page.getByRole('dialog', { name: /./ }).waitFor();
+	await syncButton(page).click(); await page.getByRole('dialog', { name: /./ }).waitFor();
 	await page.waitForTimeout(50);
 }
 async function closeSheet(page: Page) {
@@ -170,10 +171,10 @@ describe('mobile sync and freshness', () => {
 		await add(page, ref.roomId, 'Coffee saved offline', '12');
 		await screenshot(page, '04-pending-changes');
 		await page.reload(); await page.waitForSelector('[data-sync-state="syncing"]', { state: 'attached' });
-		expect(await page.locator('.sync-line').innerText()).toContain('Syncing 1 change');
+		expect(await syncButton(page).getAttribute('aria-label')).toContain('Syncing 1 change');
 		await page.context().setOffline(true); await page.waitForSelector('[data-sync-state="offline"]', { state: 'attached' });
 		await screenshot(page, '05-offline');
-		expect(await page.locator('.sync-line').innerText()).toContain('Offline');
+		expect(await syncButton(page).getAttribute('aria-label')).toContain('Offline');
 		await openSheet(page); await screenshot(page, '10-offline-details'); await closeSheet(page);
 		expect(await page.locator('.balance-amount').count()).toBe(1);
 		await page.locator(`a[href="/p/${ref.roomId}/expenses"]`).click();
@@ -190,9 +191,13 @@ describe('mobile sync and freshness', () => {
 		const light = await phone('light'); await join(light, ref); await screenshot(light, '08-up-to-date-light');
 		await openSheet(light); await screenshot(light, '17-sync-sheet-light'); await closeSheet(light);
 		await light.setViewportSize({ width: 320, height: 740 });
-		const line = await light.locator('.sync-line').boundingBox();
-		expect(line?.x).toBeGreaterThanOrEqual(0);
-		expect((line?.x ?? 0) + (line?.width ?? 0)).toBeLessThanOrEqual(320 - 22 - 36 * 2 - 6);
+		const switcher = await light.getByRole('link', { name: /Switch group$/ }).boundingBox();
+		const share = await light.getByRole('button', { name: 'Share invite' }).boundingBox();
+		const sync = await syncButton(light).boundingBox();
+		expect(switcher?.x).toBeGreaterThanOrEqual(0);
+		expect((switcher?.x ?? 0) + (switcher?.width ?? 0)).toBeLessThanOrEqual(share?.x ?? 0);
+		expect((share?.x ?? 0) + (share?.width ?? 0)).toBeLessThanOrEqual(sync?.x ?? 0);
+		expect((sync?.x ?? 0) + (sync?.width ?? 0)).toBeLessThanOrEqual(320 - 22);
 		expect(await light.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 		await screenshot(light, '13-narrow-phone');
 	});
@@ -323,7 +328,7 @@ describe('mobile sync and freshness', () => {
 		const roomId = await storeGroup(page, Buffer.alloc(16, 2).toString('base64url'));
 		await page.goto(`${BASE}/p/${roomId}`); await synced(page);
 		expect(await page.locator('.project-name').innerText()).toContain('Lisbon Crew');
-		await page.goto(`${BASE}/p/${roomId}/people`); await synced(page);
+		await page.goto(`${BASE}/p/${roomId}/people`); await page.waitForURL(`${BASE}/p/${roomId}/settings`); await synced(page);
 		expect(await page.getByText('Anna', { exact: true }).count()).toBeGreaterThan(0);
 		expect(await page.getByText('Marco', { exact: true }).count()).toBeGreaterThan(0);
 		await page.goto(`${BASE}/p/${roomId}/expenses`); await synced(page);

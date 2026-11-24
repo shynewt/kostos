@@ -12,7 +12,10 @@
 <div class="screen" data-page="settings">
 	<ScreenAppBar title="Settings" backHref="/" />
 	<div class="scroll settings-scroll">
-		<AppearanceControls />
+		<section class="card appearance-card">
+			<div class="eyebrow">Appearance</div>
+			<AppearanceControls />
+		</section>
 		<p class="version">Kostos v{version}</p>
 	</div>
 </div>
@@ -22,6 +25,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
+	}
+
+	.appearance-card {
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
 	}
 
 	.version {

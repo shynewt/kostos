@@ -104,7 +104,7 @@
 				<div class="pick-emoji">📦</div>
 				<h2 class="pick-title">Pick a Kostos backup file</h2>
 				<p class="pick-sub">
-					A JSON backup file exported from a group's Settings. Restoring it creates a new group on
+					A JSON file saved with Back up on a group's Group tab. Restoring it creates a new group on
 					this device with the members and expenses it holds.
 				</p>
 				<button type="button" class="btn btn-primary pick-btn" onclick={() => fileInput?.click()}>

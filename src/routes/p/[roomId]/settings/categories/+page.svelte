@@ -3,6 +3,7 @@
 	import EmojiListEditor from '$lib/components/EmojiListEditor.svelte';
 	import type { EditorItem } from '$lib/components/EmojiListEditor.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
 	import { addCategory, generateId, removeCategory, updateCategory } from '$lib/sync/doc';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 
@@ -48,6 +49,7 @@
 			</div>
 		{/if}
 	</div>
+	<TabBar {roomId} active="group" />
 </div>
 
 <style>

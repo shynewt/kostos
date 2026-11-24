@@ -272,11 +272,11 @@ async function main() {
 	await page.waitForTimeout(400);
 	await shot('06-stats');
 
-	// 8. Settings: data section
-	await page.click('a[aria-label="Group settings"]');
-	await page.waitForSelector('text=Export backup (JSON)');
-	await page.evaluate(() => {
-		document.querySelector('.data-card')?.scrollIntoView({ block: 'center' });
+	// 8. Group tab: data section
+	await page.click('.tabbar a[href$="/settings"]');
+	await page.waitForSelector('text=Back up (JSON)');
+	await page.getByRole('button', { name: 'Back up (JSON)' }).evaluate((element) => {
+		element.scrollIntoView({ block: 'center' });
 	});
 	await page.waitForTimeout(300);
 	await shot('08-data');

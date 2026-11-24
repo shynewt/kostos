@@ -35,8 +35,7 @@
 	}
 </script>
 
-<section class="card appearance">
-	<div class="eyebrow">Appearance</div>
+<div class="appearance">
 
 	<div class="row">
 		<span class="label">Theme</span>
@@ -70,7 +69,7 @@
 			{/each}
 		</div>
 	</div>
-</section>
+</div>
 
 <style>
 	.appearance {
