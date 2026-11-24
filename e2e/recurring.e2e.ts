@@ -102,6 +102,8 @@ describe('repeating expenses', () => {
 		await expect.poll(() => page.getByTestId('repeat-card').innerText()).toContain('Repeats monthly');
 		await page.getByRole('button', { name: 'Stop repeating' }).click();
 		await expect.poll(() => page.locator('.repeat-stopped').innerText()).toContain('Repeated monthly until');
+		// the card updates at once, but the stop only counts once it's saved on the phone
+		await page.getByRole('status').filter({ hasText: 'Stopped repeating' }).waitFor();
 
 		await page.goto(`${BASE}/p/DEMO/expenses`);
 		await expect.poll(() => rentRows().count()).toBe(2);

@@ -310,6 +310,8 @@ describe('mobile sync and freshness', () => {
 		expect(await page.getByText('Seafood dinner', { exact: true }).count()).toBe(0);
 		await page.getByRole('button', { name: 'Undo', exact: true }).click();
 		await page.getByText('Seafood dinner', { exact: true }).waitFor();
+		// the restore shows at once, but only counts once it's saved on the phone
+		await page.getByRole('status').filter({ hasText: 'Expense restored' }).waitFor();
 		await page.reload(); await synced(page);
 		expect(await page.getByText('Seafood dinner', { exact: true }).count()).toBe(1);
 		await page.getByText('Seafood dinner', { exact: true }).click();

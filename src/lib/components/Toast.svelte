@@ -7,10 +7,12 @@
 	async function runAction() {
 		const action = toast?.action;
 		if (!toast || !action || running) return;
+		// the action may show its own message; only close the toast that was tapped
+		const tappedId = toast.id;
 		running = true;
 		try {
 			await action.run();
-			dismissToast(toast.id);
+			dismissToast(tappedId);
 		} finally {
 			running = false;
 		}
