@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { formatAmount } from '$lib/money';
-	import type { Category, Expense, Member } from '$lib/types';
+	import type { SpendLine } from '$lib/stats';
+	import type { Category, Member } from '$lib/types';
 
 	type Props = {
-		expenses: Expense[];
+		lines: SpendLine[];
 		categoryById: Map<string, Category>;
 		membersById: Map<string, Member>;
 		currentMemberId: string | null;
@@ -13,7 +14,7 @@
 	};
 
 	let {
-		expenses,
+		lines,
 		categoryById,
 		membersById,
 		currentMemberId,
@@ -23,12 +24,12 @@
 	}: Props = $props();
 
 	function formatDay(ts: number): string {
-		return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+		return new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' });
 	}
 </script>
 
 <div class="card top-card">
-	{#each expenses as e, i (e.id)}
+	{#each lines as { expense: e, base, amount }, i (e.id)}
 		{@const cat = e.categoryId ? categoryById.get(e.categoryId) : undefined}
 		{@const payerName = membersById.get(e.payments[0]?.memberId ?? '')?.name ?? '—'}
 		{#if i > 0}<hr class="hairline" style="margin-left: 56px;" />{/if}
@@ -37,10 +38,10 @@
 			<div class="col top-text">
 				<span class="top-title">{e.description || 'Expense'}</span>
 				<span class="dim mono top-meta">
-					{formatDay(e.date)} · {e.payments[0]?.memberId === currentMemberId ? 'You' : payerName} paid
+					{formatDay(e.date)} · {e.payments[0]?.memberId === currentMemberId ? 'You' : payerName} paid{#if amount !== base.amount}{` ${formatAmount(base.amount, symbol, currency)}`}{/if}
 				</span>
 			</div>
-			<span class="num top-amount">{formatAmount(e.amount, symbol, currency)}</span>
+			<span class="num top-amount">{formatAmount(amount, symbol, currency)}</span>
 		</a>
 	{/each}
 </div>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Expense, Member, Project } from '$lib/types';
-import { backupFile, spreadsheetFile } from './exportFiles';
+import { backupFile, filteredSpreadsheetFile, spreadsheetFile } from './exportFiles';
+import { toCSV } from './projectArchive';
 import { parseProjectArchive } from './projectArchive';
 
 const now = 1_700_000_000_000;
@@ -30,5 +31,11 @@ describe('export files', () => {
 		const file = spreadsheetFile(project, members, expenses, day);
 		expect(file).toMatchObject({ name: 'kostos-lisbon-weekend-2026-10-16.csv', mime: 'text/csv' });
 		expect(file.contents).toContain('description');
+	});
+
+	it('names a filtered spreadsheet after its scope and keeps the full export format', () => {
+		const file = filteredSpreadsheetFile(project, members, expenses, ['Berlin trip', '2026-10']);
+		expect(file).toMatchObject({ name: 'kostos-lisbon-weekend-berlin-trip-2026-10.csv', mime: 'text/csv' });
+		expect(file.contents).toBe(toCSV(project, members, expenses));
 	});
 });

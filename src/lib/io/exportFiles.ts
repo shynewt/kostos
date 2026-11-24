@@ -35,6 +35,18 @@ export function spreadsheetFile(project: Project, members: Member[], expenses: E
 	return { name: fileName(project, now, 'csv'), mime: 'text/csv', contents: toCSV(project, members, expenses) };
 }
 
+/** A spreadsheet of part of the group's expenses, named after what it holds, e.g.
+ *  `kostos-lisbon-weekend-berlin-trip-2026-10.csv`. */
+export function filteredSpreadsheetFile(
+	project: Project,
+	members: Member[],
+	expenses: Expense[],
+	scope: string[]
+): DownloadableFile {
+	const name = ['kostos', slug(project.name), ...scope.map(slug)].join('-');
+	return { name: `${name}.csv`, mime: 'text/csv', contents: toCSV(project, members, expenses) };
+}
+
 export function saveFile({ name, mime, contents }: DownloadableFile): void {
 	const url = URL.createObjectURL(new Blob([contents], { type: mime }));
 	const link = document.createElement('a');
