@@ -1,3 +1,8 @@
+<script lang="ts" module>
+	// sheets can nest (a trip picker inside expense details); only the top one answers Escape
+	const openSheetIds: string[] = [];
+</script>
+
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
@@ -6,10 +11,11 @@
 		onclose: () => void;
 		/** blocks closing, e.g. while a save is in flight */
 		locked?: boolean;
+		icon?: Snippet;
 		children: Snippet;
 	};
 
-	let { title, onclose, locked = false, children }: Props = $props();
+	let { title, onclose, locked = false, icon, children }: Props = $props();
 
 	const sheetId = $props.id();
 	const titleId = `${sheetId}-title`;
@@ -19,14 +25,16 @@
 	}
 
 	function onWindowKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') close();
+		if (event.key === 'Escape' && openSheetIds.at(-1) === sheetId) close();
 	}
 
 	function focusOnOpen(node: HTMLElement) {
 		const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		openSheetIds.push(sheetId);
 		node.focus({ preventScroll: true });
 		return {
 			destroy() {
+				openSheetIds.splice(openSheetIds.indexOf(sheetId), 1);
 				if (opener?.isConnected) opener.focus({ preventScroll: true });
 			}
 		};
@@ -38,6 +46,7 @@
 <div class="sheet-backdrop" role="presentation" onclick={close}></div>
 <div class="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId} tabindex="-1" use:focusOnOpen>
 	<div class="grabber" aria-hidden="true"></div>
+	{#if icon}<div class="sheet-icon">{@render icon()}</div>{/if}
 	<h2 class="sheet-title" id={titleId}>{title}</h2>
 	{@render children()}
 </div>
@@ -83,6 +92,12 @@
 		border-radius: 999px;
 		background: var(--line-2);
 		margin: 6px auto 14px;
+	}
+
+	.sheet-icon {
+		display: flex;
+		justify-content: center;
+		margin-bottom: 10px;
 	}
 
 	.sheet-title {
