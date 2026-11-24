@@ -87,5 +87,7 @@
 	.fits .ours { position: static; box-shadow: none; }
 	.sources { margin-top: 0.9rem; color: var(--ink-3); font-size: 0.8rem; line-height: 1.5; }
 	.sources a { color: var(--ink-2); text-decoration: none; }
-	.sources a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 0.2em; }
+	@media (hover: hover) {
+		.sources a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 0.2em; }
+	}
 </style>

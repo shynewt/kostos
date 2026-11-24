@@ -105,7 +105,7 @@
 	<Figure
 		src="/landing/currency.webp"
 		width={780}
-		height={738}
+		height={610}
 		alt="A $45 expense where the bank charged €42.10, 1.7% more than the market rate of 0.92"
 		caption="$45 for museum tickets. The bank took €42.10, 1.7% over the market rate."
 	/>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
 	import { partitionTrips } from '$lib/trips';
 	import type { Trip } from '$lib/types';
 
@@ -9,6 +10,8 @@
 		expenseCountForTrip: (tripId: string) => number;
 		onSelect: (tripId: string | null) => void;
 		onOverflowOpen: () => void;
+		/** extra chips at the start of the row, outside the trip tabs */
+		leading?: Snippet;
 	};
 
 	let {
@@ -17,7 +20,8 @@
 		expenseCountAll,
 		expenseCountForTrip,
 		onSelect,
-		onOverflowOpen
+		onOverflowOpen,
+		leading
 	}: Props = $props();
 
 	const partition = $derived(partitionTrips(trips));
@@ -28,44 +32,52 @@
 	);
 </script>
 
-{#if trips.length > 0}
-	<div class="trip-strip" role="tablist" aria-label="Trips">
-		<button
-			type="button"
-			class="trip-chip"
-			class:on={selectedTripId === null}
-			role="tab"
-			aria-selected={selectedTripId === null}
-			onclick={() => onSelect(null)}
-		>
-			<span class="chip-label">All</span>
-			<span class="chip-count mono">{expenseCountAll}</span>
-		</button>
-		{#each activeTrips as t (t.id)}
-			<button
-				type="button"
-				class="trip-chip"
-				class:on={selectedTripId === t.id}
-				role="tab"
-				aria-selected={selectedTripId === t.id}
-				onclick={() => onSelect(t.id)}
-			>
-				<span class="chip-emoji">{t.emoji}</span>
-				<span class="chip-label">{t.name}</span>
-				<span class="chip-count mono">{expenseCountForTrip(t.id)}</span>
-			</button>
-		{/each}
-		{#if pastCount > 0 || selectedIsPast}
-			<button
-				type="button"
-				class="trip-chip overflow-chip"
-				class:on={selectedIsPast}
-				onclick={onOverflowOpen}
-				aria-label="Show all trips"
-			>
-				<span class="chip-label">Past</span>
-				<span class="chip-count mono">{pastCount}</span>
-			</button>
+{#if trips.length > 0 || leading}
+	<div class="trip-strip">
+		{#if leading}
+			{@render leading()}
+			{#if trips.length > 0}<span class="strip-divider" aria-hidden="true"></span>{/if}
+		{/if}
+		{#if trips.length > 0}
+			<div class="trip-tabs" role="tablist" aria-label="Trips">
+				<button
+					type="button"
+					class="trip-chip"
+					class:on={selectedTripId === null}
+					role="tab"
+					aria-selected={selectedTripId === null}
+					onclick={() => onSelect(null)}
+				>
+					<span class="chip-label">All</span>
+					<span class="chip-count mono">{expenseCountAll}</span>
+				</button>
+				{#each activeTrips as t (t.id)}
+					<button
+						type="button"
+						class="trip-chip"
+						class:on={selectedTripId === t.id}
+						role="tab"
+						aria-selected={selectedTripId === t.id}
+						onclick={() => onSelect(t.id)}
+					>
+						<span class="chip-emoji">{t.emoji}</span>
+						<span class="chip-label">{t.name}</span>
+						<span class="chip-count mono">{expenseCountForTrip(t.id)}</span>
+					</button>
+				{/each}
+				{#if pastCount > 0 || selectedIsPast}
+					<button
+						type="button"
+						class="trip-chip overflow-chip"
+						class:on={selectedIsPast}
+						onclick={onOverflowOpen}
+						aria-label="Show all trips"
+					>
+						<span class="chip-label">Past</span>
+						<span class="chip-count mono">{pastCount}</span>
+					</button>
+				{/if}
+			</div>
 		{/if}
 	</div>
 {/if}
@@ -85,6 +97,19 @@
 
 	.trip-strip::-webkit-scrollbar {
 		display: none;
+	}
+
+	.trip-tabs {
+		display: flex;
+		gap: 6px;
+		flex-shrink: 0;
+	}
+
+	.strip-divider {
+		width: 1px;
+		margin: 4px 2px;
+		background: var(--line-2);
+		flex-shrink: 0;
 	}
 
 	.trip-chip {

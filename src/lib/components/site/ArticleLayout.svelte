@@ -45,6 +45,7 @@
 	.article :global(strong) { color: var(--ink); font-weight: 600; }
 	.article :global(a) { color: var(--ink); text-underline-offset: 0.2em; }
 	.article :global(.updated) { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+	.article :global(.updated.dateline) { font-family: var(--font-sans); font-size: 0.875rem; letter-spacing: 0; text-transform: none; }
 
 	.cta {
 		display: grid; gap: 0.5rem; justify-items: center; width: min(100% - 2rem, 44rem); margin: 4rem auto 0; padding: 2rem 1.5rem;

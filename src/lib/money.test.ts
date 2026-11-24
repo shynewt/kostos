@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAmount, formatSigned, toInputValue } from './money';
+import { formatAmount, formatSigned, formatWholeAmount, toInputValue } from './money';
 
 describe('formatAmount', () => {
 	it('renders positive amounts with the currency symbol', () => {
@@ -52,5 +52,17 @@ describe('toInputValue', () => {
 	it('renders zero-decimal currencies as whole numbers', () => {
 		expect(toInputValue(1350, 'JPY')).toBe('1350');
 		expect(toInputValue(50000, 'KRW')).toBe('50000');
+	});
+});
+
+describe('formatWholeAmount', () => {
+	it('rounds to whole units with a thousands separator', () => {
+		expect(formatWholeAmount(4449, '€', 'EUR')).toBe('€44');
+		expect(formatWholeAmount(4450, '€', 'EUR')).toBe('€45');
+		expect(formatWholeAmount(123456789, '€', 'EUR')).toBe('€1,234,568');
+	});
+
+	it('leaves zero-decimal currencies as they are', () => {
+		expect(formatWholeAmount(1500, '¥', 'JPY')).toBe('¥1,500');
 	});
 });

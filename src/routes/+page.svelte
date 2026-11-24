@@ -101,9 +101,10 @@
 
 		{#snippet inviteForm()}
 			<form class="card invite-form" onsubmit={onJoinSubmit}>
-				<div class="eyebrow" style="margin-bottom: 8px;">Paste an invite link or group key</div>
+				<label class="invite-label" for="invite-input">Paste an invite link or group key</label>
 				<div class="input-wrap">
 					<input
+						id="invite-input"
 						class="input invite-input"
 						placeholder="Invite link or group key"
 						bind:value={inviteText}
@@ -368,19 +369,23 @@
 		border: 0;
 	}
 
+	.invite-label {
+		display: block;
+		margin-bottom: 10px;
+		font-size: 15px;
+		font-weight: 600;
+	}
+
 	.hint {
-		font-size: 11px;
-		font-family: var(--font-mono);
+		font-size: 13px;
+		line-height: 1.45;
 		margin-top: 8px;
-		letter-spacing: 0.02em;
-		text-transform: uppercase;
 	}
 
 	.error {
 		margin-top: 10px;
-		font-size: 12px;
+		font-size: 13px;
 		color: var(--owe);
-		font-family: var(--font-mono);
 		line-height: 1.5;
 	}
 

@@ -129,7 +129,7 @@
 				</svg>
 				<div class="col">
 					<span class="dz-title">Drop JSON here or click to choose</span>
-					<span class="dim mono dz-hint">KOSTOS V1 EXPORT · .JSON</span>
+					<span class="dim dz-hint">A Kostos v1 export, as a .json file</span>
 				</div>
 			</button>
 			<input
@@ -249,10 +249,16 @@
 		transition: border-color 0.12s ease, background 0.12s ease;
 	}
 
-	.dropzone:hover,
 	.dropzone.on {
 		border-color: var(--accent);
 		background: color-mix(in oklab, var(--accent) 6%, transparent);
+	}
+
+	@media (hover: hover) {
+		.dropzone:hover {
+			border-color: var(--accent);
+			background: color-mix(in oklab, var(--accent) 6%, transparent);
+		}
 	}
 
 	.dropzone svg {
@@ -268,7 +274,7 @@
 	}
 
 	.dz-hint {
-		font-size: 11px;
+		font-size: 13px;
 		margin-top: 2px;
 	}
 

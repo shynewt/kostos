@@ -2,7 +2,9 @@
 	import BalanceSkeleton from '$lib/components/BalanceSkeleton.svelte';
 	import { page } from '$app/state';
 	import { computeBalances, planSettlements } from '$lib/balance';
+	import { balanceBreakdown } from '$lib/balance-breakdown';
 	import ActivityList from '$lib/components/ActivityList.svelte';
+	import BalanceBreakdownSheet from '$lib/components/BalanceBreakdownSheet.svelte';
 	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
 	import SettlementGraph from '$lib/components/SettlementGraph.svelte';
 	import SettlePanel from '$lib/components/SettlePanel.svelte';
@@ -32,6 +34,11 @@
 	});
 	const plan = $derived(planSettlements(balances));
 
+	let showBreakdown = $state(false);
+	const breakdown = $derived(
+		showBreakdown && currentMemberId ? balanceBreakdown(currentMemberId, expenses, room.currency) : null
+	);
+
 	// cache your net so the home list can show it without opening every room.
 	// only once an identity is claimed here, since "your" balance needs it.
 	$effect(() => {
@@ -48,11 +55,10 @@
 	const activity = $derived(room.activity);
 	const recentActivity = $derived([...activity].slice(-5).reverse());
 
-	// Gate on the people actually in the plan, not the whole group, and cap it so the
-	// two-column flow stays a comfortable height on a phone.
-	const MAX_GRAPH_PARTICIPANTS = 10;
-	const planParticipants = $derived(new Set(plan.flatMap((t) => [t.from, t.to])).size);
-	const showGraph = $derived(plan.length > 0 && planParticipants <= MAX_GRAPH_PARTICIPANTS);
+	// the graph repeats the settle-up list, so it only earns its space when it shows a shape
+	// the list can't: one transfer is just the row again, and past three the arrows cross
+	// and the amount labels crowd each other on a phone
+	const showGraph = $derived(plan.length >= 2 && plan.length <= 3);
 
 	// Whoever owes the most should front the next expense; it nudges the group back to even.
 	const bestPayer = $derived.by(() => {
@@ -88,15 +94,26 @@
 		{/if}
 
 		<section class="balance-block">
-			<div class="eyebrow balance-eyebrow">{balanceEyebrow(yourBalance)}</div>
-			<div
-				class="balance-amount"
-				class:tone-owed={yourBalance > 0}
-				class:tone-owe={yourBalance < 0}
-			>
-				<span class="symbol">{currencySymbol}</span>{formatAmount(Math.abs(yourBalance), '', currency)}
-			</div>
-			{#if !youMember}
+			{#snippet balance()}
+				<span class="eyebrow balance-eyebrow">{balanceEyebrow(yourBalance)}</span>
+				<span
+					class="balance-amount"
+					class:tone-owed={yourBalance > 0}
+					class:tone-owe={yourBalance < 0}
+				>
+					<span class="symbol">{currencySymbol}</span>{formatAmount(Math.abs(yourBalance), '', currency)}
+				</span>
+			{/snippet}
+			{#if youMember}
+				<button class="balance-button" type="button" aria-haspopup="dialog" onclick={() => (showBreakdown = true)}>
+					{@render balance()}
+					<span class="balance-explain">
+						How your balance adds up
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+					</span>
+				</button>
+			{:else}
+				{@render balance()}
 				<p class="dim balance-sub">No member claimed on this device.</p>
 			{/if}
 		</section>
@@ -113,8 +130,7 @@
 
 		{#if plan.length > 0}
 			<div class="section-head settle-head">
-				<div class="eyebrow">Settle up</div>
-				<span class="dim mono plan-count">tap any to settle</span>
+				<h2 class="eyebrow">Settle up</h2>
 			</div>
 			<SettlePanel
 				{roomId}
@@ -144,6 +160,16 @@
 		{/if}
 	</div>
 
+	{#if breakdown}
+		<BalanceBreakdownSheet
+			{breakdown}
+			{roomId}
+			symbol={currencySymbol}
+			{currency}
+			onclose={() => (showBreakdown = false)}
+		/>
+	{/if}
+
 	<TabBar {roomId} active="home" />
 </div>
 
@@ -158,11 +184,33 @@
 		text-align: center;
 	}
 
+	.balance-button {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 100%;
+		padding: 6px 0 4px;
+		background: transparent;
+		border: 0;
+		border-radius: var(--radius);
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.balance-button:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
 	.balance-eyebrow {
+		display: block;
 		margin-bottom: 8px;
 	}
 
 	.balance-amount {
+		display: block;
 		font-family: var(--font-display);
 		font-size: 64px;
 		line-height: 1;
@@ -177,10 +225,29 @@
 		opacity: 0.7;
 	}
 
+	.balance-explain {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		margin-top: 14px;
+		font-size: 13px;
+		color: var(--ink-2);
+	}
+
+	.balance-explain svg {
+		width: 14px;
+		height: 14px;
+	}
+
+	@media (hover: hover) {
+		.balance-button:hover .balance-explain {
+			color: var(--ink);
+		}
+	}
+
 	.balance-sub {
 		margin: 12px 0 0;
-		font-size: 12px;
-		font-family: var(--font-mono);
+		font-size: 13px;
 	}
 
 	.tip {
@@ -207,6 +274,10 @@
 		margin-bottom: 10px;
 	}
 
+	.settle-head h2 {
+		margin: 0;
+	}
+
 	.recent-head {
 		margin: 34px 0 10px;
 	}
@@ -215,10 +286,6 @@
 		font-size: 11px;
 		color: var(--accent);
 		text-decoration: none;
-	}
-
-	.plan-count {
-		font-size: 11px;
 	}
 
 	.all-settled {

@@ -3,13 +3,7 @@
 	import { currencySymbolFor } from '$lib/currencies';
 	import { expenseInBase } from '$lib/currency-convert';
 	import { formatAmount, formatSigned } from '$lib/money';
-	import type {
-		Category,
-		Expense,
-		Member,
-		PaymentMethodItem,
-		Trip
-	} from '$lib/types';
+	import type { Category, Expense, Member, Trip } from '$lib/types';
 	import Highlight from './Highlight.svelte';
 
 	type Props = {
@@ -17,7 +11,7 @@
 		href: string;
 		membersById: Map<string, Member>;
 		categoryById: Map<string, Category>;
-		methodById: Map<string, PaymentMethodItem>;
+		/** omit to hide the trip, e.g. when the list is already filtered to one trip */
 		tripsById?: Map<string, Trip>;
 		currentMemberId: string | null;
 		symbol: string;
@@ -27,6 +21,7 @@
 		showInvolvedCount?: boolean;
 		query?: string;
 		conflict?: boolean;
+		repeating?: boolean;
 	};
 
 	let {
@@ -34,7 +29,6 @@
 		href,
 		membersById,
 		categoryById,
-		methodById,
 		tripsById,
 		currentMemberId,
 		symbol,
@@ -43,14 +37,12 @@
 		showDate = true,
 		showInvolvedCount = true,
 		query = '',
-		conflict = false
+		conflict = false,
+		repeating = false
 	}: Props = $props();
 
 	const category = $derived(
 		expense.categoryId ? categoryById.get(expense.categoryId) : undefined
-	);
-	const method = $derived(
-		expense.paymentMethodId ? methodById.get(expense.paymentMethodId) : undefined
 	);
 	const trip = $derived(
 		expense.tripId && tripsById ? tripsById.get(expense.tripId) : undefined
@@ -65,12 +57,23 @@
 	const payersLabel = $derived.by(() => {
 		if (expense.payments.length === 0) return '—';
 		const first = payerName(expense.payments[0].memberId);
-		const verb = expense.payments[0].memberId === currentMemberId ? 'paid' : 'paid';
-		if (expense.payments.length === 1) return `${first} ${verb}`;
-		if (expense.payments.length === 2) {
-			return `${first} & ${payerName(expense.payments[1].memberId)} ${verb}`;
+		if (expense.isSettlement) {
+			const recipientId = expense.splits[0]?.memberId;
+			if (!recipientId) return `${first} paid`;
+			const recipient = recipientId === currentMemberId ? 'you' : payerName(recipientId);
+			return `${first} paid ${recipient}`;
 		}
-		return `${first} + ${expense.payments.length - 1} others ${verb}`;
+		if (expense.payments.length === 1) return `${first} paid`;
+		if (expense.payments.length === 2) {
+			return `${first} & ${payerName(expense.payments[1].memberId)} paid`;
+		}
+		return `${first} + ${expense.payments.length - 1} others paid`;
+	});
+
+	const involvedLabel = $derived.by(() => {
+		const count = expense.splits.length;
+		if (count >= totalMembers) return 'Everyone';
+		return `${count} of ${totalMembers} ${totalMembers === 1 ? 'person' : 'people'}`;
 	});
 
 	// the row amount stays in the expense's own currency; balance impact is in base so it
@@ -121,33 +124,31 @@
 			<span class="row-title">
 				<Highlight text={expense.description || 'Expense'} {query} />
 			</span>
+			{#if repeating}
+				<svg class="repeat-mark" role="img" aria-label="Repeats" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+			{/if}
 			{#if conflict}
 				<span class="review-dot" role="img" aria-label="Edited on two phones. Needs review"></span>
 			{/if}
 			{#if expense.isSettlement}
-				<span class="sticker mode-sticker settle-sticker">SETTLEMENT</span>
+				<span class="mode-badge settle-badge">Settlement</span>
 			{:else if expense.splitMode === 'shares'}
-				<span class="sticker mode-sticker">SHARES</span>
+				<span class="mode-badge">By shares</span>
 			{:else if expense.splitMode === 'amount'}
-				<span class="sticker mode-sticker">AMOUNTS</span>
+				<span class="mode-badge">By amount</span>
 			{/if}
 		</span>
-		<span class="dim mono row-meta">
+		<span class="dim row-meta">
 			{#if showDate}<span>{shortDate(expense.date)}</span><span class="dot">·</span>{/if}
 			<span><Highlight text={payersLabel} {query} /></span>
-			{#if method}
+			{#if showInvolvedCount && !expense.isSettlement}
 				<span class="dot">·</span>
-				<span class="row-method" title={method.name}>{method.emoji}</span>
-			{/if}
-			{#if trip}
-				<span class="dot">·</span>
-				<span class="row-trip" title={trip.name}>{trip.emoji}</span>
-			{/if}
-			{#if showInvolvedCount}
-				<span class="dot">·</span>
-				<span>{expense.splits.length}/{totalMembers}</span>
+				<span>{involvedLabel}</span>
 			{/if}
 		</span>
+		{#if trip}
+			<span class="dim row-trip">{trip.emoji} {trip.name}</span>
+		{/if}
 		{#if noteMatch}
 			<span class="dim row-note-match">
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h14v16H5z" /><path d="M9 9h6M9 13h6M9 17h4" /></svg>
@@ -179,7 +180,7 @@
 		display: flex;
 		align-items: center;
 		gap: 12px;
-		padding: 9px 12px;
+		padding: 11px 14px;
 		text-decoration: none;
 		color: inherit;
 	}
@@ -193,10 +194,22 @@
 		background: color-mix(in oklab, var(--accent) 16%, transparent);
 	}
 
-	.settle-sticker {
-		background: var(--accent);
-		color: var(--accent-ink);
-		border-color: var(--accent);
+	.mode-badge {
+		flex-shrink: 0;
+		padding: 1px 7px;
+		border: 1px solid var(--line-2);
+		border-radius: 999px;
+		font-size: 11px;
+		font-weight: 500;
+		line-height: 1.5;
+		color: var(--ink-2);
+		white-space: nowrap;
+	}
+
+	.settle-badge {
+		background: color-mix(in oklab, var(--accent) 16%, transparent);
+		border-color: color-mix(in oklab, var(--accent) 40%, transparent);
+		color: var(--ink);
 	}
 
 	.row-text {
@@ -218,6 +231,13 @@
 		text-overflow: ellipsis;
 	}
 
+	.repeat-mark {
+		width: 13px;
+		height: 13px;
+		flex-shrink: 0;
+		color: var(--ink-2);
+	}
+
 	.review-dot {
 		width: 7px;
 		height: 7px;
@@ -226,27 +246,25 @@
 		background: var(--warn);
 	}
 
-	.mode-sticker {
-		padding: 2px 6px;
-		font-size: 9px;
-	}
-
 	.row-meta {
 		display: inline-flex;
 		flex-wrap: wrap;
 		align-items: center;
 		gap: 4px;
-		font-size: 11px;
+		font-size: 12px;
+		line-height: 1.4;
 	}
 
 	.dot {
 		opacity: 0.6;
 	}
 
-	.row-method,
 	.row-trip {
-		font-size: 13px;
-		line-height: 1;
+		font-size: 12px;
+		line-height: 1.4;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.row-amount-col {

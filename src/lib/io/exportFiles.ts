@@ -1,4 +1,4 @@
-import type { Expense, Member, Project } from '$lib/types';
+import type { ArchivedRule, Expense, Member, Project } from '$lib/types';
 import { serializeProject, toCSV } from './projectArchive';
 
 type DownloadableFile = { name: string; mime: string; contents: string };
@@ -17,16 +17,34 @@ function fileName(project: Project, now: Date, extension: string): string {
 	return `kostos-${slug(project.name)}-${now.toISOString().slice(0, 10)}.${extension}`;
 }
 
-export function backupFile(project: Project, members: Member[], expenses: Expense[], now = new Date()): DownloadableFile {
+export function backupFile(
+	project: Project,
+	members: Member[],
+	expenses: Expense[],
+	now = new Date(),
+	recurring: ArchivedRule[] = []
+): DownloadableFile {
 	return {
 		name: fileName(project, now, 'json'),
 		mime: 'application/json',
-		contents: JSON.stringify(serializeProject(project, members, expenses), null, 2)
+		contents: JSON.stringify(serializeProject(project, members, expenses, recurring), null, 2)
 	};
 }
 
 export function spreadsheetFile(project: Project, members: Member[], expenses: Expense[], now = new Date()): DownloadableFile {
 	return { name: fileName(project, now, 'csv'), mime: 'text/csv', contents: toCSV(project, members, expenses) };
+}
+
+/** A spreadsheet of part of the group's expenses, named after what it holds, e.g.
+ *  `kostos-lisbon-weekend-berlin-trip-2026-10.csv`. */
+export function filteredSpreadsheetFile(
+	project: Project,
+	members: Member[],
+	expenses: Expense[],
+	scope: string[]
+): DownloadableFile {
+	const name = ['kostos', slug(project.name), ...scope.map(slug)].join('-');
+	return { name: `${name}.csv`, mime: 'text/csv', contents: toCSV(project, members, expenses) };
 }
 
 export function saveFile({ name, mime, contents }: DownloadableFile): void {

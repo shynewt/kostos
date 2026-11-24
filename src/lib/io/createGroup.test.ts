@@ -4,7 +4,7 @@ import { deriveLocalId, INSECURE_CONTEXT_MESSAGE } from '$lib/sync/crypto';
 import { destroyRoom, openRoom, readExpenses, readMembers, readProject, type RoomHandle } from '$lib/sync/doc';
 import type { Expense, Member } from '$lib/types';
 import { parseProjectArchive } from './projectArchive';
-import { archiveContents, createGroup, seedRoom } from './createGroup';
+import { archiveContents, createGroup, newGroupProject, seedRoom } from './createGroup';
 
 vi.mock('$lib/sync/doc', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/sync/doc')>();
@@ -66,6 +66,26 @@ describe('seedRoom', () => {
 		await handle.ready;
 		seedRoom(handle, { ...contents().project, id: 'SILENT-ROOM' }, members, expenses);
 		expect(handle.activity.length).toBe(0);
+	});
+});
+
+describe('newGroupProject', () => {
+	const fields = { name: 'Weekend', emoji: '🏠', color: 'lime', currency: 'EUR', currencySymbol: '€' } as const;
+
+	it('starts a new group with payment methods turned off', async () => {
+		const roomId = await createGroup({ project: newGroupProject(fields, now), members, expenses: [] }, 'anna');
+		expect(readProject(openRoom(roomId))).toMatchObject({ name: 'Weekend', paymentMethodsEnabled: false, createdAt: now });
+	});
+
+	it('keeps payment methods on for a restored group that never stored the flag', async () => {
+		const roomId = await createGroup(contents(), null);
+		expect(readProject(openRoom(roomId))?.paymentMethodsEnabled).toBe(true);
+	});
+
+	it('keeps the stored choice of a restored group', async () => {
+		const restored = contents();
+		const roomId = await createGroup({ ...restored, project: { ...restored.project, paymentMethodsEnabled: false } }, null);
+		expect(readProject(openRoom(roomId))?.paymentMethodsEnabled).toBe(false);
 	});
 });
 

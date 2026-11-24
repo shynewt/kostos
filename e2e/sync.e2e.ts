@@ -76,7 +76,7 @@ async function join(page: Page, ref: { roomId: string; secret: string }) {
 async function add(page: Page, roomId: string, description: string, amount: string) {
 	await page.goto(`${BASE}/p/${roomId}/add`);
 	await page.fill('[aria-label="Amount, accepts math expressions"]', amount);
-	await page.fill('input[placeholder="What was it for?"]', description);
+	await page.getByLabel('What for?', { exact: true }).fill(description);
 	await page.click('.save-btn'); await page.waitForURL(`${BASE}/p/${roomId}`);
 }
 async function screenshot(page: Page, name: string) {
@@ -84,8 +84,9 @@ async function screenshot(page: Page, name: string) {
 	await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
+const syncButton = (page: Page) => page.getByRole('button', { name: /^Sync status:/ });
 async function openSheet(page: Page) {
-	await page.locator('.sync-line').click(); await page.getByRole('dialog', { name: /./ }).waitFor();
+	await syncButton(page).click(); await page.getByRole('dialog', { name: /./ }).waitFor();
 	await page.waitForTimeout(50);
 }
 async function closeSheet(page: Page) {
@@ -170,10 +171,10 @@ describe('mobile sync and freshness', () => {
 		await add(page, ref.roomId, 'Coffee saved offline', '12');
 		await screenshot(page, '04-pending-changes');
 		await page.reload(); await page.waitForSelector('[data-sync-state="syncing"]', { state: 'attached' });
-		expect(await page.locator('.sync-line').innerText()).toContain('Syncing 1 change');
+		expect(await syncButton(page).getAttribute('aria-label')).toContain('Syncing 1 change');
 		await page.context().setOffline(true); await page.waitForSelector('[data-sync-state="offline"]', { state: 'attached' });
 		await screenshot(page, '05-offline');
-		expect(await page.locator('.sync-line').innerText()).toContain('Offline');
+		expect(await syncButton(page).getAttribute('aria-label')).toContain('Offline');
 		await openSheet(page); await screenshot(page, '10-offline-details'); await closeSheet(page);
 		expect(await page.locator('.balance-amount').count()).toBe(1);
 		await page.locator(`a[href="/p/${ref.roomId}/expenses"]`).click();
@@ -190,9 +191,13 @@ describe('mobile sync and freshness', () => {
 		const light = await phone('light'); await join(light, ref); await screenshot(light, '08-up-to-date-light');
 		await openSheet(light); await screenshot(light, '17-sync-sheet-light'); await closeSheet(light);
 		await light.setViewportSize({ width: 320, height: 740 });
-		const line = await light.locator('.sync-line').boundingBox();
-		expect(line?.x).toBeGreaterThanOrEqual(0);
-		expect((line?.x ?? 0) + (line?.width ?? 0)).toBeLessThanOrEqual(320 - 22 - 36 * 2 - 6);
+		const switcher = await light.getByRole('link', { name: /Switch group$/ }).boundingBox();
+		const share = await light.getByRole('button', { name: 'Share invite' }).boundingBox();
+		const sync = await syncButton(light).boundingBox();
+		expect(switcher?.x).toBeGreaterThanOrEqual(0);
+		expect((switcher?.x ?? 0) + (switcher?.width ?? 0)).toBeLessThanOrEqual(share?.x ?? 0);
+		expect((share?.x ?? 0) + (share?.width ?? 0)).toBeLessThanOrEqual(sync?.x ?? 0);
+		expect((sync?.x ?? 0) + (sync?.width ?? 0)).toBeLessThanOrEqual(320 - 22);
 		expect(await light.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 		await screenshot(light, '13-narrow-phone');
 	});
@@ -259,7 +264,7 @@ describe('mobile sync and freshness', () => {
 		await page.goto(`${BASE}/p/${ref.roomId}/add`);
 		await abortLocalWrites(page);
 		await page.fill('[aria-label="Amount, accepts math expressions"]', '12');
-		await page.fill('input[placeholder="What was it for?"]', 'Retry after local storage failure');
+		await page.getByLabel('What for?', { exact: true }).fill('Retry after local storage failure');
 		await page.click('.save-btn');
 		await page.waitForSelector('[data-sync-state="local-error"]', { state: 'attached' });
 		await page.getByRole('alert').filter({ hasText: 'Couldn’t save on this phone' }).waitFor();
@@ -289,7 +294,6 @@ describe('mobile sync and freshness', () => {
 		await page.getByText('Seafood dinner', { exact: true }).click();
 		await abortLocalWrites(page);
 		await page.getByRole('button', { name: 'Delete', exact: true }).click();
-		await page.getByRole('button', { name: 'Tap again to delete', exact: true }).click();
 		await page.getByRole('alert').filter({ hasText: 'Couldn’t delete this on your phone' }).waitFor();
 		expect(page.url()).toContain('/expenses/dinner');
 		await screenshot(page, '15-deletion-save-error');
@@ -301,12 +305,30 @@ describe('mobile sync and freshness', () => {
 		expect(await second.getByText('Seafood dinner', { exact: true }).count()).toBe(0);
 		expect(await second.getByText('Sofia → Anna', { exact: true }).count()).toBe(1);
 	});
+	it('undoes a deletion from the toast and keeps the expense after a reload', async () => {
+		const page = await phone(); const ref = await seed(page);
+		await page.goto(`${BASE}/p/${ref.roomId}/expenses`); await synced(page);
+		await page.getByText('Seafood dinner', { exact: true }).click();
+		await page.getByRole('button', { name: 'Delete', exact: true }).click();
+		await page.waitForURL(`${BASE}/p/${ref.roomId}/expenses`);
+		await page.getByRole('status').filter({ hasText: 'Expense deleted' }).waitFor();
+		expect(await page.getByText('Seafood dinner', { exact: true }).count()).toBe(0);
+		await page.getByRole('button', { name: 'Undo', exact: true }).click();
+		await page.getByText('Seafood dinner', { exact: true }).waitFor();
+		// the restore shows at once, but only counts once it's saved on the phone
+		await page.getByRole('status').filter({ hasText: 'Expense restored' }).waitFor();
+		await page.reload(); await synced(page);
+		expect(await page.getByText('Seafood dinner', { exact: true }).count()).toBe(1);
+		await page.getByText('Seafood dinner', { exact: true }).click();
+		await page.waitForSelector('[data-page="expense-detail"]');
+		expect(await page.locator('[data-page="expense-detail"]').getByText('Edited on two phones').count()).toBe(0);
+	});
 	it('opens the existing y-indexeddb schema without resetting saved project data', async () => {
 		const page = await phone(); await page.goto(`${BASE}/`);
 		const roomId = await storeGroup(page, Buffer.alloc(16, 2).toString('base64url'));
 		await page.goto(`${BASE}/p/${roomId}`); await synced(page);
 		expect(await page.locator('.project-name').innerText()).toContain('Lisbon Crew');
-		await page.goto(`${BASE}/p/${roomId}/people`); await synced(page);
+		await page.goto(`${BASE}/p/${roomId}/people`); await page.waitForURL(`${BASE}/p/${roomId}/settings`); await synced(page);
 		expect(await page.getByText('Anna', { exact: true }).count()).toBeGreaterThan(0);
 		expect(await page.getByText('Marco', { exact: true }).count()).toBeGreaterThan(0);
 		await page.goto(`${BASE}/p/${roomId}/expenses`); await synced(page);
@@ -346,7 +368,7 @@ describe('mobile sync and freshness', () => {
 		const page = await phone(); await page.goto(`${BASE}/new`);
 		await page.fill('input[placeholder="Group name"]', 'Weekend');
 		await page.fill('input[placeholder="Your name"]', 'Anna');
-		await page.getByRole('button', { name: 'Create', exact: true }).click();
+		await page.getByRole('button', { name: 'Create group', exact: true }).click();
 		await page.waitForURL(LOCAL_ID); await synced(page);
 	});
 	it('rejects old invites with a message that names the older version', async () => {

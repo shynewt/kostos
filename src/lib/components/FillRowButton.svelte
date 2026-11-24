@@ -37,9 +37,11 @@
 		transition: background 0.12s ease, color 0.12s ease;
 	}
 
-	.fill-row-btn:hover {
-		background: color-mix(in oklab, var(--accent) 20%, transparent);
-		color: var(--accent);
+	@media (hover: hover) {
+		.fill-row-btn:hover {
+			background: color-mix(in oklab, var(--accent) 20%, transparent);
+			color: var(--accent);
+		}
 	}
 
 	.fill-row-btn svg {

@@ -1,4 +1,4 @@
-/* Group split default in a real browser: the settings card writes the setting and the new
+/* Group split default in a real browser: the Group tab's split sheet writes the setting and the new
  * expense form picks it up. Needs `npm run build` first. Set PLAYWRIGHT_CHROMIUM_PATH to use
  * a Chromium other than the one Playwright downloaded. */
 
@@ -53,6 +53,8 @@ const modeButton = (label: string) => page.getByRole('radio', { name: new RegExp
 
 async function openSettings(): Promise<void> {
 	await page.goto(`${BASE}/p/DEMO/settings`);
+	await page.getByRole('button', { name: /^Default split/ }).click();
+	await page.getByRole('dialog', { name: 'Default split' }).waitFor();
 	await page.waitForSelector('[aria-label="Default split for new expenses"]');
 }
 
@@ -109,7 +111,7 @@ describe('group split default', () => {
 		await page.getByRole('button', { name: 'Increase shares' }).first().click();
 		await page.getByRole('button', { name: 'Increase shares' }).first().click();
 		await page.fill('[aria-label="Amount, accepts math expressions"]', '30');
-		await page.fill('input[placeholder="What was it for?"]', 'Split default check');
+		await page.getByLabel('What for?', { exact: true }).fill('Split default check');
 		await page.click('.save-btn');
 		await page.waitForURL(/\/p\/DEMO$/);
 

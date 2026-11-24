@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Avatar from './Avatar.svelte';
+	import BottomSheet from './BottomSheet.svelte';
 	import FillRowButton from './FillRowButton.svelte';
 	import { mathInput } from '$lib/actions/mathInput';
 	import type { Member } from '$lib/types';
@@ -16,9 +17,8 @@
 		symbol: string;
 		currency: string;
 		currentMemberId: string | null;
-		dateStr: string;
 		onUpdatePayer: (id: string, updates: Partial<PaymentRow>) => void;
-		onAddPayer: () => void;
+		onAddPayer: (memberId: string) => void;
 		onRemovePayer: (id: string) => void;
 		onFillPayer: (id: string) => void;
 		/** "Saved as …" per payer row whose typed amount gets rounded on save */
@@ -34,7 +34,6 @@
 		symbol,
 		currency,
 		currentMemberId,
-		dateStr = $bindable(),
 		onUpdatePayer,
 		onAddPayer,
 		onRemovePayer,
@@ -42,9 +41,15 @@
 		roundingNotes = {}
 	}: Props = $props();
 
-	let openRow = $state<string | null>(null);
+	/** which row's person is being chosen, or 'new' while adding a payer */
+	let picking = $state<string | 'new' | null>(null);
 
 	const isMulti = $derived(payers.length > 1);
+	const pickingRow = $derived(payers.find((payer) => payer.id === picking));
+	const payerIds = $derived(new Set(payers.map((payer) => payer.memberId)));
+	const canAddPayer = $derived(members.some((m) => !payerIds.has(m.id)));
+	// someone already paying can't be picked twice; the row being changed keeps its own person
+	const pickable = $derived(members.filter((m) => !payerIds.has(m.id) || m.id === pickingRow?.memberId));
 
 	function memberName(id: string): string {
 		const m = members.find((x) => x.id === id);
@@ -52,9 +57,10 @@
 		return m.id === currentMemberId ? `${m.name} (you)` : m.name;
 	}
 
-	function pickMember(rowId: string, memberId: string) {
-		onUpdatePayer(rowId, { memberId });
-		openRow = null;
+	function pickMember(memberId: string) {
+		if (picking === 'new') onAddPayer(memberId);
+		else if (pickingRow) onUpdatePayer(pickingRow.id, { memberId });
+		picking = null;
 	}
 </script>
 
@@ -65,8 +71,8 @@
 		<button
 			type="button"
 			class="field field-button"
-			aria-expanded={openRow === single?.id}
-			onclick={() => (openRow = openRow === single?.id ? null : (single?.id ?? null))}
+			aria-haspopup="dialog"
+			onclick={() => (picking = single?.id ?? null)}
 		>
 			{#if payerMember}
 				<Avatar member={payerMember} size="md" />
@@ -83,138 +89,88 @@
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9l6 6 6-6" /></svg>
 			</span>
 		</button>
-		{#if openRow === single?.id}
-			<ul class="payer-list">
-				{#each members as m (m.id)}
-					<li>
-						<button
-							type="button"
-							class="payer-row"
-							class:on={m.id === single.memberId}
-							onclick={() => pickMember(single.id, m.id)}
-						>
-							<Avatar member={m} size="sm" />
-							<span class="col payer-text">
-								<span class="payer-name">{memberName(m.id)}</span>
-							</span>
-							{#if m.id === single.memberId}
-								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="payer-check"><path d="M5 12l5 5L20 7" /></svg>
-							{/if}
-						</button>
-					</li>
-				{/each}
-			</ul>
+		{#if canAddPayer}
+			<div class="add-payer-bar">
+				{@render addPayerButton()}
+			</div>
 		{/if}
-		<div class="add-payer-bar">
-			<button type="button" class="add-payer-btn" onclick={onAddPayer}>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 6v12M6 12h12" /></svg>
-				<span>Add another payer</span>
-			</button>
-		</div>
 	{:else}
-		<div class="multi-payer-header">
-			<span class="cat-tile field-tile">
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v16M6 7h12M4 11l2-4 2 4a2 2 0 1 1-4 0zM16 11l2-4 2 4a2 2 0 1 1-4 0z" /></svg>
-			</span>
+		<div class="multi-head">
 			<span class="field-label">Paid by</span>
+			<span class="paid-status" class:tone-owed={paidShort === 0} class:tone-owe={paidShort !== 0} aria-live="polite">
+				{#if paidShort === 0}
+					All paid
+				{:else if paidShort > 0}
+					<span class="num">{formatAmount(paidShort, symbol, currency)}</span> left
+				{:else}
+					<span class="num">{formatAmount(-paidShort, symbol, currency)}</span> too much
+				{/if}
+			</span>
 		</div>
-		<ul class="payer-rows">
+		<div class="payer-lines">
 			{#each payers as p (p.id)}
-				<li class="payer-row-multi">
-					<div class="payer-row-top">
-						<button
-							type="button"
-							class="payer-select"
-							aria-expanded={openRow === p.id}
-							onclick={() => (openRow = openRow === p.id ? null : p.id)}
-						>
-							<Avatar member={members.find((m) => m.id === p.memberId)} size="sm" />
-							<span class="payer-select-name">{memberName(p.memberId)}</span>
-							<svg
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="1.6"
-								class="payer-select-chevron"
-							>
-								<path d="M6 9l6 6 6-6" />
-							</svg>
-						</button>
-						<div class="payer-amount-wrap">
-							<input
-								class="input payer-amount-input mono"
-								value={p.amount}
-								use:mathInput
-								oninput={(e) => onUpdatePayer(p.id, { amount: e.currentTarget.value })}
-								placeholder="0.00"
-								inputmode="decimal"
-								autocomplete="off"
-								aria-label="Amount paid by {memberName(p.memberId)}"
-							/>
-							<FillRowButton onfill={() => onFillPayer(p.id)} />
-						</div>
-						<button
-							type="button"
-							class="icon-btn payer-remove"
-							onclick={() => onRemovePayer(p.id)}
-							aria-label="Remove payer"
-						>
-							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-						</button>
+				{@const payerMember = members.find((m) => m.id === p.memberId)}
+				<div class="payer-line">
+					<button type="button" class="payer-who" aria-haspopup="dialog" aria-label="Change who paid: {memberName(p.memberId)}" onclick={() => (picking = p.id)}>
+						<Avatar member={payerMember} size="sm" />
+						<span class="payer-line-name">{memberName(p.memberId)}</span>
+					</button>
+					<div class="payer-amount-wrap">
+						<input
+							class="input payer-amount-input mono"
+							value={p.amount}
+							use:mathInput
+							oninput={(e) => onUpdatePayer(p.id, { amount: e.currentTarget.value })}
+							placeholder="0.00"
+							inputmode="decimal"
+							autocomplete="off"
+							aria-label="Amount paid by {memberName(p.memberId)}"
+						/>
+						<FillRowButton onfill={() => onFillPayer(p.id)} />
 					</div>
-					{#if roundingNotes[p.id]}
-						<p class="dim mono rounding-note">{roundingNotes[p.id]}</p>
-					{/if}
-					{#if openRow === p.id}
-						<ul class="payer-list">
-							{#each members as m (m.id)}
-								<li>
-									<button
-										type="button"
-										class="payer-row"
-										class:on={m.id === p.memberId}
-										onclick={() => pickMember(p.id, m.id)}
-									>
-										<Avatar member={m} size="sm" />
-										<span class="col payer-text">
-											<span class="payer-name">{memberName(m.id)}</span>
-										</span>
-										{#if m.id === p.memberId}
-											<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="payer-check"><path d="M5 12l5 5L20 7" /></svg>
-										{/if}
-									</button>
-								</li>
-							{/each}
-						</ul>
-					{/if}
+					<button type="button" class="icon-btn payer-remove" onclick={() => onRemovePayer(p.id)} aria-label="Remove {memberName(p.memberId)} as a payer">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+					</button>
+				</div>
+				{#if roundingNotes[p.id]}
+					<p class="dim mono rounding-note">{roundingNotes[p.id]}</p>
+				{/if}
+			{/each}
+		</div>
+		{#if canAddPayer}
+			<div class="add-payer-bar">
+				{@render addPayerButton()}
+			</div>
+		{/if}
+	{/if}
+</div>
+
+{#snippet addPayerButton()}
+	<button type="button" class="add-payer-btn" aria-haspopup="dialog" onclick={() => (picking = 'new')}>
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12" /></svg>
+		<span>Add another payer</span>
+	</button>
+{/snippet}
+
+{#if picking === 'new' || pickingRow}
+	<BottomSheet title={picking === 'new' ? 'Who else paid?' : 'Who paid?'} onclose={() => (picking = null)}>
+		<ul class="payer-list">
+			{#each pickable as m (m.id)}
+				<li>
+					<button type="button" class="payer-row" class:on={m.id === pickingRow?.memberId} onclick={() => pickMember(m.id)}>
+						<Avatar member={m} size="sm" />
+						<span class="col payer-text">
+							<span class="payer-name">{memberName(m.id)}</span>
+						</span>
+						{#if m.id === pickingRow?.memberId}
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="payer-check" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
+						{/if}
+					</button>
 				</li>
 			{/each}
 		</ul>
-		<div class="add-payer-bar">
-			<button type="button" class="add-payer-btn" onclick={onAddPayer}>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 6v12M6 12h12" /></svg>
-				<span>Add another payer</span>
-			</button>
-			<span
-				class="paid-status mono"
-				class:tone-owed={paidShort === 0}
-				class:tone-owe={paidShort !== 0}
-			>
-				PAID {formatAmount(paidTotal, symbol, currency)} / {formatAmount(amountCents, symbol, currency)}
-			</span>
-		</div>
-	{/if}
-	<hr class="hairline" />
-	<div class="field">
-		<span class="cat-tile field-tile">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
-		</span>
-		<span class="col field-text">
-			<span class="field-label">Date</span>
-			<input class="date-input" type="date" bind:value={dateStr} />
-		</span>
-	</div>
-</div>
+	</BottomSheet>
+{/if}
 
 <style>
 	.field-card {
@@ -273,9 +229,8 @@
 
 	.payer-list {
 		list-style: none;
-		margin: 0;
-		padding: 4px 8px 8px;
-		border-top: 1px solid var(--line);
+		margin: 10px -4px 0;
+		padding: 0;
 	}
 
 	.payer-row {
@@ -311,80 +266,71 @@
 		color: var(--accent);
 	}
 
-	.date-input {
-		background: transparent;
-		border: 0;
-		padding: 4px 0 0;
-		font-size: 14px;
-		color: var(--ink);
-		outline: none;
-		font-family: var(--font-sans);
+	.multi-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 14px 12px 6px;
 	}
 
-	.multi-payer-header {
+
+	.payer-lines {
+		display: flex;
+		flex-direction: column;
+		padding: 0 12px;
+	}
+
+	.payer-line {
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		padding: 12px 12px 4px;
+		padding: 7px 0;
 	}
 
-	.payer-rows {
-		list-style: none;
-		margin: 0;
-		padding: 0 8px 4px;
-		display: flex;
-		flex-direction: column;
-		gap: 8px;
+	.payer-line + .payer-line {
+		border-top: 1px solid var(--line);
 	}
 
-	.rounding-note {
-		margin: 2px 0 0;
-		font-size: 11px;
-		text-align: right;
-	}
-
-	.payer-row-multi {
-		display: flex;
-		flex-direction: column;
-	}
-
-	.payer-row-top {
+	.payer-who {
 		display: flex;
 		align-items: center;
-		gap: 6px;
-	}
-
-	.payer-select {
-		display: flex;
-		align-items: center;
-		gap: 8px;
+		gap: 10px;
 		flex: 1;
 		min-width: 0;
-		padding: 8px 10px;
-		background: var(--bg);
-		border: 1px solid var(--line);
-		border-radius: var(--radius);
-		color: var(--ink);
-		cursor: pointer;
+		padding: 4px 0;
+		border: 0;
+		background: none;
+		color: inherit;
 		font: inherit;
 		text-align: left;
+		cursor: pointer;
 	}
 
-	.payer-select-name {
+	.payer-remove {
+		flex-shrink: 0;
+		width: 30px;
+		height: 30px;
+	}
+
+	.payer-remove svg {
+		width: 14px;
+		height: 14px;
+	}
+
+	.payer-line-name {
 		flex: 1;
 		min-width: 0;
-		font-size: 13px;
-		font-weight: 500;
+		font-size: 14px;
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
 
-	.payer-select-chevron {
-		width: 14px;
-		height: 14px;
-		color: var(--ink-3);
-		flex-shrink: 0;
+	.rounding-note {
+		margin: 0 0 4px;
+		font-size: 11px;
+		text-align: right;
 	}
 
 	.payer-amount-wrap {
@@ -397,17 +343,6 @@
 		padding: 8px 30px 8px 10px;
 		font-size: 13px;
 		text-align: right;
-	}
-
-	.payer-remove {
-		flex-shrink: 0;
-		width: 30px;
-		height: 30px;
-	}
-
-	.payer-remove svg {
-		width: 14px;
-		height: 14px;
 	}
 
 	.add-payer-bar {
@@ -438,8 +373,7 @@
 	}
 
 	.paid-status {
-		font-size: 11px;
+		font-size: 12px;
 		font-weight: 600;
-		letter-spacing: 0.06em;
 	}
 </style>

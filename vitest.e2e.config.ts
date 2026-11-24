@@ -6,6 +6,8 @@ export default defineConfig({
 		include: ['e2e/**/*.e2e.ts'],
 		testTimeout: 60_000,
 		hookTimeout: 60_000,
-		fileParallelism: false
+		fileParallelism: false,
+		// the default 1s poll proved too tight for real-browser rendering here
+		expect: { poll: { timeout: 5_000 } }
 	}
 });

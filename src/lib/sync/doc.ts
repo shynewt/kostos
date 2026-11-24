@@ -493,12 +493,29 @@ export function expenseVersions(handle: RoomHandle, id: string): ExpenseVersion[
 	return versionHeads(handle, id, handle.expenses.toArray().filter((entry) => entry.get('id') === id));
 }
 
+/** Ids of repeating copies, `<rule id>-<period>`. Phones that create the same copy while
+ *  apart push separate entries under one id; they are one expense, never a conflict. */
+export function isRecurringCopyId(id: string): boolean {
+	return /^[0-9a-f]{16}-\d+$/.test(id);
+}
+
 function versionHeads(handle: RoomHandle, id: string, entries: Y.Map<unknown>[]): ExpenseVersion[] {
 	const versions = new Map(handle.doc.getMap<ExpenseVersion>(`expense-revisions:${id}`));
+	if (isRecurringCopyId(id)) {
+		// every edit stores the heads it saw, so once revisions exist they hold the whole history and
+		// any extra entry is just another phone's identical creation. before that, array order picks
+		// the same first entry on every phone.
+		if (versions.size === 0 && entries[0]) versions.set(`legacy:${entries[0]._item?.id.client}:${entries[0]._item?.id.clock}`, legacyVersion(entries[0]));
+		return sortedHeads(versions);
+	}
 	for (const entry of entries) {
 		const key = `legacy:${entry._item?.id.client}:${entry._item?.id.clock}`;
 		if (!versions.has(key)) versions.set(key, legacyVersion(entry));
 	}
+	return sortedHeads(versions);
+}
+
+function sortedHeads(versions: Map<string, ExpenseVersion>): ExpenseVersion[] {
 	const parents = new Set([...versions.values()].flatMap((v) => v.parents));
 	return [...versions.values()].filter((v) => !parents.has(v.id)).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
@@ -649,6 +666,29 @@ export function removeExpense(handle: RoomHandle, id: string): void {
 	});
 }
 
+/** Undo for removeExpense. Revision maps outlive the removal, so re-adding the same record
+ *  brings back its history; the removal event is dropped from the log as if it never happened. */
+export function restoreExpense(handle: RoomHandle, expense: Expense): void {
+	if (handle.expenses.toArray().some((e) => e.get('id') === expense.id)) return;
+	const winner = versionHeads(handle, expense.id, []).at(-1);
+	handle.doc.transact(() => {
+		const entry = expenseMap(expense);
+		handle.expenses.push([entry]);
+		// the re-added entry has a new Yjs identity, which would otherwise read as a fresh legacy
+		// version competing with the stored ones. linking it to the winning head keeps one head per
+		// branch, and legacy ids sort after hex ids so the same branch keeps winning.
+		if (winner) {
+			const id = `legacy:${entry._item?.id.client}:${entry._item?.id.clock}`;
+			const revisions = handle.doc.getMap<ExpenseVersion>(`expense-revisions:${expense.id}`);
+			revisions.set(id, { id, expense: JSON.parse(JSON.stringify(expense)), parents: [winner.id], at: Date.now(), by: getCurrentMember(handle.roomId) });
+		}
+		const removal = handle.activity
+			.toArray()
+			.findLastIndex((event) => event.get('kind') === 'expense.remove' && event.get('expenseId') === expense.id);
+		if (removal >= 0) handle.activity.delete(removal, 1);
+	});
+}
+
 export function updateExpense(handle: RoomHandle, expense: Expense, parents?: string[]): void {
 	const prev = readExpenses(handle).find((e) => e.id === expense.id);
 	if (!prev) return;
@@ -693,6 +733,7 @@ function readExpenseEntry(entry: Y.Map<unknown>): Expense {
 		splits,
 		notes: entry.get('notes') as string | undefined,
 		isSettlement: entry.get('isSettlement') as boolean | undefined,
+		recurrenceId: entry.get('recurrenceId') as string | undefined,
 		createdAt: entry.get('createdAt') as number,
 		createdBy: entry.get('createdBy') as string
 	};
@@ -731,6 +772,7 @@ function expenseMap(e: Expense, ym = new Y.Map<unknown>()): Y.Map<unknown> {
 	ym.set('splits', ysplits);
 	if (e.notes) ym.set('notes', e.notes);
 	if (e.isSettlement) ym.set('isSettlement', true);
+	if (e.recurrenceId) ym.set('recurrenceId', e.recurrenceId);
 	ym.set('createdAt', e.createdAt);
 	ym.set('createdBy', e.createdBy);
 	return ym;

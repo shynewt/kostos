@@ -71,7 +71,7 @@ const chargedInput = () => page.locator('[aria-label="Amount charged in EUR"]');
 const delta = () => page.locator('.fx-delta');
 
 async function saveAndOpen(title: string): Promise<string> {
-	await page.fill('input[placeholder="What was it for?"]', title);
+	await page.getByLabel('What for?', { exact: true }).fill(title);
 	await page.click('.save-btn');
 	await page.waitForURL(/\/p\/DEMO$/);
 	await page.goto(`${BASE}/p/DEMO/expenses`);
@@ -179,7 +179,8 @@ describe('rounding notes', () => {
 	});
 
 	it('flags paid-by rows that round', async () => {
-		await page.getByText('Add another payer').first().click();
+		await page.getByRole('button', { name: 'Add another payer' }).click();
+		await page.getByRole('dialog', { name: 'Who else paid?' }).getByRole('button', { name: 'Bob' }).click();
 		const rows = page.locator('input[aria-label^="Amount paid by"]');
 		await rows.nth(0).fill('1.234');
 		await rows.nth(1).fill('1.236');
@@ -188,10 +189,48 @@ describe('rounding notes', () => {
 	});
 });
 
+describe('several payers', () => {
+	async function addPayer(name: string): Promise<void> {
+		await page.getByRole('button', { name: 'Add another payer' }).click();
+		const sheet = page.getByRole('dialog', { name: 'Who else paid?' });
+		await sheet.getByRole('button', { name: name }).click();
+	}
+
+	it('adds payers from the sheet, tracks what is left and saves each amount', async () => {
+		await openAddForm();
+		await amountInput().fill('30');
+		await page.getByRole('button', { name: 'Add another payer' }).click();
+		const sheet = page.getByRole('dialog', { name: 'Who else paid?' });
+		expect(await sheet.getByRole('button', { name: /Alice/ }).count()).toBe(0);
+		await sheet.getByRole('button', { name: 'Bob' }).click();
+		const rows = page.locator('input[aria-label^="Amount paid by"]');
+		expect(await rows.count()).toBe(2);
+		const status = page.locator('.paid-status');
+		expect(await status.innerText()).toContain('€30.00 left');
+		await rows.nth(0).fill('20');
+		await rows.nth(1).fill('15');
+		expect(await status.innerText()).toContain('€5.00 too much');
+		await rows.nth(1).fill('10');
+		expect(await status.innerText()).toContain('All paid');
+		await saveAndOpen('E2E two payers');
+		await page.getByText('€20.00').first().waitFor();
+		expect(await page.getByText('€10.00').count()).toBeGreaterThan(0);
+	});
+
+	it('goes back to a single payer when the others are removed', async () => {
+		await openAddForm();
+		await amountInput().fill('30');
+		await addPayer('Bob');
+		await page.getByRole('button', { name: 'Remove Bob as a payer' }).click();
+		expect(await page.locator('input[aria-label^="Amount paid by"]').count()).toBe(0);
+		expect(await page.getByRole('button', { name: 'Add another payer' }).count()).toBe(1);
+	});
+});
+
 describe('validation message timing', () => {
 	it('waits for the latest edit before showing a problem, while Save disables at once', async () => {
 		await openAddForm();
-		await page.fill('input[placeholder="What was it for?"]', 'E2E timing');
+		await page.getByLabel('What for?', { exact: true }).fill('E2E timing');
 		await amountInput().fill('1+');
 		expect(await page.locator('.save-btn').isDisabled()).toBe(true);
 		await page.waitForTimeout(550);

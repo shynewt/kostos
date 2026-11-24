@@ -60,8 +60,8 @@
 <div class="card split-card">
 	<div class="row between" style="margin-bottom: 12px;">
 		<div class="eyebrow">Split</div>
-		<div class="dim mono split-summary">
-			{involvedList.length} OF {members.length} INVOLVED
+		<div class="dim split-summary">
+			{involvedList.length} of {members.length} people
 		</div>
 	</div>
 
@@ -213,7 +213,7 @@
 	}
 
 	.split-summary {
-		font-size: 11px;
+		font-size: 12px;
 	}
 
 	.split-tabs {
@@ -274,9 +274,11 @@
 		transition: background 0.12s ease, border-color 0.12s ease;
 	}
 
-	.auto-fill:hover {
-		background: color-mix(in oklab, var(--accent) 18%, transparent);
-		border-color: var(--accent);
+	@media (hover: hover) {
+		.auto-fill:hover {
+			background: color-mix(in oklab, var(--accent) 18%, transparent);
+			border-color: var(--accent);
+		}
 	}
 
 	.auto-fill svg {

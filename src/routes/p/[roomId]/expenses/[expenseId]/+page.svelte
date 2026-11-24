@@ -10,9 +10,13 @@
 	import { currencySymbolFor } from '$lib/currencies';
 	import { exchangeFee, expenseBaseAmount, formatRate } from '$lib/currency-convert';
 	import { formatAmount, formatSigned } from '$lib/money';
+	import { REPEAT_LABELS, repeatSummary, todayDay } from '$lib/recurring';
 	import { getCurrentMember } from '$lib/storage';
-	import { removeExpense } from '$lib/sync/doc';
+	import { removeExpense, restoreExpense, type RoomHandle } from '$lib/sync/doc';
+	import { stopRule } from '$lib/sync/recurring';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
+	import { showToast } from '$lib/toast.svelte';
+	import type { Expense } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
 	const expenseId = $derived(page.params.expenseId ?? '');
@@ -23,7 +27,6 @@
 	const project = $derived(room.project);
 	const members = $derived(room.members);
 	const expenses = $derived(room.expenses);
-	let confirmingDelete = $state(false);
 	let deleting = $state(false);
 	let deleteError = $state(false);
 
@@ -32,6 +35,8 @@
 	const currency = $derived(room.currency);
 	const membersById = $derived(room.membersById);
 	const expense = $derived(expenses.find((e) => e.id === expenseId));
+	const rule = $derived(expense?.recurrenceId ? room.rules.find((r) => r.id === expense.recurrenceId) : undefined);
+	let stopping = $state(false);
 	const editEvents = $derived(
 		room.activity.filter((a) => a.expenseId === expenseId && a.kind === 'expense.edit').reverse()
 	);
@@ -103,17 +108,55 @@
 		return `even · ${pct}%`;
 	}
 
+	// kept outside `expense` so a retry after a failed save can still offer undo
+	let deletedExpense: Expense | null = null;
+
 	async function onDelete() {
 		if (deleting || (!expense && !deleteError)) return;
-		if (!confirmingDelete) { confirmingDelete = true; return; }
 		deleting = true;
 		deleteError = false;
 		try {
-			if (expense) removeExpense(handle, expense.id);
+			if (expense) {
+				deletedExpense = $state.snapshot(expense);
+				removeExpense(handle, expense.id);
+			}
 			await handle.persistence?.flush();
+			if (deletedExpense) offerUndo(handle, deletedExpense);
 			await goto(`/p/${roomId}/expenses`);
 		} catch { deleteError = true; }
 		finally { deleting = false; }
+	}
+
+	function offerUndo(roomHandle: RoomHandle, deleted: Expense) {
+		showToast('Expense deleted', { label: 'Undo', run: () => undoDelete(roomHandle, deleted) });
+	}
+
+	async function undoDelete(roomHandle: RoomHandle, deleted: Expense) {
+		restoreExpense(roomHandle, deleted);
+		try {
+			await roomHandle.persistence?.flush();
+			showToast('Expense restored');
+		} catch {
+			showToast('Couldn’t save the undo on this phone', { label: 'Try again', run: () => undoDelete(roomHandle, deleted) });
+		}
+	}
+
+	async function onStopRepeating() {
+		if (!rule || stopping) return;
+		stopping = true;
+		try {
+			stopRule(handle, rule.id, todayDay());
+			await handle.persistence?.flush();
+			showToast('Stopped repeating. Copies already added stay.');
+		} catch {
+			showToast('Couldn’t save that on this phone', { label: 'Try again', run: onStopRepeating });
+		} finally {
+			stopping = false;
+		}
+	}
+
+	function formatDay(day: string): string {
+		return new Date(Date.parse(day)).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 	}
 
 	function onEdit() {
@@ -151,7 +194,7 @@
 				<div class="row gap-12 hero-top">
 					<span class="cat-tile hero-icon">{category?.emoji ?? '📦'}</span>
 					<div class="col">
-						<div class="eyebrow">{category?.name ?? 'Uncategorised'} · {formatDate(expense.date)}</div>
+						<div class="hero-meta">{category?.name ?? 'Uncategorised'} · {formatDate(expense.date)}</div>
 						<div class="h2 hero-title">{expense.description || 'Expense'}</div>
 					</div>
 				</div>
@@ -240,6 +283,25 @@
 				{/each}
 			</div>
 
+			{#if rule && rule.endDay === undefined}
+				<section class="card repeat-card" data-testid="repeat-card">
+					<svg class="repeat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+					<div class="col repeat-text">
+						<span class="repeat-title">Repeats {REPEAT_LABELS[rule.frequency].toLowerCase()}</span>
+						<span class="dim repeat-sub">{repeatSummary(rule.frequency, rule.startDay)}</span>
+					</div>
+					<button class="btn repeat-stop" type="button" onclick={onStopRepeating} disabled={stopping}>Stop repeating</button>
+				</section>
+			{:else if rule?.endDay}
+				<p class="dim repeat-stopped">Repeated {REPEAT_LABELS[rule.frequency].toLowerCase()} until {formatDay(rule.endDay)}</p>
+			{/if}
+			{#if !expense.isSettlement && (!rule || rule.endDay)}
+				<a class="btn repeat-start" href="/p/{roomId}/expenses/{expense.id}/edit?open=repeat">
+					<svg class="repeat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+					Repeat this expense
+				</a>
+			{/if}
+
 			{#if expense.notes}
 				<div class="card notes-card">
 					<div class="eyebrow" style="margin-bottom: 8px;">Note</div>
@@ -274,14 +336,9 @@
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
 					<span>Edit</span>
 				</button>
-				<button
-					class="btn action-btn delete-btn"
-					class:confirming={confirmingDelete}
-					type="button"
-					onclick={onDelete}
-				>
+				<button class="btn action-btn delete-btn" type="button" onclick={onDelete}>
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13" /></svg>
-					<span>{deleting ? 'Deleting…' : deleteError ? 'Try again' : confirmingDelete ? 'Tap again to delete' : 'Delete'}</span>
+					<span>{deleting ? 'Deleting…' : deleteError ? 'Try again' : 'Delete'}</span>
 				</button>
 			</div>
 		</div>
@@ -323,6 +380,11 @@
 		border-radius: 18px;
 		font-size: 26px;
 		background: color-mix(in oklab, var(--accent) 16%, transparent);
+	}
+
+	.hero-meta {
+		font-size: 13px;
+		color: var(--ink-2);
 	}
 
 	.hero-title {
@@ -423,6 +485,69 @@
 		margin-top: 10px;
 	}
 
+	.repeat-card {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 10px;
+		padding: 12px 14px;
+	}
+
+	.repeat-icon {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+		color: var(--accent);
+	}
+
+	.repeat-text {
+		flex: 1;
+		min-width: 0;
+		gap: 2px;
+	}
+
+	.repeat-title {
+		font-size: 14px;
+		font-weight: 600;
+	}
+
+	.repeat-sub {
+		font-size: 12px;
+		line-height: 1.4;
+	}
+
+	.repeat-stop {
+		flex-shrink: 0;
+		padding: 8px 12px;
+		font-size: 13px;
+	}
+
+	.repeat-start {
+		display: flex;
+		width: fit-content;
+		margin: 6px auto 22px;
+		padding: 10px 18px;
+		font-size: 14px;
+		text-decoration: none;
+		transition: border-color 0.12s ease;
+	}
+
+	@media (hover: hover) {
+		.repeat-start:hover {
+			border-color: var(--accent);
+		}
+	}
+
+	.repeat-start .repeat-icon {
+		width: 16px;
+		height: 16px;
+	}
+
+	.repeat-stopped {
+		margin: 10px 2px 0;
+		font-size: 12px;
+	}
+
 	.notes-body {
 		font-size: 13px;
 		line-height: 1.5;
@@ -472,10 +597,5 @@
 
 	.delete-btn {
 		color: var(--owe);
-	}
-
-	.delete-btn.confirming {
-		background: color-mix(in oklab, var(--owe) 14%, transparent);
-		border-color: var(--owe);
 	}
 </style>

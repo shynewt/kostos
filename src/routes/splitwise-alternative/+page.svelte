@@ -9,7 +9,7 @@
 
 	const FAQS: Faq[] = [
 		{ question: 'Is Kostos really free?', answer: 'Yes. Kostos is free and open source, with no paid tier, no ads and no daily limit on new expenses.' },
-		{ question: 'Can I import my Splitwise groups?', answer: 'Not yet. Start a Kostos group with the same people and add each open balance as one expense, then carry on from there.' },
+		{ question: 'Can I import my Splitwise groups?', answer: 'Yes. Export the group from Splitwise as a CSV and pick that file when you create a Kostos group. Everyone ends up with the same balance as in Splitwise, and the file never leaves your browser.' },
 		{ question: 'Does Kostos work offline like Splitwise?', answer: 'Yes. Expenses you add offline are saved on your phone and sync as soon as you’re back online.' }
 	];
 </script>
@@ -25,7 +25,7 @@
 <JsonLd data={faqSchema(FAQS)} />
 
 <ArticleLayout>
-	<p class="updated">Compared on {COMPARED_ON}</p>
+	<p class="updated dateline">Compared on {COMPARED_ON}</p>
 	<h1>A free Splitwise alternative, with no account</h1>
 	<p class="lede">
 		Kostos does what most people open Splitwise for: a shared list of expenses, fair splits, and a short list of who pays whom
@@ -66,7 +66,7 @@
 	<Figure
 		src="/landing/currency.webp"
 		width={780}
-		height={738}
+		height={610}
 		alt="A $45 expense where the bank charged €42.10, 1.7% more than the market rate of 0.92"
 		caption="A $45 expense, with the €42.10 the bank actually charged."
 	/>
@@ -88,8 +88,9 @@
 
 	<h2>How to switch from Splitwise</h2>
 	<ol>
-		<li><a href="/new">Create a Kostos group</a> with the same people and the same currency.</li>
-		<li>Add each balance that’s still open in Splitwise as a single expense, so everyone starts where they left off.</li>
+		<li>In Splitwise on the web, open the group, click the gear icon and export it as a spreadsheet. You get a CSV file.</li>
+		<li>On Kostos, start a <a href="/new">new group</a> and tap “Import a CSV” under the button, or go straight to the <a href="/import/splitwise">Splitwise import</a>.</li>
+		<li>Pick the file, check the members and balances it shows, and choose which member you are. If the group used more than one currency, enter a rate for each extra one.</li>
 		<li>Share the invite link in your group chat. Everyone opens it and picks their name.</li>
 	</ol>
 

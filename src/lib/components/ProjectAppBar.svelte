@@ -1,13 +1,13 @@
 <script lang="ts">
+	import InviteSheet, { groupInviteUrl } from './InviteSheet.svelte';
+	import { DEMO_ROOM_ID } from '$lib/sync/doc';
 	import LegacyGroupBanner from './LegacyGroupBanner.svelte';
 	import SyncBanner from './SyncBanner.svelte';
 	import SyncStatus from './SyncStatus.svelte';
 	import { PROJECT_COLOR_VALUES, tileBackground } from '$lib/colors';
-	import { invitePath } from '$lib/invite';
-	import { isLegacySecret } from '$lib/legacy';
-	import { findProject } from '$lib/storage';
+	import { plural } from '$lib/plural';
+	import { useRoomContext } from '$lib/sync/useRoom.svelte';
 	import type { Project } from '$lib/types';
-	import QrCode from './QrCode.svelte';
 
 	type Props = {
 		roomId: string;
@@ -16,115 +16,78 @@
 
 	let { roomId, project }: Props = $props();
 
-	let showShare = $state(false);
-	let copied = $state(false);
+	const context = useRoomContext();
+	const memberCount = $derived(context?.room?.members.length ?? 0);
+	const name = $derived(project?.name ?? 'Loading');
+	const subtitle = $derived(plural(memberCount, 'person', 'people'));
 
-	const shareUrl = $derived.by(() => {
-		const stored = findProject(roomId);
-		if (!stored || isLegacySecret(stored.secret)) return null;
-		return `${location.origin}${invitePath(stored.secret)}`;
-	});
-
-	async function copyShareUrl() {
-		if (!shareUrl) return;
-		try {
-			await navigator.clipboard.writeText(shareUrl);
-			copied = true;
-			setTimeout(() => (copied = false), 1800);
-		} catch {
-			const el = document.getElementById('share-url-display');
-			if (el instanceof HTMLInputElement) el.select();
-		}
-	}
+	let showInvite = $state(false);
+	const inviteUrl = $derived(groupInviteUrl(roomId));
+	// the demo shows the button too, and its sheet explains why there's nothing to share
+	const canOpenInvite = $derived(inviteUrl !== null || roomId === DEMO_ROOM_ID);
 </script>
 
 <header class="app-bar">
-	<div class="project-head">
-		<a class="project-tile-link" href="/" tabindex="-1" aria-hidden="true">
-			<span
-				class="project-tile"
-				style={project
-					? `background: ${tileBackground(project.color)}; color: ${PROJECT_COLOR_VALUES[project.color]};`
-					: ''}
-			>
-				{project?.emoji ?? '🏖'}
+	<a class="project-head" href="/" aria-label="{name}, {subtitle}. Switch group" title="Switch group">
+		<span
+			class="project-tile"
+			aria-hidden="true"
+			style={project
+				? `background: ${tileBackground(project.color)}; color: ${PROJECT_COLOR_VALUES[project.color]};`
+				: ''}
+		>
+			{project?.emoji ?? '🏖'}
+		</span>
+		<span class="project-text">
+			<span class="project-name">
+				<span class="project-name-text">{name}</span>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="switch-chevron" aria-hidden="true">
+					<path d="M6 9l6 6 6-6" />
+				</svg>
 			</span>
-		</a>
-		<a class="app-bar-title project-name" href="/" aria-label="Switch group" title="Switch group">
-			{project?.name ?? 'Loading'}
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="switch-chevron" aria-hidden="true">
-				<path d="M6 9l6 6 6-6" />
-			</svg>
-		</a>
-		<div class="project-status"><SyncStatus /></div>
-	</div>
-	<div class="row gap-6" style="flex: 0; justify-content: flex-end;">
-		{#if shareUrl}
-			<button
-				class="icon-btn"
-				aria-label="Share invite"
-				aria-expanded={showShare}
-				onclick={() => (showShare = !showShare)}
-			>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v12M8 8l4-4 4 4M5 14v5h14v-5" /></svg>
+			<span class="project-subtitle">{subtitle}</span>
+		</span>
+	</a>
+	<div class="actions">
+		{#if canOpenInvite}
+			<button class="icon-btn" type="button" aria-label="Share invite" aria-haspopup="dialog" onclick={() => (showInvite = true)}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 4v12M8 8l4-4 4 4M5 14v5h14v-5" /></svg>
 			</button>
 		{/if}
-		<a
-			class="icon-btn"
-			href="/p/{roomId}/settings"
-			aria-label="Group settings"
-			title="Group settings"
-		>
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-				<circle cx="12" cy="12" r="2.6" />
-				<path d="M19 12a7 7 0 0 0-.16-1.5l2.05-1.58-2-3.46-2.43.83a7 7 0 0 0-2.59-1.5L13.5 2h-3l-.37 2.79a7 7 0 0 0-2.59 1.5l-2.43-.83-2 3.46L5.16 10.5A7 7 0 0 0 5 12a7 7 0 0 0 .16 1.5l-2.05 1.58 2 3.46 2.43-.83a7 7 0 0 0 2.59 1.5L10.5 22h3l.37-2.79a7 7 0 0 0 2.59-1.5l2.43.83 2-3.46-2.05-1.58A7 7 0 0 0 19 12z" />
-			</svg>
-		</a>
+		<SyncStatus />
 	</div>
 </header>
 <SyncBanner conflicts />
 <LegacyGroupBanner />
 
-{#if shareUrl && showShare}
-	<section class="card share-card">
-		<div class="row between" style="margin-bottom: 10px;">
-			<span class="eyebrow">Invite link</span>
-			<button class="btn btn-ghost copy-btn" type="button" onclick={copyShareUrl}>
-				{#if copied}
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
-					<span>Copied</span>
-				{:else}
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 4H6a2 2 0 0 0-2 2v10" /></svg>
-					<span>Copy link</span>
-				{/if}
-			</button>
-		</div>
-		<div class="qr-wrap">
-			<QrCode value={shareUrl} size={200} />
-			<p class="dim mono qr-caption">SCAN TO JOIN</p>
-		</div>
-		<input id="share-url-display" class="share-url-display" aria-label="Invite link" value={shareUrl} readonly />
-		<p class="dim share-hint">
-			Anyone with this link can join the group. The key sits after the # in the link, so the server never receives it.
-		</p>
-	</section>
+{#if canOpenInvite && showInvite}
+	<InviteSheet url={inviteUrl} groupName={name} onclose={() => (showInvite = false)} />
 {/if}
 
 <style>
 	.project-head {
 		flex: 1;
 		min-width: 0;
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr);
-		grid-template-rows: auto auto;
-		column-gap: 10px;
+		display: flex;
 		align-items: center;
+		gap: 10px;
+		margin: -6px 0 -6px -8px;
+		padding: 6px 8px;
+		border-radius: 16px;
+		color: inherit;
+		text-decoration: none;
+		-webkit-tap-highlight-color: transparent;
+		transition: background-color 160ms;
 	}
 
-	.project-tile-link {
-		grid-row: 1 / span 2;
-		display: block;
-		text-decoration: none;
+	.project-head:active {
+		background: color-mix(in oklab, var(--ink) 6%, transparent);
+	}
+
+	@media (hover: hover) {
+		.project-head:hover {
+			background: color-mix(in oklab, var(--ink) 5%, transparent);
+		}
 	}
 
 	.project-tile {
@@ -137,86 +100,48 @@
 		flex-shrink: 0;
 	}
 
-	.project-name {
-		font-family: var(--font-sans);
-		font-size: 14px;
-		text-transform: none;
-		letter-spacing: 0;
-		color: var(--ink);
-		text-decoration: none;
-		display: inline-flex;
-		align-items: center;
-		align-self: end;
-		justify-self: start;
-		gap: 4px;
-		max-width: 100%;
+	.project-text {
+		display: flex;
+		flex-direction: column;
 		min-width: 0;
+		gap: 1px;
+	}
+
+	.project-name {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		min-width: 0;
+		font-size: 15px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+		color: var(--ink);
+	}
+
+	.project-name-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
 	.switch-chevron {
-		width: 12px;
-		height: 12px;
+		width: 13px;
+		height: 13px;
 		color: var(--ink-3);
 		flex-shrink: 0;
 	}
 
-	.project-status {
-		display: flex;
-		min-width: 0;
-		align-self: start;
-		margin-top: 1px;
-	}
-
-	.share-card {
-		display: flex;
-		flex-direction: column;
-		margin: 0 0 14px;
-	}
-
-	.copy-btn {
-		padding: 6px 10px;
+	.project-subtitle {
 		font-size: 12px;
-		gap: 6px;
-		border-radius: 999px;
-		color: var(--ink-2);
+		color: var(--ink-3);
+		white-space: nowrap;
 	}
 
-	.copy-btn:disabled {
-		opacity: 0.5;
-		cursor: not-allowed;
-	}
-
-	.qr-wrap {
+	.actions {
 		display: flex;
-		flex-direction: column;
 		align-items: center;
 		gap: 6px;
-		margin: 16px auto 4px;
-	}
-
-	.qr-caption {
-		font-size: 10px;
-		letter-spacing: 0.08em;
-		margin: 0;
-	}
-
-	.share-url-display {
-		margin-top: 12px;
-		width: 100%;
-		background: transparent;
-		border: 1px dashed var(--line-2);
-		border-radius: var(--radius-sm);
-		padding: 8px 10px;
-		font-family: var(--font-mono);
-		font-size: 11px;
-		color: var(--ink-3);
-		outline: none;
-	}
-
-	.share-hint {
-		font-size: 11px;
-		font-family: var(--font-mono);
-		line-height: 1.5;
-		margin: 10px 0 0;
+		flex-shrink: 0;
 	}
 </style>

@@ -1,6 +1,6 @@
-/* Settings navigation in a real browser: the home page lists short rows with live summaries,
- * categories and payment methods live on their own pages, and the payment methods row follows
- * the tracking switch. Needs `npm run build` first. Set PLAYWRIGHT_CHROMIUM_PATH to use
+/* The Group tab in a real browser: rows with live summaries, categories and payment methods on
+ * their own pages, the payment methods row following the tracking switch, member sheets, and the
+ * header's switcher link and sync button. Needs `npm run build` first. Set PLAYWRIGHT_CHROMIUM_PATH to use
  * a Chromium other than the one Playwright downloaded. */
 
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -51,11 +51,13 @@ afterEach(async () => {
 });
 
 const row = (name: string) => page.getByRole('link', { name: new RegExp(`^${name}`) });
-const summary = async (name: string) => (await row(name).locator('.nav-summary').textContent())?.trim();
+const summary = async (name: string) => (await row(name).locator('.row-value').textContent())?.trim();
+const trackingSwitch = () => page.getByRole('switch', { name: 'Track payment methods' });
+const memberRow = (name: string) => page.getByRole('button', { name: new RegExp(`^${name}( \\(you\\))?$`) });
 
 async function openSettings(): Promise<void> {
 	await page.goto(`${BASE}/p/DEMO/settings`);
-	await page.waitForSelector('.project-block');
+	await page.getByRole('heading', { level: 1 }).waitFor();
 }
 
 describe('settings navigation', () => {
@@ -94,9 +96,10 @@ describe('settings navigation', () => {
 
 	it('hides the payment methods row while tracking is off and brings it back', async () => {
 		await openSettings();
-		const toggle = page.getByRole('button', { name: /Track payment method/ });
+		await expect(trackingSwitch().getAttribute('aria-checked')).resolves.toBe('true');
 
-		await toggle.click();
+		await trackingSwitch().click();
+		await expect(trackingSwitch().getAttribute('aria-checked')).resolves.toBe('false');
 		await expect(row('Payment methods').count()).resolves.toBe(0);
 
 		await page.waitForTimeout(500);
@@ -104,7 +107,116 @@ describe('settings navigation', () => {
 		await page.getByText(/Payment methods are off/).waitFor();
 
 		await openSettings();
-		await page.getByRole('button', { name: /Track payment method/ }).click();
+		await trackingSwitch().click();
+		await expect(trackingSwitch().getAttribute('aria-checked')).resolves.toBe('true');
 		await expect(row('Payment methods').count()).resolves.toBe(1);
+	});
+});
+
+describe('group tab', () => {
+	const groupTab = () => page.locator('.tabbar').getByRole('link', { name: 'GROUP' });
+
+	it('redirects the old people page to the group tab and marks the tab active', async () => {
+		await page.goto(`${BASE}/p/DEMO/people`);
+		await page.waitForURL(/\/p\/DEMO\/settings$/);
+		await page.getByRole('heading', { level: 1 }).waitFor();
+		await expect(groupTab().getAttribute('class')).resolves.toMatch(/\bactive\b/);
+
+		await row('Categories').click();
+		await page.waitForURL(/\/settings\/categories$/);
+		await expect(groupTab().getAttribute('class')).resolves.toMatch(/\bactive\b/);
+	});
+
+	it('switches the current member from a member sheet', async () => {
+		await openSettings();
+		await memberRow('Alice').waitFor();
+		await expect(memberRow('Alice').textContent()).resolves.toContain('(you)');
+
+		await memberRow('Bob').click();
+		const sheet = page.getByRole('dialog', { name: 'Bob' });
+		await sheet.getByRole('button', { name: 'This is me' }).click();
+		await sheet.waitFor({ state: 'detached' });
+
+		await expect(memberRow('Bob').textContent()).resolves.toContain('(you)');
+		await expect(memberRow('Alice').textContent()).resolves.not.toContain('(you)');
+
+		await page.reload();
+		await memberRow('Bob').waitFor();
+		await expect(memberRow('Bob').textContent()).resolves.toContain('(you)');
+
+		await memberRow('Alice').click();
+		await expect(page.getByRole('dialog', { name: 'Alice' }).getByRole('button', { name: 'This is me' }).count()).resolves.toBe(1);
+	});
+
+	it('adds a member from the add member sheet', async () => {
+		await openSettings();
+		const before = await page.getByRole('heading', { name: /^Members/ }).textContent();
+		expect(before).toContain('4');
+
+		await page.getByRole('button', { name: 'Add member' }).click();
+		const sheet = page.getByRole('dialog', { name: 'Add member' });
+		await sheet.getByLabel('Name').fill('Erin');
+		await sheet.getByRole('button', { name: 'Add', exact: true }).click();
+		await sheet.getByRole('status').filter({ hasText: 'Added Erin' }).waitFor();
+		await sheet.getByRole('button', { name: 'Done' }).click();
+		await sheet.waitFor({ state: 'detached' });
+
+		await memberRow('Erin').waitFor();
+		await expect(page.getByRole('heading', { name: /^Members/ }).textContent()).resolves.toContain('5');
+		await expect(page.getByRole('link', { name: /people\. Switch group$/ }).getAttribute('aria-label')).resolves.toContain('5 people');
+	});
+
+	it('renames a member and asks before removing one', async () => {
+		await openSettings();
+		await memberRow('Dan').click();
+		let sheet = page.getByRole('dialog', { name: 'Dan' });
+		await sheet.getByRole('button', { name: 'Rename' }).click();
+		await sheet.getByLabel('Name').fill('Daniel');
+		await sheet.getByRole('button', { name: 'Save' }).click();
+		sheet = page.getByRole('dialog', { name: 'Daniel' });
+		await sheet.waitFor();
+
+		await sheet.getByRole('button', { name: 'Remove from group' }).click();
+		await sheet.getByText(/Removing them keeps the history|from the group\?/).waitFor();
+		await sheet.getByRole('button', { name: 'Remove', exact: true }).click();
+		await sheet.waitFor({ state: 'detached' });
+		await expect(memberRow('Daniel').count()).resolves.toBe(0);
+	});
+
+	it('offers invite in the demo too, explaining there is no link to share', async () => {
+		for (const open of [
+			() => page.getByRole('button', { name: 'Share invite' }).click(),
+			async () => {
+				await openSettings();
+				await page.getByRole('button', { name: /Invite people/ }).click();
+			}
+		]) {
+			await open();
+			const sheet = page.getByRole('dialog', { name: 'Invite people' });
+			await sheet.getByText('The demo only lives on this phone').waitFor();
+			expect(await sheet.getByRole('link', { name: 'Create a group' }).getAttribute('href')).toBe('/new');
+			expect(await sheet.getByLabel('Invite link').count()).toBe(0);
+			await sheet.getByRole('button', { name: 'Close' }).click();
+			await sheet.waitFor({ state: 'detached' });
+		}
+	});
+
+	it('gives the header one switcher link and a sync button', async () => {
+		await page.goto(`${BASE}/p/DEMO`);
+		const header = page.locator('header.app-bar');
+		await header.getByRole('button', { name: 'Sync status: Only on this phone' }).waitFor();
+
+		await expect(header.getByRole('link').count()).resolves.toBe(1);
+		const switcher = header.getByRole('link', { name: 'Sample group, 4 people. Switch group' });
+		await expect(switcher.getAttribute('href')).resolves.toBe('/');
+		await expect(header.getByRole('link', { name: 'Group settings' }).count()).resolves.toBe(0);
+
+		await header.getByRole('button', { name: /^Sync status:/ }).click();
+		await page.getByRole('dialog', { name: 'Only on this phone' }).waitFor();
+		await page.getByRole('dialog').getByRole('button', { name: 'Close', exact: true }).click();
+		await page.getByRole('dialog').waitFor({ state: 'detached' });
+
+		await switcher.click();
+		await page.waitForURL(`${BASE}/`);
 	});
 });

@@ -103,7 +103,7 @@ try {
 	await page.goto(`${BASE}/p/DEMO/add`);
 	// a sum, not a plain number, so the screenshot shows the field doing the maths
 	await page.fill('[aria-label="Amount, accepts math expressions"]', '(120+48)/2');
-	await page.fill('input[placeholder="What was it for?"]', 'Seafood dinner');
+	await page.getByLabel('What for?', { exact: true }).fill('Seafood dinner');
 	await page.locator('body').click({ position: { x: 5, y: 600 } });
 	await capture(page, 'category', { x: 0, y: 60, width: WIDTH, height: 430 });
 
@@ -122,7 +122,7 @@ try {
 	);
 	await page.goto(`${BASE}/p/DEMO/add`);
 	await page.fill('[aria-label="Amount, accepts math expressions"]', '45');
-	await page.fill('input[placeholder="What was it for?"]', 'Museum tickets');
+	await page.getByLabel('What for?', { exact: true }).fill('Museum tickets');
 	await page.click('.currency-chip');
 	await page.fill('[aria-label="Search currencies"]', 'USD');
 	await page.locator('.currency-row', { hasText: 'USD' }).first().click();

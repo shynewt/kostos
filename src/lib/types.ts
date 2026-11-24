@@ -167,6 +167,31 @@ export type Expense = {
 	splits: ExpenseSplit[];
 	notes?: string;
 	isSettlement?: boolean;
+	/** The repeating rule this expense started or was copied from. Kept after the rule stops. */
+	recurrenceId?: string;
 	createdAt: number;
 	createdBy: string;
 };
+
+export type RepeatFrequency = 'weekly' | 'monthly' | 'yearly';
+
+/** What every copy of a repeating expense is made from. */
+export type RecurringTemplate = Omit<Expense, 'id' | 'date' | 'createdAt' | 'recurrenceId'>;
+
+export type RecurringRule = {
+	id: string;
+	frequency: RepeatFrequency;
+	/** "YYYY-MM-DD" UTC day of period 0. Every period counts from it, so a rule started on the
+	 *  31st lands on the 31st again after a shorter month. */
+	startDay: string;
+	/** Earlier periods belong to the expense that started the rule, or to a rule it replaced. */
+	firstPeriod: number;
+	/** Set when stopped: no copy lands after this "YYYY-MM-DD" UTC day. */
+	endDay?: string;
+	template: RecurringTemplate;
+	createdAt: number;
+	createdBy: string | null;
+};
+
+/** A rule as saved in a backup, with the periods it already created or saw deleted. */
+export type ArchivedRule = RecurringRule & { handledPeriods: number[] };

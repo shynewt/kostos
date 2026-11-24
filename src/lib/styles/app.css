@@ -335,6 +335,12 @@ select {
   border-color: transparent;
 }
 
+.btn-danger {
+  background: var(--owe);
+  color: var(--bg);
+  border-color: var(--owe);
+}
+
 .btn-block {
   width: 100%;
   padding: 16px;
