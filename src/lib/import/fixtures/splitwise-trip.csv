@@ -1,0 +1,10 @@
+Date,Description,Category,Cost,Currency,Alice,Bob,Dan
+
+2024-06-01,Hotel,Hotel,300.00,EUR,200.00,-100.00,-100.00
+2024-06-02,Ramen,Dining out,3000.00,JPY,-1000.00,2000.00,-1000.00
+2024-06-03,Bus,Bus/train,10.00,USD,-5.00,-5.00,10.00
+2024-06-04,Dan paid Alice,Payment,50.00,EUR,-50.00,0.00,50.00
+
+2024-06-04,Total balance, , ,EUR,150.00,-100.00,-50.00
+2024-06-04,Total balance, , ,JPY,-1000.00,2000.00,-1000.00
+2024-06-04,Total balance, , ,USD,-5.00,-5.00,10.00

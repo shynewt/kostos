@@ -1,0 +1,11 @@
+Date,Description,Category,Cost,Currency,Alice,Bob,Carol
+
+2024-03-01,Groceries for the flat,Groceries,60.00,EUR,40.00,-20.00,-20.00
+2024-03-02,"Dinner, pizza and wine",Dining out,8.20,EUR,-2.73,5.47,-2.74
+2024-03-03,Train tickets,Bus/train,45.00,EUR,25.00,10.00,-35.00
+2024-03-04,Museum,Entertainment,30.00,EUR,-10.00,-10.00,20.00
+2024-03-05,Bob paid Alice,Payment,15.00,EUR,-15.00,15.00,0.00
+2024-03-06,Sunscreen,General,12.00,EUR,0.00,0.00,0.00
+2024-03-07,Taxi to the airport,Taxi,18.50,EUR,18.50,0.00,-18.50
+
+2024-03-07,Total balance, , ,EUR,55.77,0.47,-56.24

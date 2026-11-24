@@ -9,7 +9,7 @@
 
 	const FAQS: Faq[] = [
 		{ question: 'Is Kostos really free?', answer: 'Yes. Kostos is free and open source, with no paid tier, no ads and no daily limit on new expenses.' },
-		{ question: 'Can I import my Splitwise groups?', answer: 'Not yet. Start a Kostos group with the same people and add each open balance as one expense, then carry on from there.' },
+		{ question: 'Can I import my Splitwise groups?', answer: 'Yes. Export the group from Splitwise as a spreadsheet and pick the CSV file when you create a Kostos group. Your browser reads the file; nothing is uploaded except the new, encrypted group. Expenses keep their date, description, cost and currency, payments become settlements, and each member ends up with the same balance as in Splitwise. Splitwise’s file only says how each balance moved, so Kostos takes the people owed money as the payers and splits the cost among the rest by exact amounts. An expense someone paid only for themselves changes no balance and is left out.' },
 		{ question: 'Does Kostos work offline like Splitwise?', answer: 'Yes. Expenses you add offline are saved on your phone and sync as soon as you’re back online.' }
 	];
 </script>
@@ -88,8 +88,9 @@
 
 	<h2>How to switch from Splitwise</h2>
 	<ol>
-		<li><a href="/new">Create a Kostos group</a> with the same people and the same currency.</li>
-		<li>Add each balance that’s still open in Splitwise as a single expense, so everyone starts where they left off.</li>
+		<li>In Splitwise on the web, open the group, click the gear icon and export it as a spreadsheet. You get a CSV file.</li>
+		<li>On Kostos, start a <a href="/new">new group</a> and tap “Import a CSV” under the button, or go straight to the <a href="/import/splitwise">Splitwise import</a>.</li>
+		<li>Pick the file, check the members and balances it shows, and choose which member you are. If the group used more than one currency, enter a rate for each extra one.</li>
 		<li>Share the invite link in your group chat. Everyone opens it and picks their name.</li>
 	</ol>
 
