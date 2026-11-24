@@ -4,7 +4,7 @@
 	import AmountField from './AmountField.svelte';
 	import CurrencyPicker from './CurrencyPicker.svelte';
 	import type { EmojiItem } from './EmojiOptionList.svelte';
-	import ExpenseDetails from './ExpenseDetails.svelte';
+	import ExpenseDetails, { type DetailPanel } from './ExpenseDetails.svelte';
 	import PaidBySection from './PaidBySection.svelte';
 	import ScreenAppBar from './ScreenAppBar.svelte';
 	import type { PaymentRow } from './PaidBySection.svelte';
@@ -62,6 +62,7 @@
 		onAddCategory: (item: Category) => void;
 		onAddPaymentMethod: (item: PaymentMethodItem) => void;
 		generateId: () => string;
+		openDetail?: DetailPanel;
 	};
 
 	let {
@@ -77,7 +78,8 @@
 		onCancel,
 		onAddCategory,
 		onAddPaymentMethod,
-		generateId
+		generateId,
+		openDetail
 	}: Props = $props();
 
 	const headerTitle = untrack(() => (mode === 'edit' ? 'Edit expense' : 'New expense'));
@@ -182,6 +184,8 @@
 	const categoryIsGuessed = $derived(
 		!categoryTouched && categoryId !== undefined && categoryId === guessedCategoryId
 	);
+	const selectedCategory = $derived(project.categories.find((c) => c.id === categoryId));
+	let openDetailPanel = $state<DetailPanel | null>(untrack(() => openDetail) ?? null);
 
 	$effect(() => {
 		// Guess the category from the description, debounced so it lands once typing settles
@@ -740,21 +744,42 @@
 				</div>
 			{/if}
 
-			<label class="title-field">
-				<span class="title-label">What for?</span>
-				<input
-					class="input title-input"
-					bind:value={title}
-					placeholder="Dinner, taxi, groceries"
-					autocomplete="off"
-					enterkeyhint="done"
-				/>
-			</label>
+			<div class="title-field">
+				<label class="title-label" for="expense-title">What for?</label>
+				<div class="title-row">
+					<input
+						id="expense-title"
+						class="input title-input"
+						bind:value={title}
+						placeholder="Dinner, taxi, groceries"
+						autocomplete="off"
+						enterkeyhint="done"
+					/>
+					<button
+						type="button"
+						class="category-btn"
+						class:is-set={!!selectedCategory}
+						class:is-open={openDetailPanel === 'category'}
+						aria-label={selectedCategory
+							? `Category: ${selectedCategory.name}${categoryIsGuessed ? ', guessed from the description' : ''}`
+							: 'Choose a category'}
+						aria-haspopup="dialog"
+						title={selectedCategory?.name ?? 'Category'}
+						onclick={() => (openDetailPanel = openDetailPanel === 'category' ? null : 'category')}
+					>
+						{#if selectedCategory}
+							<span class="category-emoji" aria-hidden="true">{selectedCategory.emoji}</span>
+							{#if categoryIsGuessed}<span class="category-guessed-dot" aria-hidden="true"></span>{/if}
+						{:else}
+							<svg class="category-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" /><circle cx="8" cy="8" r="1.5" /></svg>
+						{/if}
+					</button>
+				</div>
+			</div>
 
 			<ExpenseDetails
 				categories={project.categories}
 				{categoryId}
-				{categoryIsGuessed}
 				onSelectCategory={(id) => {
 					categoryId = id;
 					categoryTouched = true;
@@ -776,6 +801,7 @@
 				repeat={seed?.isSettlement ? undefined : repeat}
 				{repeatStartDay}
 				onSelectRepeat={(frequency) => (repeat = frequency)}
+				bind:openPanel={openDetailPanel}
 			/>
 
 			<PaidBySection
@@ -1083,10 +1109,71 @@
 		letter-spacing: -0.01em;
 	}
 
+	.title-row {
+		position: relative;
+	}
+
 	.title-input {
 		font-size: 17px;
 		font-weight: 600;
-		padding: 16px;
+		padding: 16px 64px 16px 16px;
+	}
+
+	.category-btn {
+		position: absolute;
+		top: 50%;
+		right: 8px;
+		translate: 0 -50%;
+		display: grid;
+		place-items: center;
+		width: 44px;
+		height: 44px;
+		padding: 0;
+		border: 1px dashed var(--line-2);
+		border-radius: 12px;
+		background: transparent;
+		color: var(--ink-3);
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+		transition: border-color 0.12s ease;
+	}
+
+	.category-btn.is-set {
+		border-style: solid;
+		border-color: var(--line);
+		background: var(--bg);
+	}
+
+	.category-btn.is-open,
+	.category-btn:hover {
+		border-style: solid;
+		border-color: var(--accent);
+	}
+
+	.category-btn:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.category-emoji {
+		font-size: 20px;
+		line-height: 1;
+	}
+
+	.category-icon {
+		width: 20px;
+		height: 20px;
+	}
+
+	/* the category was picked from the description; it goes away once someone chooses one */
+	.category-guessed-dot {
+		position: absolute;
+		top: 5px;
+		right: 5px;
+		width: 7px;
+		height: 7px;
+		border-radius: 50%;
+		background: var(--accent);
 	}
 
 	.title-input::placeholder {

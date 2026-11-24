@@ -294,6 +294,12 @@
 			{:else if rule?.endDay}
 				<p class="dim repeat-stopped">Repeated {REPEAT_LABELS[rule.frequency].toLowerCase()} until {formatDay(rule.endDay)}</p>
 			{/if}
+			{#if !expense.isSettlement && (!rule || rule.endDay)}
+				<a class="repeat-start" href="/p/{roomId}/expenses/{expense.id}/edit?open=repeat">
+					<svg class="repeat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+					Repeat this expense
+				</a>
+			{/if}
 
 			{#if expense.notes}
 				<div class="card notes-card">
@@ -513,6 +519,23 @@
 		flex-shrink: 0;
 		padding: 8px 12px;
 		font-size: 13px;
+	}
+
+	.repeat-start {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		margin: 2px 0 14px;
+		padding: 6px 2px;
+		color: var(--accent);
+		font-size: 14px;
+		font-weight: 500;
+		text-decoration: none;
+	}
+
+	.repeat-start .repeat-icon {
+		width: 16px;
+		height: 16px;
 	}
 
 	.repeat-stopped {

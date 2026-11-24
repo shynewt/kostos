@@ -64,9 +64,11 @@ async function addMonthlyRent(): Promise<void> {
 	await page.getByLabel('What for?', { exact: true }).fill(TITLE);
 	await page.getByRole('button', { name: /^Date:/ }).click();
 	await page.locator('input[type="date"]').fill(twoMonthsAgo());
+	await page.getByRole('button', { name: 'Done', exact: true }).click();
 	await page.getByRole('button', { name: 'Make this repeat' }).click();
 	await page.getByRole('button', { name: 'Monthly', exact: true }).click();
 	await expect.poll(() => page.locator('.repeat-hint').innerText()).toContain('Every month on day');
+	await page.getByRole('button', { name: 'Done', exact: true }).click();
 	await page.click('.save-btn');
 	await page.waitForURL(/\/p\/DEMO$/);
 }

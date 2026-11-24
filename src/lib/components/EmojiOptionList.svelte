@@ -81,8 +81,6 @@
 		list-style: none;
 		margin: 0;
 		padding: 0 8px;
-		max-height: 260px;
-		overflow-y: auto;
 	}
 
 	.option-list li + li {

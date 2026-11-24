@@ -1,6 +1,7 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import type { Snippet } from 'svelte';
-	import { slide } from 'svelte/transition';
+	import BottomSheet from './BottomSheet.svelte';
 	import EmojiOptionList from './EmojiOptionList.svelte';
 	import type { EmojiItem } from './EmojiOptionList.svelte';
 	import NotesField from './NotesField.svelte';
@@ -9,12 +10,12 @@
 	import { REPEAT_LABELS, repeatSummary } from '$lib/recurring';
 	import type { Category, PaymentMethodItem, RepeatFrequency, Trip } from '$lib/types';
 
-	type Panel = 'category' | 'date' | 'trip' | 'payment' | 'repeat' | 'note';
+	export type DetailPanel = 'category' | 'date' | 'trip' | 'payment' | 'repeat' | 'note';
+	type Panel = DetailPanel;
 
 	type Props = {
 		categories: Category[];
 		categoryId: string | undefined;
-		categoryIsGuessed: boolean;
 		onSelectCategory: (id: string) => void;
 		onAddCategory: (item: EmojiItem) => void;
 		/** null when the group doesn't track payment methods */
@@ -33,12 +34,12 @@
 		/** the day copies count from: the rule's own start once it exists, else the expense date */
 		repeatStartDay?: string;
 		onSelectRepeat?: (frequency: RepeatFrequency | null) => void;
+		openPanel?: Panel | null;
 	};
 
 	let {
 		categories,
 		categoryId,
-		categoryIsGuessed,
 		onSelectCategory,
 		onAddCategory,
 		paymentMethods,
@@ -53,14 +54,13 @@
 		notes = $bindable(),
 		repeat,
 		repeatStartDay,
-		onSelectRepeat
+		onSelectRepeat,
+		openPanel = $bindable(null)
 	}: Props = $props();
 
-	let openPanel = $state<Panel | null>(null);
 	const reducedMotion =
 		typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-	const category = $derived(categories.find((c) => c.id === categoryId));
 	const paymentMethod = $derived(paymentMethods?.find((m) => m.id === paymentMethodId));
 	const trip = $derived(trips.find((t) => t.id === tripId));
 	const dateText = $derived(dayLabel(dateStr, Date.now()));
@@ -88,16 +88,51 @@
 	function close() {
 		openPanel = null;
 	}
+
+	let chipRow = $state<HTMLDivElement>();
+	let canScrollBack = $state(false);
+	let canScrollForward = $state(false);
+
+	function updateScrollEdges() {
+		if (!chipRow) return;
+		const maxScroll = chipRow.scrollWidth - chipRow.clientWidth;
+		canScrollBack = chipRow.scrollLeft > 1;
+		canScrollForward = chipRow.scrollLeft < maxScroll - 1;
+	}
+
+	function scrollChips(direction: 1 | -1) {
+		chipRow?.scrollBy({ left: direction * chipRow.clientWidth * 0.7, behavior: reducedMotion ? 'auto' : 'smooth' });
+	}
+
+	$effect(() => {
+		if (!chipRow) return;
+		const observer = new ResizeObserver(updateScrollEdges);
+		observer.observe(chipRow);
+		return () => observer.disconnect();
+	});
+
+	// an opened chip can sit past the edge, e.g. when a page opens straight into its panel
+	$effect(() => {
+		if (!openPanel || !chipRow) return;
+		tick().then(() =>
+			chipRow?.querySelector('.detail-chip.open')?.scrollIntoView({ inline: 'nearest', block: 'nearest' })
+		);
+	});
+
+	// chip labels change width without resizing the row itself
+	$effect(() => {
+		void [paymentMethod, trip, dateText, noteText, repeat];
+		tick().then(updateScrollEdges);
+	});
 </script>
 
 {#snippet chip(panel: Panel, filled: boolean, accessibleName: string, content: Snippet)}
 	<button
 		type="button"
-		class="detail-chip"
+		class="detail-chip chip-{panel}"
 		class:filled
 		class:open={openPanel === panel}
-		aria-expanded={openPanel === panel}
-		aria-controls="expense-detail-panel"
+		aria-haspopup="dialog"
 		aria-label={accessibleName}
 		onclick={() => toggle(panel)}
 	>
@@ -106,91 +141,82 @@
 {/snippet}
 
 <div class="details">
-	<div class="detail-chips">
-		{#snippet categoryContent()}
-			{#if category}
-				<span class="chip-emoji" aria-hidden="true">{category.emoji}</span>
-				<span class="chip-text">{category.name}</span>
-				{#if categoryIsGuessed}<span class="chip-guessed">guessed</span>{/if}
-			{:else}
-				<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Category</span>
+	<div class="chip-scroller">
+		<div class="detail-chips" bind:this={chipRow} onscroll={updateScrollEdges}>
+
+			{#snippet dateContent()}
+				<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+				<span class="chip-text">{dateText}</span>
+			{/snippet}
+			{@render chip('date', true, `Date: ${dateText}`, dateContent)}
+
+			{#if trips.length > 0}
+				{#snippet tripContent()}
+					{#if trip}
+						<span class="chip-emoji" aria-hidden="true">{trip.emoji}</span>
+						<span class="chip-text">{trip.name}</span>
+					{:else}
+						<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Trip</span>
+					{/if}
+				{/snippet}
+				{@render chip('trip', !!trip, trip ? `Trip: ${trip.name}` : 'Add a trip', tripContent)}
 			{/if}
-		{/snippet}
-		{@render chip(
-			'category',
-			!!category,
-			category ? `Category: ${category.name}${categoryIsGuessed ? ', guessed' : ''}` : 'Add a category',
-			categoryContent
-		)}
 
-		{#snippet dateContent()}
-			<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
-			<span class="chip-text">{dateText}</span>
-		{/snippet}
-		{@render chip('date', true, `Date: ${dateText}`, dateContent)}
-
-		{#if trips.length > 0}
-			{#snippet tripContent()}
-				{#if trip}
-					<span class="chip-emoji" aria-hidden="true">{trip.emoji}</span>
-					<span class="chip-text">{trip.name}</span>
-				{:else}
-					<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Trip</span>
-				{/if}
-			{/snippet}
-			{@render chip('trip', !!trip, trip ? `Trip: ${trip.name}` : 'Add a trip', tripContent)}
-		{/if}
-
-		{#if paymentMethods}
-			{#snippet paymentContent()}
-				{#if paymentMethod}
-					<span class="chip-emoji" aria-hidden="true">{paymentMethod.emoji}</span>
-					<span class="chip-text">{paymentMethod.name}</span>
-				{:else}
-					<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Payment</span>
-				{/if}
-			{/snippet}
-			{@render chip(
-				'payment',
-				!!paymentMethod,
-				paymentMethod ? `Payment method: ${paymentMethod.name}` : 'Add a payment method',
-				paymentContent
-			)}
-		{/if}
-
-		{#if repeat !== undefined}
-			{#snippet repeatContent()}
-				{#if repeat}
-					<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
-					<span class="chip-text">{REPEAT_LABELS[repeat]}</span>
-				{:else}
-					<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Repeat</span>
-				{/if}
-			{/snippet}
-			{@render chip('repeat', !!repeat, repeat ? `Repeats ${REPEAT_LABELS[repeat].toLowerCase()}` : 'Make this repeat', repeatContent)}
-		{/if}
-
-		{#snippet noteContent()}
-			{#if noteText}
-				<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M5 11h14M5 16h9" /></svg>
-				<span class="chip-text chip-note">{noteText}</span>
-			{:else}
-				<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Note</span>
+			{#if repeat !== undefined}
+				{#snippet repeatContent()}
+					{#if repeat}
+						<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+						<span class="chip-text">{REPEAT_LABELS[repeat]}</span>
+					{:else}
+						<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Repeat</span>
+					{/if}
+				{/snippet}
+				{@render chip('repeat', !!repeat, repeat ? `Repeats ${REPEAT_LABELS[repeat].toLowerCase()}` : 'Make this repeat', repeatContent)}
 			{/if}
-		{/snippet}
-		{@render chip('note', !!noteText, noteText ? `Note: ${noteText}` : 'Add a note', noteContent)}
+
+			{#snippet noteContent()}
+				{#if noteText}
+					<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M5 11h14M5 16h9" /></svg>
+					<span class="chip-text chip-note">{noteText}</span>
+				{:else}
+					<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Note</span>
+				{/if}
+			{/snippet}
+			{@render chip('note', !!noteText, noteText ? `Note: ${noteText}` : 'Add a note', noteContent)}
+
+			{#if paymentMethods}
+				{#snippet paymentContent()}
+					{#if paymentMethod}
+						<span class="chip-emoji" aria-hidden="true">{paymentMethod.emoji}</span>
+						<span class="chip-text">{paymentMethod.name}</span>
+					{:else}
+						<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Payment</span>
+					{/if}
+				{/snippet}
+				{@render chip(
+					'payment',
+					!!paymentMethod,
+					paymentMethod ? `Payment method: ${paymentMethod.name}` : 'Add a payment method',
+					paymentContent
+				)}
+			{/if}
+		</div>
+		<!-- mouse-only shortcut: touch swipes and keyboard focus already scroll the row -->
+		{#if canScrollBack}
+			<button type="button" class="chip-arrow is-back" tabindex="-1" aria-hidden="true" onclick={() => scrollChips(-1)}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+			</button>
+		{/if}
+		{#if canScrollForward}
+			<button type="button" class="chip-arrow is-forward" tabindex="-1" aria-hidden="true" onclick={() => scrollChips(1)}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+			</button>
+		{/if}
 	</div>
 
 	{#if openPanel}
-		<div
-			class="card detail-panel"
-			id="expense-detail-panel"
-			transition:slide={{ duration: reducedMotion ? 0 : 160 }}
-		>
-			<div class="panel-head">
-				<span class="panel-title">{PANEL_TITLES[openPanel]}</span>
-				<button type="button" class="panel-done" onclick={close}>Done</button>
-			</div>
+		<BottomSheet title={PANEL_TITLES[openPanel]} onclose={close}>
+			<div class="sheet-body">
 			{#if openPanel === 'category'}
 				<EmojiOptionList
 					label="Category"
@@ -264,7 +290,11 @@
 			{:else if openPanel === 'note'}
 				<NotesField bind:value={notes} />
 			{/if}
-		</div>
+			</div>
+			{#if openPanel === 'date' || openPanel === 'repeat' || openPanel === 'note'}
+				<button type="button" class="btn btn-primary btn-block sheet-done" onclick={close}>Done</button>
+			{/if}
+		</BottomSheet>
 	{/if}
 </div>
 
@@ -273,16 +303,116 @@
 		margin-bottom: 22px;
 	}
 
+	/* one row that scrolls sideways and bleeds into the page gutter; the fades only show on a
+	 * side that has more chips, driven by the row's own scroll position */
 	.detail-chips {
+		--gutter: 22px;
 		display: flex;
-		flex-wrap: wrap;
 		gap: 8px;
+		overflow-x: auto;
+		overscroll-behavior-x: contain;
+		scrollbar-width: none;
+		margin: -4px calc(-1 * var(--gutter));
+		padding: 4px var(--gutter);
+		scroll-padding-inline: var(--gutter);
+		mask-image: linear-gradient(
+			to right,
+			transparent 0,
+			#000 var(--fade-start),
+			#000 calc(100% - var(--fade-end)),
+			transparent 100%
+		);
+	}
+
+	.chip-scroller {
+		position: relative;
+	}
+
+	.chip-arrow {
+		display: none;
+	}
+
+	@media (hover: hover) and (pointer: fine) {
+		.chip-arrow {
+			position: absolute;
+			top: 50%;
+			translate: 0 -50%;
+			display: grid;
+			place-items: center;
+			width: 30px;
+			height: 30px;
+			padding: 0;
+			border: 1px solid var(--line-2);
+			border-radius: 999px;
+			background: var(--bg-2);
+			color: var(--ink);
+			box-shadow: 0 2px 8px -2px rgb(0 0 0 / 0.35);
+			cursor: pointer;
+		}
+
+		.chip-arrow svg {
+			width: 16px;
+			height: 16px;
+		}
+
+		.chip-arrow:hover {
+			border-color: var(--accent);
+		}
+
+		.chip-arrow.is-back {
+			left: -8px;
+		}
+
+		.chip-arrow.is-forward {
+			right: -8px;
+		}
+	}
+
+	.detail-chips::-webkit-scrollbar {
+		display: none;
+	}
+
+	@supports (animation-timeline: scroll()) {
+		.detail-chips {
+			animation: chip-row-fades linear both;
+			animation-timeline: scroll(self inline);
+		}
+	}
+
+	@property --fade-start {
+		syntax: '<length>';
+		inherits: false;
+		initial-value: 0px;
+	}
+
+	@property --fade-end {
+		syntax: '<length>';
+		inherits: false;
+		initial-value: 0px;
+	}
+
+	@keyframes chip-row-fades {
+		from {
+			--fade-start: 0px;
+			--fade-end: 48px;
+		}
+		8% {
+			--fade-start: 28px;
+		}
+		92% {
+			--fade-end: 48px;
+		}
+		to {
+			--fade-start: 28px;
+			--fade-end: 0px;
+		}
 	}
 
 	.detail-chip {
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;
+		flex: none;
 		max-width: 100%;
 		min-height: 36px;
 		padding: 6px 12px;
@@ -298,6 +428,16 @@
 		transition:
 			border-color 0.12s ease,
 			color 0.12s ease;
+	}
+
+	/* set chips come first, so an option someone filled in never hides off the edge */
+	.detail-chip:not(.filled) {
+		order: 1;
+	}
+
+	/* an unused trip is the least likely detail to be added */
+	.detail-chip.chip-trip:not(.filled) {
+		order: 2;
 	}
 
 	.detail-chip.filled {
@@ -345,45 +485,13 @@
 		max-width: 160px;
 	}
 
-	.chip-guessed {
-		font-family: var(--font-mono);
-		font-size: 9px;
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		color: var(--accent);
-		background: color-mix(in oklab, var(--accent) 14%, transparent);
-		padding: 2px 6px;
-		border-radius: 999px;
-		line-height: 1.4;
+
+	.sheet-body {
+		margin: 14px -8px 0;
 	}
 
-	.detail-panel {
-		margin-top: 10px;
-		padding: 4px 0 4px;
-		overflow: hidden;
-	}
-
-	.panel-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 10px 12px 8px 16px;
-	}
-
-	.panel-title {
-		font-size: 14px;
-		font-weight: 600;
-	}
-
-	.panel-done {
-		padding: 4px 6px;
-		border: 0;
-		background: none;
-		color: var(--accent);
-		font: inherit;
-		font-size: 13px;
-		font-weight: 600;
-		cursor: pointer;
+	.sheet-done {
+		margin-top: 16px;
 	}
 
 	.repeat-list {

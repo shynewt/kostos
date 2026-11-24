@@ -23,7 +23,13 @@
 	}
 
 	function focusOnOpen(node: HTMLElement) {
+		const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 		node.focus({ preventScroll: true });
+		return {
+			destroy() {
+				if (opener?.isConnected) opener.focus({ preventScroll: true });
+			}
+		};
 	}
 </script>
 

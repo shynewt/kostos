@@ -69,6 +69,7 @@
 		mode="edit"
 		{initial}
 		initialRepeat={rule?.frequency ?? null}
+		openDetail={page.url.searchParams.get('open') === 'repeat' ? 'repeat' : undefined}
 		ruleStartDay={rule?.startDay}
 		{onSave}
 		{onCancel}
