@@ -21,6 +21,7 @@
 		showInvolvedCount?: boolean;
 		query?: string;
 		conflict?: boolean;
+		repeating?: boolean;
 	};
 
 	let {
@@ -36,7 +37,8 @@
 		showDate = true,
 		showInvolvedCount = true,
 		query = '',
-		conflict = false
+		conflict = false,
+		repeating = false
 	}: Props = $props();
 
 	const category = $derived(
@@ -122,6 +124,9 @@
 			<span class="row-title">
 				<Highlight text={expense.description || 'Expense'} {query} />
 			</span>
+			{#if repeating}
+				<svg class="repeat-mark" role="img" aria-label="Repeats" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+			{/if}
 			{#if conflict}
 				<span class="review-dot" role="img" aria-label="Edited on two phones. Needs review"></span>
 			{/if}
@@ -224,6 +229,13 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.repeat-mark {
+		width: 13px;
+		height: 13px;
+		flex-shrink: 0;
+		color: var(--ink-2);
 	}
 
 	.review-dot {

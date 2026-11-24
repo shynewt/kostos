@@ -11,7 +11,9 @@
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
 	import { plural } from '$lib/plural';
 	import { getCurrentMember, removeProject, setCurrentMember } from '$lib/storage';
+	import { REPEAT_LABELS } from '$lib/recurring';
 	import { updateMember, updateProject } from '$lib/sync/doc';
+	import { archiveRules } from '$lib/sync/recurring';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 	import { backupFile, saveFile, spreadsheetFile } from '$lib/io/exportFiles';
 	import type { ProjectColor, SplitDefault } from '$lib/types';
@@ -91,9 +93,16 @@
 	}
 
 	const expenses = $derived(room.expenses);
+	// each active rule links to its newest expense, where it can be edited or stopped
+	const repeating = $derived(
+		[...room.activeRulesById.values()].flatMap((rule) => {
+			const latest = expenses.filter((e) => e.recurrenceId === rule.id).toSorted((a, b) => b.date - a.date)[0];
+			return latest ? [{ rule, latest }] : [];
+		})
+	);
 
 	function exportJson() {
-		if (project) saveFile(backupFile(project, members, expenses));
+		if (project) saveFile(backupFile(project, members, expenses, new Date(), archiveRules(handle)));
 	}
 
 	function exportCsv() {
@@ -229,6 +238,21 @@
 					{/snippet}
 				</SettingsNavRow>
 			</div>
+
+			{#if repeating.length > 0}
+				<div class="section-head">
+					<div class="eyebrow">Repeating expenses</div>
+				</div>
+				<div class="col gap-8">
+					{#each repeating as { rule, latest } (rule.id)}
+						<SettingsNavRow href="/p/{roomId}/expenses/{latest.id}" title={rule.template.description || 'Expense'} summary={REPEAT_LABELS[rule.frequency]}>
+							{#snippet icon()}
+								<path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" />
+							{/snippet}
+						</SettingsNavRow>
+					{/each}
+				</div>
+			{/if}
 
 			<div class="section-head">
 				<div class="eyebrow">Payment methods</div>

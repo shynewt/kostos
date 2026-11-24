@@ -1,4 +1,5 @@
 import type {
+	ArchivedRule,
 	Category,
 	DefaultSplit,
 	Expense,
@@ -43,6 +44,8 @@ export type ProjectArchive = {
 	};
 	members: Member[];
 	expenses: Expense[];
+	/** Absent in backups made before repeating expenses; older apps ignore it. */
+	recurring?: ArchivedRule[];
 };
 
 export const ARCHIVE_SCHEMA_VERSION = 2;
@@ -51,7 +54,8 @@ export const SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const;
 export function serializeProject(
 	project: Project,
 	members: Member[],
-	expenses: Expense[]
+	expenses: Expense[],
+	recurring: ArchivedRule[] = []
 ): ProjectArchive {
 	return {
 		schemaVersion: ARCHIVE_SCHEMA_VERSION,
@@ -74,7 +78,8 @@ export function serializeProject(
 			createdAt: project.createdAt
 		},
 		members,
-		expenses
+		expenses,
+		...(recurring.length > 0 ? { recurring } : {})
 	};
 }
 
@@ -113,6 +118,10 @@ export function parseProjectArchive(input: unknown): ArchiveParseResult {
 	const expenses = raw.expenses;
 	if (!Array.isArray(expenses) || !expenses.every(isValidExpense)) {
 		return { ok: false, error: 'Backup has malformed expenses.' };
+	}
+
+	if (raw.recurring !== undefined && (!Array.isArray(raw.recurring) || !raw.recurring.every(isValidRule))) {
+		return { ok: false, error: 'Backup has malformed repeating expenses.' };
 	}
 
 	const upgraded = upgradeToCurrent(raw as RawArchive);
@@ -256,6 +265,16 @@ function isValidExpense(value: unknown): value is Expense {
 	if (!Array.isArray(value.payments) || !value.payments.every(isValidPayment)) return false;
 	if (!Array.isArray(value.splits) || !value.splits.every(isValidSplit)) return false;
 	return true;
+}
+
+function isValidRule(value: unknown): value is ArchivedRule {
+	if (!isObject(value) || typeof value.id !== 'string') return false;
+	if (value.frequency !== 'weekly' && value.frequency !== 'monthly' && value.frequency !== 'yearly') return false;
+	if (typeof value.startDay !== 'string' || Number.isNaN(Date.parse(value.startDay))) return false;
+	if (value.endDay !== undefined && (typeof value.endDay !== 'string' || Number.isNaN(Date.parse(value.endDay)))) return false;
+	if (typeof value.firstPeriod !== 'number' || typeof value.createdAt !== 'number') return false;
+	if (!Array.isArray(value.handledPeriods) || !value.handledPeriods.every((p) => typeof p === 'number')) return false;
+	return isObject(value.template) && isValidExpense({ ...value.template, id: value.id, date: 0, createdAt: 0 });
 }
 
 function isValidSplitMode(value: unknown): value is SplitMode {

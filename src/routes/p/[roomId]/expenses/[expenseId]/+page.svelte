@@ -10,8 +10,10 @@
 	import { currencySymbolFor } from '$lib/currencies';
 	import { exchangeFee, expenseBaseAmount, formatRate } from '$lib/currency-convert';
 	import { formatAmount, formatSigned } from '$lib/money';
+	import { REPEAT_LABELS, repeatSummary, todayDay } from '$lib/recurring';
 	import { getCurrentMember } from '$lib/storage';
 	import { removeExpense, restoreExpense, type RoomHandle } from '$lib/sync/doc';
+	import { stopRule } from '$lib/sync/recurring';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
 	import { showToast } from '$lib/toast.svelte';
 	import type { Expense } from '$lib/types';
@@ -33,6 +35,8 @@
 	const currency = $derived(room.currency);
 	const membersById = $derived(room.membersById);
 	const expense = $derived(expenses.find((e) => e.id === expenseId));
+	const rule = $derived(expense?.recurrenceId ? room.rules.find((r) => r.id === expense.recurrenceId) : undefined);
+	let stopping = $state(false);
 	const editEvents = $derived(
 		room.activity.filter((a) => a.expenseId === expenseId && a.kind === 'expense.edit').reverse()
 	);
@@ -134,6 +138,24 @@
 		} catch {
 			showToast('Couldn’t save the undo on this phone', { label: 'Try again', run: () => undoDelete(roomHandle, deleted) });
 		}
+	}
+
+	async function onStopRepeating() {
+		if (!rule || stopping) return;
+		stopping = true;
+		try {
+			stopRule(handle, rule.id, todayDay());
+			await handle.persistence?.flush();
+			showToast('Stopped repeating. Copies already added stay.');
+		} catch {
+			showToast('Couldn’t save that on this phone', { label: 'Try again', run: onStopRepeating });
+		} finally {
+			stopping = false;
+		}
+	}
+
+	function formatDay(day: string): string {
+		return new Date(Date.parse(day)).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 	}
 
 	function onEdit() {
@@ -259,6 +281,19 @@
 					</div>
 				{/each}
 			</div>
+
+			{#if rule && rule.endDay === undefined}
+				<section class="card repeat-card" data-testid="repeat-card">
+					<svg class="repeat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+					<div class="col repeat-text">
+						<span class="repeat-title">Repeats {REPEAT_LABELS[rule.frequency].toLowerCase()}</span>
+						<span class="dim repeat-sub">{repeatSummary(rule.frequency, rule.startDay)}</span>
+					</div>
+					<button class="btn repeat-stop" type="button" onclick={onStopRepeating} disabled={stopping}>Stop repeating</button>
+				</section>
+			{:else if rule?.endDay}
+				<p class="dim repeat-stopped">Repeated {REPEAT_LABELS[rule.frequency].toLowerCase()} until {formatDay(rule.endDay)}</p>
+			{/if}
 
 			{#if expense.notes}
 				<div class="card notes-card">
@@ -441,6 +476,48 @@
 
 	.notes-card {
 		margin-top: 10px;
+	}
+
+	.repeat-card {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin-top: 10px;
+		padding: 12px 14px;
+	}
+
+	.repeat-icon {
+		width: 18px;
+		height: 18px;
+		flex-shrink: 0;
+		color: var(--accent);
+	}
+
+	.repeat-text {
+		flex: 1;
+		min-width: 0;
+		gap: 2px;
+	}
+
+	.repeat-title {
+		font-size: 14px;
+		font-weight: 600;
+	}
+
+	.repeat-sub {
+		font-size: 12px;
+		line-height: 1.4;
+	}
+
+	.repeat-stop {
+		flex-shrink: 0;
+		padding: 8px 12px;
+		font-size: 13px;
+	}
+
+	.repeat-stopped {
+		margin: 10px 2px 0;
+		font-size: 12px;
 	}
 
 	.notes-body {

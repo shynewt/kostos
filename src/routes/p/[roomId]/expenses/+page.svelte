@@ -265,6 +265,7 @@
 							showDate={false}
 							{query}
 							conflict={conflictIds.has(e.id)}
+							repeating={!!e.recurrenceId && room.activeRulesById.has(e.recurrenceId)}
 						/>
 					{/each}
 				</div>

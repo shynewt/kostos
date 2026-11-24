@@ -19,6 +19,7 @@ import {
 	readProject,
 	type RoomHandle
 } from './doc';
+import { readRules } from './recurring';
 import { LOCAL_STATUS, type SyncStatus } from './status';
 import { REMOTE_ORIGIN, type LocalState } from './persistence';
 
@@ -29,6 +30,7 @@ import type {
 	Member,
 	PaymentMethodItem,
 	Project,
+	RecurringRule,
 	Trip
 } from '$lib/types';
 
@@ -42,6 +44,7 @@ export class RoomState {
 	members = $state<Member[]>([]);
 	expenses = $state<Expense[]>([]);
 	activity = $state<ActivityEvent[]>([]);
+	rules = $state<RecurringRule[]>([]);
 	sync = $state<SyncStatus>(LOCAL_STATUS);
 	local = $state<LocalState | null>(null);
 	conflicts = $state<ReturnType<typeof readExpenseConflicts>>([]);
@@ -63,6 +66,9 @@ export class RoomState {
 			: new Map((this.project?.paymentMethods ?? []).map((m) => [m.id, m]))
 	);
 	trips = $derived<Trip[]>(this.project?.trips ?? []);
+	activeRulesById = $derived<Map<string, RecurringRule>>(
+		new Map(this.rules.filter((rule) => rule.endDay === undefined).map((rule) => [rule.id, rule]))
+	);
 	tripsById = $derived<Map<string, Trip>>(new Map(this.trips.map((t) => [t.id, t])));
 	currencySymbol = $derived(this.project?.currencySymbol ?? '€');
 	currency = $derived(this.project?.currency ?? 'EUR');
@@ -96,6 +102,7 @@ export class RoomState {
 		this.members = readMembers(this.handle);
 		this.expenses = readExpenses(this.handle);
 		this.activity = readActivity(this.handle);
+		this.rules = readRules(this.handle);
 		this.conflicts = readExpenseConflicts(this.handle);
 	};
 

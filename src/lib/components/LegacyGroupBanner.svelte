@@ -1,13 +1,14 @@
 <script lang="ts">
 	import { backupFile, saveFile } from '$lib/io/exportFiles';
 	import { LEGACY_GROUP_SUMMARY } from '$lib/legacy';
+	import { archiveRules } from '$lib/sync/recurring';
 	import { useRoomContext } from '$lib/sync/useRoom.svelte';
 
 	const context = useRoomContext();
 	const room = $derived(context?.room);
 
 	function exportBackup() {
-		if (room?.project) saveFile(backupFile(room.project, room.members, room.expenses));
+		if (room?.project) saveFile(backupFile(room.project, room.members, room.expenses, new Date(), archiveRules(room.handle)));
 	}
 </script>
 

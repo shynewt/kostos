@@ -6,9 +6,10 @@
 	import NotesField from './NotesField.svelte';
 	import TripOptionList from './TripOptionList.svelte';
 	import { dayLabel } from '$lib/date-label';
-	import type { Category, PaymentMethodItem, Trip } from '$lib/types';
+	import { REPEAT_LABELS, repeatSummary } from '$lib/recurring';
+	import type { Category, PaymentMethodItem, RepeatFrequency, Trip } from '$lib/types';
 
-	type Panel = 'category' | 'date' | 'trip' | 'payment' | 'note';
+	type Panel = 'category' | 'date' | 'trip' | 'payment' | 'repeat' | 'note';
 
 	type Props = {
 		categories: Category[];
@@ -27,6 +28,11 @@
 		manageTripsHref: string;
 		dateStr: string;
 		notes: string;
+		/** undefined hides the chip, e.g. for settlements */
+		repeat?: RepeatFrequency | null;
+		/** the day copies count from: the rule's own start once it exists, else the expense date */
+		repeatStartDay?: string;
+		onSelectRepeat?: (frequency: RepeatFrequency | null) => void;
 	};
 
 	let {
@@ -44,7 +50,10 @@
 		onSelectTrip,
 		manageTripsHref,
 		dateStr = $bindable(),
-		notes = $bindable()
+		notes = $bindable(),
+		repeat,
+		repeatStartDay,
+		onSelectRepeat
 	}: Props = $props();
 
 	let openPanel = $state<Panel | null>(null);
@@ -56,12 +65,19 @@
 	const trip = $derived(trips.find((t) => t.id === tripId));
 	const dateText = $derived(dayLabel(dateStr, Date.now()));
 	const noteText = $derived(notes.trim());
+	const repeatOptions: (RepeatFrequency | null)[] = [null, 'weekly', 'monthly', 'yearly'];
+	const repeatHint = $derived.by(() => {
+		const startDay = repeatStartDay || dateStr;
+		if (!repeat || Number.isNaN(Date.parse(startDay))) return null;
+		return repeatSummary(repeat, startDay);
+	});
 
 	const PANEL_TITLES: Record<Panel, string> = {
 		category: 'Category',
 		date: 'Date',
 		trip: 'Trip',
 		payment: 'Payment method',
+		repeat: 'Repeat',
 		note: 'Note'
 	};
 
@@ -142,6 +158,18 @@
 			)}
 		{/if}
 
+		{#if repeat !== undefined}
+			{#snippet repeatContent()}
+				{#if repeat}
+					<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
+					<span class="chip-text">{REPEAT_LABELS[repeat]}</span>
+				{:else}
+					<span class="chip-plus" aria-hidden="true">+</span><span class="chip-text">Repeat</span>
+				{/if}
+			{/snippet}
+			{@render chip('repeat', !!repeat, repeat ? `Repeats ${REPEAT_LABELS[repeat].toLowerCase()}` : 'Make this repeat', repeatContent)}
+		{/if}
+
 		{#snippet noteContent()}
 			{#if noteText}
 				<svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M5 11h14M5 16h9" /></svg>
@@ -207,6 +235,32 @@
 				<div class="date-body">
 					<input class="input date-input" type="date" bind:value={dateStr} aria-label="Date" />
 				</div>
+			{:else if openPanel === 'repeat'}
+				<ul class="repeat-list" aria-label="Repeat">
+					{#each repeatOptions as option (option ?? 'never')}
+						<li>
+							<button
+								type="button"
+								class="repeat-option"
+								class:on={option === (repeat ?? null)}
+								aria-pressed={option === (repeat ?? null)}
+								onclick={() => {
+									onSelectRepeat?.(option);
+									if (option === null) close();
+								}}
+							>
+								{option ? REPEAT_LABELS[option] : 'Never'}
+							</button>
+						</li>
+					{/each}
+				</ul>
+				<p class="repeat-hint">
+					{#if repeatHint}
+						{repeatHint}. The group gets a copy with the same payers and split each time; later edits change only the copies still to come.
+					{:else}
+						Add this expense again every week, month or year, for rent and subscriptions.
+					{/if}
+				</p>
 			{:else if openPanel === 'note'}
 				<NotesField bind:value={notes} />
 			{/if}
@@ -330,6 +384,40 @@
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
+	}
+
+	.repeat-list {
+		list-style: none;
+		margin: 0;
+		padding: 0 8px;
+	}
+
+	.repeat-list li + li {
+		border-top: 1px solid var(--line);
+	}
+
+	.repeat-option {
+		width: 100%;
+		padding: 11px 8px;
+		border: 0;
+		background: transparent;
+		color: inherit;
+		font: inherit;
+		font-size: 14px;
+		font-weight: 500;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.repeat-option.on {
+		color: var(--accent);
+	}
+
+	.repeat-hint {
+		margin: 4px 16px 12px;
+		font-size: 12px;
+		line-height: 1.45;
+		color: var(--ink-2);
 	}
 
 	.date-body {

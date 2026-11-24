@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseProjectArchive, serializeProject, toCSV } from './projectArchive';
-import type { Category, Expense, Member, PaymentMethodItem, Project } from '$lib/types';
+import type { ArchivedRule, Category, Expense, Member, PaymentMethodItem, Project } from '$lib/types';
 
 const categories: Category[] = [
 	{ id: 'cat-food', name: 'Food', emoji: '🍕' },
@@ -121,6 +121,36 @@ describe('serializeProject + parseProjectArchive', () => {
 		if (!result.ok) throw new Error(result.error);
 		expect(result.archive.project.splitDefault).toBe('ratio');
 		expect(result.archive.members.map((m) => m.splitWeight)).toEqual([1, 2, 3]);
+	});
+
+	it('round-trips repeating expense rules', () => {
+		const rule: ArchivedRule = {
+			id: '0123456789abcdef',
+			frequency: 'monthly',
+			startDay: '2026-01-31',
+			firstPeriod: 1,
+			endDay: '2026-06-30',
+			template: { payments: [{ memberId: 'm1', amount: 50000 }], amount: 50000, currency: 'EUR', splitMode: 'even', splits: [{ memberId: 'm1' }, { memberId: 'm2' }], createdBy: 'm1' },
+			createdAt: 1,
+			createdBy: 'm1',
+			handledPeriods: [1, 2, 3]
+		};
+		const result = parseProjectArchive(JSON.stringify(serializeProject(project, members, expenses, [rule])));
+		if (!result.ok) throw new Error(result.error);
+		expect(result.archive.recurring).toEqual([rule]);
+	});
+
+	it('restores a backup made before repeating expenses', () => {
+		const archive = serializeProject(project, members, expenses);
+		expect(archive).not.toHaveProperty('recurring');
+		const result = parseProjectArchive(JSON.stringify(archive));
+		if (!result.ok) throw new Error(result.error);
+		expect(result.archive.recurring).toBeUndefined();
+	});
+
+	it('rejects malformed repeating expense rules', () => {
+		const archive = { ...serializeProject(project, members, expenses), recurring: [{ id: 'x', frequency: 'daily' }] };
+		expect(parseProjectArchive(JSON.stringify(archive))).toEqual({ ok: false, error: 'Backup has malformed repeating expenses.' });
 	});
 
 	it('omits the project id', () => {

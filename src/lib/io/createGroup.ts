@@ -2,14 +2,15 @@
 import { addProject, removeProject, setCurrentMember } from '$lib/storage';
 import { deriveLocalId } from '$lib/sync/crypto';
 import { addExpense, destroyRoom, initProject, openRoom, type RoomHandle } from '$lib/sync/doc';
+import { restoreRules } from '$lib/sync/recurring';
 import { generateSecret } from '$lib/invite';
-import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_METHODS, type Expense, type Member, type Project } from '$lib/types';
+import { DEFAULT_CATEGORIES, DEFAULT_PAYMENT_METHODS, type ArchivedRule, type Expense, type Member, type Project } from '$lib/types';
 import type { ProjectArchive } from './projectArchive';
 
-type GroupContents = { project: Omit<Project, 'id'>; members: Member[]; expenses: Expense[] };
+type GroupContents = { project: Omit<Project, 'id'>; members: Member[]; expenses: Expense[]; recurring?: ArchivedRule[] };
 
-export function archiveContents({ project, members, expenses }: ProjectArchive): GroupContents {
-	return { project: { ...project, trips: project.trips ?? [] }, members, expenses };
+export function archiveContents({ project, members, expenses, recurring }: ProjectArchive): GroupContents {
+	return { project: { ...project, trips: project.trips ?? [] }, members, expenses, recurring: recurring ?? [] };
 }
 
 type NewGroupFields = Pick<Project, 'name' | 'description' | 'emoji' | 'color' | 'currency' | 'currencySymbol'>;
@@ -29,14 +30,15 @@ export function newGroupProject(fields: NewGroupFields, now = Date.now()): Omit<
 }
 
 /** One transaction for the expenses, so the IndexedDB write is a single commit and observers fire once. */
-export function seedRoom(handle: RoomHandle, project: Project, members: Member[], expenses: Expense[]): void {
+export function seedRoom(handle: RoomHandle, project: Project, members: Member[], expenses: Expense[], recurring: ArchivedRule[] = []): void {
 	initProject(handle, project, members);
 	handle.doc.transact(() => {
 		for (const expense of expenses) addExpense(handle, expense, { silent: true });
+		restoreRules(handle, recurring);
 	});
 }
 
-export async function createGroup({ project, members, expenses }: GroupContents, currentMemberId: string | null): Promise<string> {
+export async function createGroup({ project, members, expenses, recurring }: GroupContents, currentMemberId: string | null): Promise<string> {
 	const secret = generateSecret();
 	const roomId = await deriveLocalId(secret);
 	// the reference goes first: if it cannot be saved, nothing has been opened or uploaded yet
@@ -44,7 +46,7 @@ export async function createGroup({ project, members, expenses }: GroupContents,
 	try {
 		const handle = openRoom(roomId, secret);
 		await handle.ready;
-		seedRoom(handle, { ...project, id: roomId }, members, expenses);
+		seedRoom(handle, { ...project, id: roomId }, members, expenses, recurring);
 		if (currentMemberId) setCurrentMember(roomId, currentMemberId);
 		await handle.persistence?.flush();
 	} catch (error) {
