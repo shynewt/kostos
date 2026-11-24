@@ -7,7 +7,8 @@
 	import { currencyDecimals } from '$lib/currencies';
 	import { formatAmount, toInputValue } from '$lib/money';
 	import { parseSettleAmount } from '$lib/settle-amount';
-	import { addExpense, generateId } from '$lib/sync/doc';
+	import { generateId } from '$lib/sync/doc';
+	import { saveSettlement } from '$lib/sync/settlement';
 	import type { RoomHandle } from '$lib/sync/doc';
 	import type { Expense, Member, Project } from '$lib/types';
 
@@ -75,11 +76,12 @@
 		}
 		if (!amount || amount.error) return;
 		const cents = amount.cents;
-		// a retry after a failed save must reuse the same id, unless the amount was changed
-		if (submittedExpense && submittedExpense.amount !== cents) submittedExpense = null;
 		const fromName = membersById.get(t.from)?.name ?? '—';
 		const toName = membersById.get(t.to)?.name ?? '—';
-		const expense: Expense = submittedExpense ?? {
+		// a retry keeps the id of the earlier attempt, which may already be in the group
+		const expense: Expense = submittedExpense
+			? { ...submittedExpense, amount: cents, payments: [{ memberId: t.from, amount: cents }] }
+			: {
 			id: generateId(),
 			payments: [{ memberId: t.from, amount: cents }],
 			amount: cents,
@@ -96,7 +98,7 @@
 		recording = true;
 		saveError = false;
 		try {
-			addExpense(handle, expense);
+			saveSettlement(handle, expense);
 			await handle.persistence?.flush();
 			pending = null;
 		} catch { saveError = true; }
