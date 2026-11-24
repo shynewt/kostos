@@ -46,8 +46,8 @@
 	</table>
 </div>
 <p class="sources">
-	Checked against each app’s own pages on {COMPARED_ON}:
-	{#each sources as source, index (source.href)}<a href={source.href} target="_blank" rel="noopener nofollow">{source.label}</a>{index < sources.length - 1 ? ', ' : '.'}{/each}
+	Sources, checked {COMPARED_ON}:
+	{#each sources as source, index (source.href)}<a href={source.href} target="_blank" rel="noopener nofollow">{source.label}</a>{index < sources.length - 1 ? ' · ' : '.'}{/each}
 	“Not confirmed” means the app doesn’t say.
 </p>
 
@@ -86,5 +86,6 @@
 	.fits table { min-width: 0; }
 	.fits .ours { position: static; box-shadow: none; }
 	.sources { margin-top: 0.9rem; color: var(--ink-3); font-size: 0.8rem; line-height: 1.5; }
-	.sources a { color: var(--ink-2); }
+	.sources a { color: var(--ink-2); text-decoration: none; }
+	.sources a:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 0.2em; }
 </style>

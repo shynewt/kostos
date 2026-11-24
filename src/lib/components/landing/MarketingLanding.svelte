@@ -28,14 +28,17 @@
 					<li><span aria-hidden="true">{highlight.emoji}</span>{highlight.label}</li>
 				{/each}
 			</ul>
-			<div class="cta-row">
-				<a class="btn btn-primary cta" href="/new">Create a group</a>
-				<button type="button" class="btn cta" aria-expanded={inviteOpen} onclick={() => (inviteOpen = !inviteOpen)}>Join a group</button>
+			<div class="actions">
+				<div class="cta-row">
+					<a class="btn btn-primary cta" href="/new">Create a group</a>
+					<button type="button" class="btn cta join-toggle" aria-expanded={inviteOpen} onclick={() => (inviteOpen = !inviteOpen)}>Join a group</button>
+				</div>
+				{#if inviteOpen}<div class="invite">{@render inviteForm()}</div>{/if}
+				<button type="button" class="demo" onclick={onTryDemo} disabled={demoLoading}>
+					<span class="demo-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 7.5v9l7.5-4.5z" /></svg></span>
+					<span class="demo-text">{#if demoLoading}Loading the demo…{:else}Just looking? <strong>Try the live demo</strong>{/if}</span>
+				</button>
 			</div>
-			{#if inviteOpen}<div class="invite">{@render inviteForm()}</div>{/if}
-			<button type="button" class="demo" onclick={onTryDemo} disabled={demoLoading}>
-				{demoLoading ? 'Loading the demo…' : 'Try the live demo →'}
-			</button>
 		</div>
 		<figure class="phone">
 			<img
@@ -52,7 +55,10 @@
 		<p class="kicker">How it compares</p>
 		<h2 id="compare">A private Splitwise alternative</h2>
 		<ComparisonTable />
-		<p class="compare-more">Full comparisons: <a href="/splitwise-alternative">Kostos vs Splitwise</a> · <a href="/tricount-alternative">Kostos vs Tricount</a></p>
+		<nav class="compare-links" aria-label="Full comparisons">
+			<a class="compare-link" href="/splitwise-alternative">Kostos vs Splitwise <span aria-hidden="true">→</span></a>
+			<a class="compare-link" href="/tricount-alternative">Kostos vs Tricount <span aria-hidden="true">→</span></a>
+		</nav>
 	</section>
 
 	<section class="wrap" aria-labelledby="features">
@@ -130,15 +136,23 @@
 		display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.8rem; border: 1px solid var(--line-2); border-radius: 999px;
 		background: var(--bg-2); color: var(--ink); font-size: 0.875rem; white-space: nowrap;
 	}
-	.cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2rem; }
-	.cta { flex: 1 1 11rem; max-width: 16rem; }
-	.invite { margin-top: 1rem; max-width: 30rem; }
+	/* the two buttons, the join box and the demo link share one width so their edges line up */
+	.actions { display: grid; gap: 1rem; max-width: 34rem; margin-top: 2rem; }
+	.cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+	.cta { flex: 1 1 12rem; }
+	.cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+	.join-toggle[aria-expanded='true'] { border-color: var(--accent); }
 	.demo {
-		margin-top: 1.1rem; padding: 0; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 0.95rem;
-		text-decoration: underline; text-underline-offset: 0.2em; cursor: pointer;
+		display: flex; align-items: center; gap: 0.55rem; justify-self: center; padding: 0.25rem 0.9rem 0.25rem 0.3rem;
+		border: 1px solid color-mix(in oklab, var(--line) 70%, transparent); border-radius: 999px; background: transparent; color: var(--ink-2);
+		font: inherit; font-size: 0.875rem; cursor: pointer;
 	}
-	.demo:hover { color: var(--ink); }
+	.demo strong { color: var(--ink); font-weight: 600; }
+	.demo:hover { border-color: var(--line-2); background: var(--bg-2); }
+	.demo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 	.demo:disabled { cursor: progress; }
+	.demo-icon { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: color-mix(in oklab, var(--accent) 18%, transparent); }
+	.demo-icon svg { width: 0.95rem; height: 0.95rem; fill: var(--accent); }
 
 	.phone { margin: 0; justify-self: center; width: min(100%, 20rem); padding: 0.6rem; border: 1px solid var(--line-2); border-radius: 2.4rem; background: var(--bg-2);
 		box-shadow: 0 1.5rem 4rem -1.5rem color-mix(in oklab, var(--accent) 35%, transparent), 0 0.5rem 1.5rem color-mix(in oklab, black 25%, transparent); }
@@ -177,8 +191,14 @@
 		.faq details::details-content { transition: block-size 0.25s ease-in-out, content-visibility 0.25s allow-discrete; }
 	}
 
-	.compare-more { margin-top: 0.75rem; color: var(--ink-2); font-size: 0.95rem; }
-	.compare-more a { color: var(--ink); }
+	.compare-links { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.25rem; }
+	.compare-link {
+		display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.55rem 1rem; border: 1px solid var(--line-2); border-radius: 999px;
+		color: var(--ink); font-size: 0.9rem; font-weight: 600; text-decoration: none;
+	}
+	.compare-link span { color: var(--accent); }
+	.compare-link:hover { background: var(--bg-2); border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2)); }
+	.compare-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 	.closing { display: grid; justify-items: center; gap: 1rem; text-align: center; }
 	.closing h2 { margin: 0; }
 	.closing .cta { width: min(100%, 16rem); }
