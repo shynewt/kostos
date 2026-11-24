@@ -56,14 +56,14 @@ const archive = {
 		]
 	},
 	members: [
-		{ id: 'm-anna', name: 'Anna', emoji: '🦊', color: 'violet', createdAt: day(-180) },
-		{ id: 'm-marco', name: 'Marco', emoji: '🐼', color: 'cyan', createdAt: day(-180) },
-		{ id: 'm-sofia', name: 'Sofia', emoji: '🐧', color: 'coral', createdAt: day(-180) }
+		{ id: 'm-alice', name: 'Alice', emoji: '🦊', color: 'violet', createdAt: day(-180) },
+		{ id: 'm-bob', name: 'Bob', emoji: '🐼', color: 'cyan', createdAt: day(-180) },
+		{ id: 'm-charlie', name: 'Charlie', emoji: '🐧', color: 'coral', createdAt: day(-180) }
 	],
 	expenses: [
 		{
 			id: 'e1',
-			payments: [{ memberId: 'm-anna', amount: 12000 }],
+			payments: [{ memberId: 'm-alice', amount: 12000 }],
 			amount: 12000,
 			currency: 'EUR',
 			description: 'Hotel (Lisbon)',
@@ -72,13 +72,13 @@ const archive = {
 			tripId: 'trip-lisbon',
 			date: day(-5),
 			splitMode: 'even',
-			splits: [{ memberId: 'm-anna' }, { memberId: 'm-marco' }, { memberId: 'm-sofia' }],
+			splits: [{ memberId: 'm-alice' }, { memberId: 'm-bob' }, { memberId: 'm-charlie' }],
 			createdAt: day(-5),
-			createdBy: 'm-anna'
+			createdBy: 'm-alice'
 		},
 		{
 			id: 'e2',
-			payments: [{ memberId: 'm-marco', amount: 8400 }],
+			payments: [{ memberId: 'm-bob', amount: 8400 }],
 			amount: 8400,
 			currency: 'EUR',
 			description: 'Seafood dinner',
@@ -88,17 +88,17 @@ const archive = {
 			date: day(-4),
 			splitMode: 'shares',
 			splits: [
-				{ memberId: 'm-anna', shares: 2 },
-				{ memberId: 'm-marco', shares: 2 },
-				{ memberId: 'm-sofia', shares: 1 }
+				{ memberId: 'm-alice', shares: 2 },
+				{ memberId: 'm-bob', shares: 2 },
+				{ memberId: 'm-charlie', shares: 1 }
 			],
-			notes: 'Sofia not very hungry',
+			notes: 'Charlie not very hungry',
 			createdAt: day(-4),
-			createdBy: 'm-marco'
+			createdBy: 'm-bob'
 		},
 		{
 			id: 'e3',
-			payments: [{ memberId: 'm-sofia', amount: 3200 }],
+			payments: [{ memberId: 'm-charlie', amount: 3200 }],
 			amount: 3200,
 			currency: 'EUR',
 			description: 'Tram tickets',
@@ -107,13 +107,13 @@ const archive = {
 			tripId: 'trip-lisbon',
 			date: day(-3),
 			splitMode: 'even',
-			splits: [{ memberId: 'm-anna' }, { memberId: 'm-marco' }, { memberId: 'm-sofia' }],
+			splits: [{ memberId: 'm-alice' }, { memberId: 'm-bob' }, { memberId: 'm-charlie' }],
 			createdAt: day(-3),
-			createdBy: 'm-sofia'
+			createdBy: 'm-charlie'
 		},
 		{
 			id: 'e4',
-			payments: [{ memberId: 'm-marco', amount: 3000 }],
+			payments: [{ memberId: 'm-bob', amount: 3000 }],
 			amount: 3000,
 			currency: 'USD',
 			exchangeRate: 0.92,
@@ -124,13 +124,13 @@ const archive = {
 			tripId: 'trip-lisbon',
 			date: day(-3),
 			splitMode: 'even',
-			splits: [{ memberId: 'm-anna' }, { memberId: 'm-marco' }, { memberId: 'm-sofia' }],
+			splits: [{ memberId: 'm-alice' }, { memberId: 'm-bob' }, { memberId: 'm-charlie' }],
 			createdAt: day(-3),
-			createdBy: 'm-marco'
+			createdBy: 'm-bob'
 		},
 		{
 			id: 'e5',
-			payments: [{ memberId: 'm-anna', amount: 9800 }],
+			payments: [{ memberId: 'm-alice', amount: 9800 }],
 			amount: 9800,
 			currency: 'EUR',
 			description: 'Groceries this week',
@@ -139,13 +139,13 @@ const archive = {
 			tripId: 'trip-flat',
 			date: day(-1),
 			splitMode: 'even',
-			splits: [{ memberId: 'm-anna' }, { memberId: 'm-marco' }, { memberId: 'm-sofia' }],
+			splits: [{ memberId: 'm-alice' }, { memberId: 'm-bob' }, { memberId: 'm-charlie' }],
 			createdAt: day(-1),
-			createdBy: 'm-anna'
+			createdBy: 'm-alice'
 		},
 		{
 			id: 'e6',
-			payments: [{ memberId: 'm-sofia', amount: 6500 }],
+			payments: [{ memberId: 'm-charlie', amount: 6500 }],
 			amount: 6500,
 			currency: 'EUR',
 			description: 'Internet bill',
@@ -154,13 +154,13 @@ const archive = {
 			tripId: 'trip-flat',
 			date: day(-2),
 			splitMode: 'even',
-			splits: [{ memberId: 'm-anna' }, { memberId: 'm-marco' }, { memberId: 'm-sofia' }],
+			splits: [{ memberId: 'm-alice' }, { memberId: 'm-bob' }, { memberId: 'm-charlie' }],
 			createdAt: day(-2),
-			createdBy: 'm-sofia'
+			createdBy: 'm-charlie'
 		},
 		{
 			id: 'e7',
-			payments: [{ memberId: 'm-marco', amount: 18000 }],
+			payments: [{ memberId: 'm-bob', amount: 18000 }],
 			amount: 18000,
 			currency: 'EUR',
 			description: 'Lift passes',
@@ -169,9 +169,9 @@ const archive = {
 			tripId: 'trip-ski',
 			date: day(-90),
 			splitMode: 'even',
-			splits: [{ memberId: 'm-anna' }, { memberId: 'm-marco' }, { memberId: 'm-sofia' }],
+			splits: [{ memberId: 'm-alice' }, { memberId: 'm-bob' }, { memberId: 'm-charlie' }],
 			createdAt: day(-90),
-			createdBy: 'm-marco'
+			createdBy: 'm-bob'
 		}
 	]
 };
@@ -212,6 +212,7 @@ async function main() {
 	// 1. Landing
 	await page.goto(`${BASE_URL}/`);
 	await page.waitForSelector('text=Create a group');
+	await page.getByRole('button', { name: 'Don’t show this again' }).click();
 	await shot('01-landing');
 
 	// 2. Restore the seed archive
@@ -257,7 +258,7 @@ async function main() {
 	await page.click('text=US Dollar');
 	await page.waitForSelector('.fx-card');
 	await page.fill('.fx-input', '41.40');
-	await page.click('.title-input'); // blur the amount so the math toolbar hides
+	await page.locator('.fx-input').blur(); // hides the math toolbar
 	await page.waitForTimeout(300);
 	await shot('04-currency');
 
@@ -272,14 +273,11 @@ async function main() {
 	await page.waitForTimeout(400);
 	await shot('06-stats');
 
-	// 8. Group tab: data section
+	// 8. Group tab
 	await page.click('.tabbar a[href$="/settings"]');
-	await page.waitForSelector('text=Back up (JSON)');
-	await page.getByRole('button', { name: 'Back up (JSON)' }).evaluate((element) => {
-		element.scrollIntoView({ block: 'center' });
-	});
+	await page.waitForSelector('text=Invite people');
 	await page.waitForTimeout(300);
-	await shot('08-data');
+	await shot('08-group');
 
 	// 9. Manage trips
 	await page.click('a[href$="/settings/trips"]');
