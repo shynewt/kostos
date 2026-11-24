@@ -3,14 +3,12 @@
 	import { slide } from 'svelte/transition';
 	import AmountField from './AmountField.svelte';
 	import CurrencyPicker from './CurrencyPicker.svelte';
-	import EmojiPickerField from './EmojiPickerField.svelte';
-	import type { EmojiItem } from './EmojiPickerField.svelte';
+	import type { EmojiItem } from './EmojiOptionList.svelte';
+	import ExpenseDetails from './ExpenseDetails.svelte';
 	import PaidBySection from './PaidBySection.svelte';
 	import ScreenAppBar from './ScreenAppBar.svelte';
 	import type { PaymentRow } from './PaidBySection.svelte';
 	import SplitSection from './SplitSection.svelte';
-	import NotesField from './NotesField.svelte';
-	import TripPickerField from './TripPickerField.svelte';
 	import { expenseShares, splitEvenly } from '$lib/balance';
 	import {
 		currencyDecimals,
@@ -76,7 +74,7 @@
 	}: Props = $props();
 
 	const headerTitle = untrack(() => (mode === 'edit' ? 'Edit expense' : 'New expense'));
-	const saveLabel = untrack(() => (mode === 'edit' ? 'Update' : 'Save'));
+	const saveLabel = untrack(() => (mode === 'edit' ? 'Save changes' : 'Save expense'));
 
 	const seed = untrack(() => initial);
 	// a new expense starts from the group's split default; editing keeps what was saved
@@ -551,9 +549,17 @@
 		paymentMethodId = m.id;
 	}
 
+	// Blurring the amount field hides the math toolbar, which moves the Save bar down
+	// mid-tap so the click can miss. Focus stays put until the click lands, then
+	// handleSubmit lets go of it before the form unmounts.
+	function keepFieldFocus(event: PointerEvent) {
+		event.preventDefault();
+	}
+
 	async function handleSubmit(event?: Event) {
 		event?.preventDefault();
 		if (submitting || !canSave) return;
+		if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
 		submitting = true;
 		saveFailure = null;
 
@@ -601,245 +607,250 @@
 </svelte:head>
 
 <div class="screen" data-page="expense-form">
-	<ScreenAppBar title={headerTitle} {onCancel}>
-		{#snippet right()}
-			<button
-				type="button"
-				class="btn btn-primary save-btn"
-				disabled={!canSave || submitting}
-				onclick={handleSubmit}
-			>
-				{submitting ? 'Saving…' : saveFailure ? 'Try again' : saveLabel}
-			</button>
-		{/snippet}
-	</ScreenAppBar>
+	<ScreenAppBar title={headerTitle} {onCancel} />
 
-	<form class="scroll" onsubmit={handleSubmit}>
-		{#if saveFailure}
-			<p class="save-failure" role="alert" transition:slide={{ duration: reducedMotion ? 0 : 180 }}>{saveFailure}</p>
-		{/if}
-		<AmountField
-			bind:value={amountInput}
-			cents={amountCents}
-			symbol={currencySymbol}
-			{currency}
-			{isExpression}
-			invalid={amountInvalid && shownProblem !== null}
-		/>
-		{#if amountParsed.rounded}
-			<p class="dim mono rounding-note">
-				Saved as {amountStr(amountCents)} {currencyCode}.{#if isPrecisionCapped(currencyCode)}{' '}Kostos
-					keeps {currencyCode} to 2 decimals.{/if}
-			</p>
-		{/if}
+	<form class="form-body" onsubmit={handleSubmit}>
+		<div class="scroll">
+			{#if saveFailure}
+				<p class="save-failure" role="alert" transition:slide={{ duration: reducedMotion ? 0 : 180 }}>{saveFailure}</p>
+			{/if}
+			<AmountField
+				bind:value={amountInput}
+				cents={amountCents}
+				symbol={currencySymbol}
+				{currency}
+				{isExpression}
+				invalid={amountInvalid && shownProblem !== null}
+			/>
+			{#if amountParsed.rounded}
+				<p class="dim rounding-note">
+					Saved as {amountStr(amountCents)} {currencyCode}.{#if isPrecisionCapped(currencyCode)}{' '}Kostos
+						keeps {currencyCode} to 2 decimals.{/if}
+				</p>
+			{/if}
 
-		{#if currencyOpen}
-			<div class="card field-card currency-card">
-				<CurrencyPicker
-					code={currencyCode}
-					symbol={currencySymbol}
-					label="Currency"
-					startOpen
-					onSelect={(p) => {
-						pickCurrency(p);
-						currencyOpen = false;
-					}}
-					onCustom={(s) => {
-						pickCustomCurrency(s);
-						currencyOpen = false;
-					}}
-				/>
-			</div>
-		{:else}
-			<div class="currency-chip-row">
-				<button type="button" class="currency-chip" onclick={() => (currencyOpen = true)}>
-					<span class="num currency-chip-sym">{currencySymbol}</span>
-					<span class="currency-chip-code">{currencyCode}</span>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="currency-chip-chevron" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-				</button>
-			</div>
-		{/if}
-
-		{#if isForeign}
-			<div class="card fx-card">
-				<div class="row between fx-head">
-					<label class="eyebrow" for="fx-charged">Charged in {project.currency}</label>
+			{#if currencyOpen}
+				<div class="card field-card currency-card">
+					<CurrencyPicker
+						code={currencyCode}
+						symbol={currencySymbol}
+						label="Currency"
+						startOpen
+						onSelect={(p) => {
+							pickCurrency(p);
+							currencyOpen = false;
+						}}
+						onCustom={(s) => {
+							pickCustomCurrency(s);
+							currencyOpen = false;
+						}}
+					/>
+				</div>
+			{:else}
+				<div class="currency-chip-row">
 					<button
 						type="button"
-						class="fx-refresh"
-						class:spinning={fxFetching}
-						onclick={() => loadRate(true)}
-						disabled={fxFetching}
-						aria-label="Refresh the market rate"
-						title="Refresh the market rate"
+						class="currency-chip"
+						aria-label="Change currency ({currencyCode})"
+						onclick={() => (currencyOpen = true)}
 					>
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65" /><path d="M20 4v5h-5" /></svg>
+						<span class="num currency-chip-sym">{currencySymbol}</span>
+						<span class="currency-chip-code">{currencyCode}</span>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="currency-chip-chevron" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
 					</button>
 				</div>
-				<div class="fx-field" class:invalid={chargedInvalid}>
-					<span class="fx-sym num">{project.currencySymbol}</span>
-					<input
-						id="fx-charged"
-						class="fx-input mono"
-						value={fxNow.charged}
-						use:mathInput
-						oninput={(e) => (fx = editCharged(fx, e.currentTarget.value))}
-						inputmode="decimal"
-						placeholder={baseAmountStr(0)}
-						autocomplete="off"
-						aria-label="Amount charged in {project.currency}"
-						aria-describedby="fx-status"
-					/>
-					{#if fxDelta !== null}
-						<span class="fx-delta num" class:over={fxDelta > 0} class:under={fxDelta < 0}>
-							{fxDelta > 0 ? '+' : '−'}{Math.abs(fxDelta).toFixed(1)}%
-						</span>
-					{:else if fx.market && !fx.pinned}
-						<span class="fx-delta at-market">market</span>
-					{/if}
-				</div>
-				<div class="fx-status" id="fx-status">
-					{#if fx.market}
-						<p class="dim mono">
-							Market 1 {currencyCode} = {formatRate(fx.market.rate)} {project.currency}{#if marketWhen}{' · '}{marketWhen}{/if}
-						</p>
-					{:else if fxFetching}
-						<p class="dim mono">Getting the market rate…</p>
-					{:else if fx.kept && fxNow.rate !== null}
-						<p class="dim mono">Saved at 1 {currencyCode} = {formatRate(fxNow.rate)} {project.currency}</p>
-					{:else if fxError}
-						<p class="dim">Couldn't get a market rate. Type what you were charged.</p>
-					{:else}
-						<p class="dim">Type what you were charged, or refresh for the market rate.</p>
-					{/if}
-					{#if fxNow.chargedParsed?.rounded && fxNow.chargedCents !== null}
-						<p class="dim mono">Saved as {baseAmountStr(fxNow.chargedCents)} {project.currency}.</p>
-					{:else if fx.market && fx.pinned && fxNow.rate !== null}
-						<p class="dim mono fx-paid">
-							<span>You paid 1 {currencyCode} = {formatRate(fxNow.rate)} {project.currency}</span>
-							{#if fxNow.canUseMarket}
-								<button type="button" class="fx-reset" onclick={() => (fx = useMarket(fx))}>
-									Use market rate
-								</button>
-							{/if}
-						</p>
-					{/if}
-				</div>
-			</div>
-		{/if}
+			{/if}
 
-		<label class="title-field">
-			<span class="eyebrow title-label">Concept</span>
-			<input class="input title-input" bind:value={title} placeholder="What was it for?" />
-		</label>
+			{#if isForeign}
+				<div class="card fx-card">
+					<div class="row between fx-head">
+						<label class="eyebrow" for="fx-charged">Charged in {project.currency}</label>
+						<button
+							type="button"
+							class="fx-refresh"
+							class:spinning={fxFetching}
+							onclick={() => loadRate(true)}
+							disabled={fxFetching}
+							aria-label="Refresh the market rate"
+							title="Refresh the market rate"
+						>
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.35-5.65" /><path d="M20 4v5h-5" /></svg>
+						</button>
+					</div>
+					<div class="fx-field" class:invalid={chargedInvalid}>
+						<span class="fx-sym num">{project.currencySymbol}</span>
+						<input
+							id="fx-charged"
+							class="fx-input mono"
+							value={fxNow.charged}
+							use:mathInput
+							oninput={(e) => (fx = editCharged(fx, e.currentTarget.value))}
+							inputmode="decimal"
+							placeholder={baseAmountStr(0)}
+							autocomplete="off"
+							aria-label="Amount charged in {project.currency}"
+							aria-describedby="fx-status"
+						/>
+						{#if fxDelta !== null}
+							<span class="fx-delta num" class:over={fxDelta > 0} class:under={fxDelta < 0}>
+								{fxDelta > 0 ? '+' : '−'}{Math.abs(fxDelta).toFixed(1)}%
+							</span>
+						{:else if fx.market && !fx.pinned}
+							<span class="fx-delta at-market">market</span>
+						{/if}
+					</div>
+					<div class="fx-status" id="fx-status">
+						{#if fx.market}
+							<p class="dim">
+								Market 1 {currencyCode} = {formatRate(fx.market.rate)} {project.currency}{#if marketWhen}{' · '}{marketWhen}{/if}
+							</p>
+						{:else if fxFetching}
+							<p class="dim">Getting the market rate…</p>
+						{:else if fx.kept && fxNow.rate !== null}
+							<p class="dim">Saved at 1 {currencyCode} = {formatRate(fxNow.rate)} {project.currency}</p>
+						{:else if fxError}
+							<p class="dim">Couldn't get a market rate. Type what you were charged.</p>
+						{:else}
+							<p class="dim">Type what you were charged, or refresh for the market rate.</p>
+						{/if}
+						{#if fxNow.chargedParsed?.rounded && fxNow.chargedCents !== null}
+							<p class="dim">Saved as {baseAmountStr(fxNow.chargedCents)} {project.currency}.</p>
+						{:else if fx.market && fx.pinned && fxNow.rate !== null}
+							<p class="dim fx-paid">
+								<span>You paid 1 {currencyCode} = {formatRate(fxNow.rate)} {project.currency}</span>
+								{#if fxNow.canUseMarket}
+									<button type="button" class="fx-reset" onclick={() => (fx = useMarket(fx))}>
+										Use market rate
+									</button>
+								{/if}
+							</p>
+						{/if}
+					</div>
+				</div>
+			{/if}
 
-		<div class="card field-card meta-card">
-			<EmojiPickerField
-				label="Category"
-				fallbackEmoji="📦"
-				items={project.categories}
-				selectedId={categoryId}
-				suggested={categoryIsGuessed}
-				onSelect={(id) => {
+			<label class="title-field">
+				<span class="title-label">What for?</span>
+				<input
+					class="input title-input"
+					bind:value={title}
+					placeholder="Dinner, taxi, groceries"
+					autocomplete="off"
+					enterkeyhint="done"
+				/>
+			</label>
+
+			<ExpenseDetails
+				categories={project.categories}
+				{categoryId}
+				{categoryIsGuessed}
+				onSelectCategory={(id) => {
 					categoryId = id;
 					categoryTouched = true;
 				}}
-				onAddCustom={handleAddCategory}
+				onAddCategory={handleAddCategory}
+				paymentMethods={(project.paymentMethodsEnabled ?? true) ? project.paymentMethods : null}
+				{paymentMethodId}
+				onSelectPaymentMethod={(id) => (paymentMethodId = id)}
+				onAddPaymentMethod={handleAddMethod}
+				trips={project.trips}
+				{tripId}
+				onSelectTrip={(id) => {
+					tripId = id;
+					tripIdTouched = true;
+				}}
+				manageTripsHref="/p/{project.id}/settings/trips"
+				bind:dateStr
+				bind:notes
 			/>
-			{#if project.paymentMethodsEnabled ?? true}
-				<hr class="hairline" />
-				<EmojiPickerField
-					label="Payment method"
-					fallbackEmoji="💳"
-					items={project.paymentMethods}
-					selectedId={paymentMethodId}
-					onSelect={(id) => (paymentMethodId = id)}
-					onAddCustom={handleAddMethod}
-				/>
-			{/if}
-			{#if project.trips.length > 0}
-				<hr class="hairline" />
-				<TripPickerField
-					trips={project.trips}
-					selectedId={tripId}
-					onSelect={(id) => {
-						tripId = id;
-						tripIdTouched = true;
-					}}
-					manageHref="/p/{project.id}/settings/trips"
-				/>
-			{/if}
+
+			<PaidBySection
+				{payers}
+				roundingNotes={payerRounding}
+				{members}
+				{amountCents}
+				{paidTotal}
+				{paidShort}
+				symbol={currencySymbol}
+				{currency}
+				{currentMemberId}
+				onUpdatePayer={setPayerRow}
+				onAddPayer={addPayer}
+				onRemovePayer={removePayer}
+				onFillPayer={fillPayerRow}
+			/>
+
+			<SplitSection
+				{members}
+				roundingNotes={splitRounding}
+				{amountCents}
+				symbol={currencySymbol}
+				{currency}
+				{currentMemberId}
+				{splitMode}
+				{involved}
+				{shares}
+				{amounts}
+				{memberShares}
+				{remaining}
+				{totalShares}
+				{emptyInvolvedCount}
+				{canAutoFill}
+				onSetSplitMode={(m) => (splitMode = m)}
+				onToggleMember={toggleMember}
+				onStepShare={stepShare}
+				onUpdateAmount={updateAmount}
+				onAutoFillRest={autoFillRest}
+				onFillSplitRow={fillSplitRow}
+			/>
 		</div>
 
-		<PaidBySection
-			{payers}
-			roundingNotes={payerRounding}
-			{members}
-			{amountCents}
-			{paidTotal}
-			{paidShort}
-			symbol={currencySymbol}
-			{currency}
-			{currentMemberId}
-			bind:dateStr
-			onUpdatePayer={setPayerRow}
-			onAddPayer={addPayer}
-			onRemovePayer={removePayer}
-			onFillPayer={fillPayerRow}
-		/>
-
-		<SplitSection
-			{members}
-			roundingNotes={splitRounding}
-			{amountCents}
-			symbol={currencySymbol}
-			{currency}
-			{currentMemberId}
-			{splitMode}
-			{involved}
-			{shares}
-			{amounts}
-			{memberShares}
-			{remaining}
-			{totalShares}
-			{emptyInvolvedCount}
-			{canAutoFill}
-			onSetSplitMode={(m) => (splitMode = m)}
-			onToggleMember={toggleMember}
-			onStepShare={stepShare}
-			onUpdateAmount={updateAmount}
-			onAutoFillRest={autoFillRest}
-			onFillSplitRow={fillSplitRow}
-		/>
-
-		<NotesField bind:value={notes} />
-
-		{#if shownProblem}
-			<p class="save-problem" aria-live="polite">{shownProblem}</p>
-		{/if}
-
-		<button
-			type="submit"
-			class="btn btn-primary btn-block submit-btn"
-			disabled={!canSave || submitting}
-		>
-			{submitting ? 'Saving…' : saveFailure ? 'Try again' : `${saveLabel} expense`}
-		</button>
+		<div class="save-bar">
+			{#if shownProblem}
+				<p class="save-problem" aria-live="polite">{shownProblem}</p>
+			{/if}
+			<button
+				type="submit"
+				class="btn btn-primary btn-block save-btn"
+				disabled={!canSave || submitting}
+				onpointerdown={keepFieldFocus}
+			>
+				{submitting ? 'Saving…' : saveFailure ? 'Try again' : saveLabel}
+			</button>
+		</div>
 	</form>
 </div>
 
 <style>
+	.form-body {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.form-body .scroll {
+		padding-bottom: 28px;
+	}
+
 	.rounding-note {
-		margin: -4px 0 10px;
-		font-size: 11px;
+		margin: 0 0 10px;
+		font-size: 12px;
 		text-align: center;
 	}
 
+	.save-bar {
+		flex: none;
+		padding: 10px 22px calc(12px + max(env(safe-area-inset-bottom, 0px), var(--math-toolbar-space, 0px)));
+		background: var(--bg);
+		border-top: 1px solid var(--line);
+	}
+
 	.save-problem {
-		margin: 0 0 10px;
-		font-size: 12px;
-		font-family: var(--font-mono);
-		line-height: 1.5;
+		margin: 0 0 8px;
+		font-size: 13px;
+		line-height: 1.45;
+		text-align: center;
 		color: var(--owe);
 	}
 
@@ -856,16 +867,6 @@
 		line-height: 1.45;
 	}
 
-	.save-btn {
-		padding: 8px 14px;
-		font-size: 13px;
-	}
-
-	.meta-card {
-		padding: 4px;
-		margin-bottom: 10px;
-	}
-
 	.currency-card {
 		padding: 4px;
 		margin-bottom: 10px;
@@ -874,7 +875,7 @@
 	.currency-chip-row {
 		display: flex;
 		justify-content: center;
-		margin-bottom: 12px;
+		margin: 6px 0 14px;
 	}
 
 	.currency-chip {
@@ -1034,7 +1035,7 @@
 
 	.fx-status p {
 		margin: 0;
-		font-size: 11px;
+		font-size: 12px;
 		line-height: 1.5;
 	}
 
@@ -1057,27 +1058,28 @@
 
 	.title-field {
 		display: block;
-		margin: 18px 0 12px;
+		margin: 22px 0 12px;
 	}
 
 	.title-label {
 		display: block;
 		margin-bottom: 8px;
+		font-size: 15px;
+		font-weight: 600;
+		letter-spacing: -0.01em;
 	}
 
 	.title-input {
-		width: 100%;
-		text-align: left;
 		font-size: 17px;
 		font-weight: 600;
 		padding: 16px;
 	}
 
-	.submit-btn {
-		margin-top: 22px;
+	.title-input::placeholder {
+		color: var(--ink-3);
+		font-weight: 500;
 	}
 
-	.submit-btn:disabled,
 	.save-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;

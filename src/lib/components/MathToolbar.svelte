@@ -77,11 +77,20 @@
 	}
 
 	const visible = $derived(isCoarse && target !== null);
+	let toolbarHeight = $state(0);
+
+	// lets pinned footers (the expense form's Save bar) sit above the toolbar instead of under it
+	$effect(() => {
+		const space = visible ? toolbarHeight + keyboardOffset : 0;
+		document.documentElement.style.setProperty('--math-toolbar-space', `${space}px`);
+		return () => document.documentElement.style.removeProperty('--math-toolbar-space');
+	});
 </script>
 
 {#if visible}
 	<div
 		class="math-toolbar"
+		bind:offsetHeight={toolbarHeight}
 		style="bottom: {keyboardOffset}px"
 		role="toolbar"
 		aria-label="Math operators"

@@ -109,7 +109,7 @@ describe('group split default', () => {
 		await page.getByRole('button', { name: 'Increase shares' }).first().click();
 		await page.getByRole('button', { name: 'Increase shares' }).first().click();
 		await page.fill('[aria-label="Amount, accepts math expressions"]', '30');
-		await page.fill('input[placeholder="What was it for?"]', 'Split default check');
+		await page.getByLabel('What for?', { exact: true }).fill('Split default check');
 		await page.click('.save-btn');
 		await page.waitForURL(/\/p\/DEMO$/);
 
