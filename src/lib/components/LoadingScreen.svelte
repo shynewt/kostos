@@ -1,4 +1,6 @@
 <script lang="ts">
+	import LogoBrush from './LogoBrush.svelte';
+
 	type Props = {
 		label?: string;
 		hint?: string;
@@ -8,7 +10,7 @@
 </script>
 
 <div class="screen loading-screen">
-	<div class="loading-pulse" aria-hidden="true"></div>
+	<div class="loading-mark" aria-hidden="true"><LogoBrush size={38} /></div>
 	{#if label}<p class="dim mono loading-label">{label}</p>{/if}
 	{#if hint}<p class="dim loading-hint">{hint}</p>{/if}
 </div>
@@ -22,12 +24,18 @@
 		padding: 24px;
 	}
 
-	.loading-pulse {
-		width: 36px;
-		height: 36px;
-		border-radius: 999px;
-		background: color-mix(in oklab, var(--accent) 30%, transparent);
-		animation: pulse 1.4s ease-in-out infinite;
+	.loading-mark {
+		display: grid;
+		place-items: center;
+		width: 64px;
+		height: 64px;
+		border-radius: 18px;
+		background: var(--accent);
+		color: var(--accent-ink);
+	}
+
+	@media (prefers-reduced-motion: no-preference) {
+		.loading-mark { animation: pulse 1.4s ease-in-out infinite; }
 	}
 
 	.loading-label {
@@ -44,7 +52,7 @@
 	}
 
 	@keyframes pulse {
-		0%, 100% { transform: scale(0.85); opacity: 0.6; }
+		0%, 100% { transform: scale(0.92); opacity: 0.75; }
 		50% { transform: scale(1); opacity: 1; }
 	}
 </style>

@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
 	<rect width="512" height="512" rx="112" fill="#c4ff4f" />
-	<g transform="translate(128 128) scale(10.6667)" fill="none" stroke="#0a0c0a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-		<path d="M5 6h14M5 12h14M5 18h9" />
-		<circle cx="19" cy="18" r="2.5" fill="#0a0c0a" stroke="none" />
+	<!-- the same paths as src/lib/components/LogoMark.svelte -->
+	<g transform="translate(100 100) scale(13)" fill="none" stroke="#0a0c0a" stroke-width="2.8" stroke-linecap="round">
+		<path d="M6.15 4.7 5.9 19.3M10.1 4.5 10 19.4M14 4.8l.12 14.5M18.1 4.6l-.2 14.7" />
+		<path d="M3.1 16.05C9 13.8 14.9 11.1 20.9 8.15" />
 	</g>
 </svg>

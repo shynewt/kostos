@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 	import ExpenseRow from '$lib/components/ExpenseRow.svelte';
 	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
@@ -231,13 +232,13 @@
 		</section>
 
 		{#if scopedExpenses.length === 0 && selectedTrip}
-			<EmptyCard>
+			<EmptyState>
 				<p>No expenses tagged to <strong>{selectedTrip.name}</strong> yet.</p>
-			</EmptyCard>
+			</EmptyState>
 		{:else if expenses.length === 0}
-			<EmptyCard>
+			<EmptyState>
 				<p>No expenses yet. Tap the + button to add the first one.</p>
-			</EmptyCard>
+			</EmptyState>
 		{:else if filtered.length === 0}
 			<EmptyCard>
 				<p>No expenses match <strong>“{query.trim()}”</strong>.</p>

@@ -17,8 +17,9 @@ const cards = [
 	{
 		file: 'static/og-image.png',
 		eyebrow: 'Group expense splitter',
-		headline: 'Kostos',
+		headline: 'kostos',
 		headlineSize: 150,
+		headlineClass: 'wordmark',
 		body: 'Split bills with friends. No accounts, end-to-end encrypted, works offline.'
 	},
 	{
@@ -43,11 +44,12 @@ function page(card, fonts) {
 		.top svg { width: 84px; height: 84px; }
 		.eyebrow { font-family: 'JetBrains Mono'; font-weight: 500; font-size: 26px; letter-spacing: 0.14em; text-transform: uppercase; color: #c4ff4f; }
 		h1 { font-family: 'Instrument Serif'; font-weight: 400; font-size: ${card.headlineSize}px; line-height: 0.95; letter-spacing: -0.02em; }
+		h1.wordmark { font-family: 'Inter'; font-weight: 700; letter-spacing: -0.045em; }
 		p { margin-top: 26px; max-width: 900px; font-size: 38px; line-height: 1.3; color: #a0a59c; }
 		.site { font-family: 'JetBrains Mono'; font-weight: 500; font-size: 26px; color: #a0a59c; letter-spacing: 0.06em; }
 	</style></head><body>
 		<div class="top">${icon}<span class="eyebrow">${card.eyebrow}</span></div>
-		<div><h1>${card.headline}</h1><p>${card.body}</p></div>
+		<div><h1 class="${card.headlineClass ?? ''}">${card.headline}</h1><p>${card.body}</p></div>
 		<div class="site">kostos.app</div>
 	</body></html>`;
 }
@@ -55,6 +57,7 @@ function page(card, fonts) {
 const fonts = (await Promise.all([
 	fontFace('Instrument Serif', 400, 'instrument-serif/files/instrument-serif-latin-400-normal.woff2'),
 	fontFace('Inter', 400, 'inter/files/inter-latin-400-normal.woff2'),
+	fontFace('Inter', 700, 'inter/files/inter-latin-700-normal.woff2'),
 	fontFace('JetBrains Mono', 500, 'jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2')
 ])).join('\n');
 

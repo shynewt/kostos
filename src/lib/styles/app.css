@@ -190,6 +190,14 @@ select {
 }
 
 /* Type */
+/* the brand name as a wordmark: heavy lowercase sans, to match the tally mark's strokes */
+.wordmark {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
 .h1 {
   font-family: var(--font-display);
   font-size: 38px;
