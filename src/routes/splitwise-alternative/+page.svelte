@@ -9,7 +9,7 @@
 
 	const FAQS: Faq[] = [
 		{ question: 'Is Kostos really free?', answer: 'Yes. Kostos is free and open source, with no paid tier, no ads and no daily limit on new expenses.' },
-		{ question: 'Can I import my Splitwise groups?', answer: 'Yes. Export the group from Splitwise as a spreadsheet and pick the CSV file when you create a Kostos group. Your browser reads the file; nothing is uploaded except the new, encrypted group. Expenses keep their date, description, cost and currency, payments become settlements, and each member ends up with the same balance as in Splitwise. Splitwise’s file only says how each balance moved, so Kostos takes the people owed money as the payers and splits the cost among the rest by exact amounts. An expense someone paid only for themselves changes no balance and is left out.' },
+		{ question: 'Can I import my Splitwise groups?', answer: 'Yes. Export the group from Splitwise as a CSV and pick that file when you create a Kostos group. Everyone ends up with the same balance as in Splitwise, and the file never leaves your browser.' },
 		{ question: 'Does Kostos work offline like Splitwise?', answer: 'Yes. Expenses you add offline are saved on your phone and sync as soon as you’re back online.' }
 	];
 </script>
