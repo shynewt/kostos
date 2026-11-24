@@ -1,0 +1,7 @@
+Datum,Beschreibung,Kategorie,Kosten,Währung,Alice,Bob,Carol
+
+2021-01-26,Wasser,Allgemein,3.00,EUR,-3.00,3.00,0.00
+2021-05-28,"Seife, Putzzeug",Reinigung,1.50,EUR,-0.50,1.00,-0.50
+2022-04-02,Alice zahlte Bob,Zahlung,2.00,EUR,2.00,-2.00,0.00
+
+2022-04-02,Gesamtbilanz, , ,EUR,-1.50,2.00,-0.50

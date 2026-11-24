@@ -231,6 +231,7 @@
 			{submitting ? 'Creating…' : 'Create group'}
 		</button>
 		<p class="dim restore-line">Have a backup? <a class="restore-link" href="/restore">Restore it</a></p>
+		<p class="dim restore-line import-line">Coming from Splitwise? <a class="restore-link" href="/import/splitwise">Import a CSV</a></p>
 	</form>
 </div>
 
@@ -284,6 +285,10 @@
 		margin: 16px 0 8px;
 		font-size: 13px;
 		text-align: center;
+	}
+
+	.import-line {
+		margin-top: -2px;
 	}
 
 	.restore-link {
