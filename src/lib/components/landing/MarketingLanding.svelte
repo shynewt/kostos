@@ -148,7 +148,9 @@
 		font: inherit; font-size: 0.875rem; cursor: pointer;
 	}
 	.demo strong { color: var(--ink); font-weight: 600; }
-	.demo:hover { border-color: var(--line-2); background: var(--bg-2); }
+	@media (hover: hover) {
+		.demo:hover { border-color: var(--line-2); background: var(--bg-2); }
+	}
 	.demo:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 	.demo:disabled { cursor: progress; }
 	.demo-icon { display: grid; place-items: center; width: 1.6rem; height: 1.6rem; border-radius: 50%; background: color-mix(in oklab, var(--accent) 18%, transparent); }
@@ -197,7 +199,9 @@
 		color: var(--ink); font-size: 0.9rem; font-weight: 600; text-decoration: none;
 	}
 	.compare-link span { color: var(--accent); }
-	.compare-link:hover { background: var(--bg-2); border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2)); }
+	@media (hover: hover) {
+		.compare-link:hover { background: var(--bg-2); border-color: color-mix(in oklab, var(--accent) 45%, var(--line-2)); }
+	}
 	.compare-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 	.closing { display: grid; justify-items: center; gap: 1rem; text-align: center; }
 	.closing h2 { margin: 0; }

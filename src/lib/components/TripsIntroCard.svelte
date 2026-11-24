@@ -51,8 +51,10 @@
 		justify-content: center;
 	}
 
-	.dismiss:hover {
-		color: var(--ink);
+	@media (hover: hover) {
+		.dismiss:hover {
+			color: var(--ink);
+		}
 	}
 
 	.dismiss svg {

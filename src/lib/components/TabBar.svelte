@@ -1,5 +1,5 @@
 <script lang="ts">
-	type Tab = 'home' | 'expenses' | 'stats' | 'people';
+	type Tab = 'home' | 'expenses' | 'stats' | 'group';
 
 	type Props = {
 		roomId: string;
@@ -31,10 +31,10 @@
 		</div>
 		<span>STATS</span>
 	</a>
-	<a href="/p/{roomId}/people" class="tab" class:active={active === 'people'}>
+	<a href="/p/{roomId}/settings" class="tab" class:active={active === 'group'}>
 		<div class="tab-icon">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="9" cy="9" r="3.2" /><circle cx="16.5" cy="10" r="2.4" /><path d="M3.5 19c.6-3.2 3-5 5.5-5s4.9 1.8 5.5 5M14 19c.4-2.2 2-3.4 4-3.4s3.5 1.2 4 3.4" /></svg>
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="2.6" /><path d="M19 12a7 7 0 0 0-.16-1.5l2.05-1.58-2-3.46-2.43.83a7 7 0 0 0-2.59-1.5L13.5 2h-3l-.37 2.79a7 7 0 0 0-2.59 1.5l-2.43-.83-2 3.46L5.16 10.5A7 7 0 0 0 5 12a7 7 0 0 0 .16 1.5l-2.05 1.58 2 3.46 2.43-.83a7 7 0 0 0 2.59 1.5L10.5 22h3l.37-2.79a7 7 0 0 0 2.59-1.5l2.43.83 2-3.46-2.05-1.58A7 7 0 0 0 19 12z" /></svg>
 		</div>
-		<span>PEOPLE</span>
+		<span>GROUP</span>
 	</a>
 </nav>

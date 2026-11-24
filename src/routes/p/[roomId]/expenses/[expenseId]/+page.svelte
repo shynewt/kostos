@@ -532,8 +532,10 @@
 		transition: border-color 0.12s ease;
 	}
 
-	.repeat-start:hover {
-		border-color: var(--accent);
+	@media (hover: hover) {
+		.repeat-start:hover {
+			border-color: var(--accent);
+		}
 	}
 
 	.repeat-start .repeat-icon {

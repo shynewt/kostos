@@ -69,6 +69,13 @@ export class RoomState {
 	activeRulesById = $derived<Map<string, RecurringRule>>(
 		new Map(this.rules.filter((rule) => rule.endDay === undefined).map((rule) => [rule.id, rule]))
 	);
+	/** Active rules with their newest copy, which is where a rule is edited or stopped. */
+	repeating = $derived<{ rule: RecurringRule; latest: Expense }[]>(
+		[...this.activeRulesById.values()].flatMap((rule) => {
+			const latest = this.expenses.filter((e) => e.recurrenceId === rule.id).toSorted((a, b) => b.date - a.date)[0];
+			return latest ? [{ rule, latest }] : [];
+		})
+	);
 	tripsById = $derived<Map<string, Trip>>(new Map(this.trips.map((t) => [t.id, t])));
 	currencySymbol = $derived(this.project?.currencySymbol ?? '€');
 	currency = $derived(this.project?.currency ?? 'EUR');

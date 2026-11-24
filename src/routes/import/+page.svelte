@@ -249,10 +249,16 @@
 		transition: border-color 0.12s ease, background 0.12s ease;
 	}
 
-	.dropzone:hover,
 	.dropzone.on {
 		border-color: var(--accent);
 		background: color-mix(in oklab, var(--accent) 6%, transparent);
+	}
+
+	@media (hover: hover) {
+		.dropzone:hover {
+			border-color: var(--accent);
+			background: color-mix(in oklab, var(--accent) 6%, transparent);
+		}
 	}
 
 	.dropzone svg {

@@ -24,7 +24,7 @@ export const PROBLEM_LABELS: Record<SyncProblem, string> = {
 	storage: 'The server couldn’t save your changes. They still need to sync. If this keeps happening, export a backup from Settings.',
 	decrypt: 'Some group data couldn’t be read. Check that you have the correct invite link.',
 	protocol: 'This server needs an update before sync can be verified.',
-	history: 'Older server history is incomplete. Keep your existing devices and export a backup in Settings.',
+	history: 'Older server history is incomplete. Keep your existing devices and save a backup from the Group tab.',
 	size: 'This group is too large to sync in one message. Export a backup from Settings.',
 	full: GROUP_FULL_TEXT,
 	denied: 'This invite doesn’t match the group. Ask for a new invite link.',

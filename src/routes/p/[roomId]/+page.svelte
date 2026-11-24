@@ -239,8 +239,10 @@
 		height: 14px;
 	}
 
-	.balance-button:hover .balance-explain {
-		color: var(--ink);
+	@media (hover: hover) {
+		.balance-button:hover .balance-explain {
+			color: var(--ink);
+		}
 	}
 
 	.balance-sub {

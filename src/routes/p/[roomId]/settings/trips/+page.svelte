@@ -3,6 +3,7 @@
 	import EmojiTilePicker from '$lib/components/EmojiTilePicker.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
 	import {
 		addTrip,
 		assignExpensesToTrip,
@@ -349,6 +350,7 @@
 			</button>
 		{/if}
 	</div>
+	<TabBar {roomId} active="group" />
 </div>
 
 <style>

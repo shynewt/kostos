@@ -2,6 +2,12 @@ import type { Expense, ExpenseSplit, Member, SplitDefault, SplitMode } from './t
 
 export const MAX_SPLIT_WEIGHT = 99;
 
+export const SPLIT_DEFAULT_LABELS: Record<SplitDefault, string> = {
+	even: 'Evenly',
+	ratio: 'Fixed ratio',
+	last: 'My last split'
+};
+
 export type SplitSeed = { splitMode: SplitMode; splits: ExpenseSplit[] };
 
 export function splitWeight(member: Member): number {

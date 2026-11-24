@@ -941,8 +941,10 @@
 		cursor: pointer;
 	}
 
-	.fx-refresh:hover:not(:disabled) {
-		color: var(--accent);
+	@media (hover: hover) {
+		.fx-refresh:hover:not(:disabled) {
+			color: var(--accent);
+		}
 	}
 
 	.fx-refresh:focus-visible {
@@ -1112,10 +1114,16 @@
 		background: var(--bg);
 	}
 
-	.category-btn.is-open,
-	.category-btn:hover {
+	.category-btn.is-open {
 		border-style: solid;
 		border-color: var(--accent);
+	}
+
+	@media (hover: hover) {
+		.category-btn:hover {
+			border-style: solid;
+			border-color: var(--accent);
+		}
 	}
 
 	.category-btn:focus-visible {

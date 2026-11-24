@@ -83,9 +83,14 @@
 		-webkit-tap-highlight-color: transparent;
 	}
 
-	.toast-action:hover,
 	.toast-action:focus-visible {
 		background: color-mix(in oklab, var(--bg) 14%, transparent);
+	}
+
+	@media (hover: hover) {
+		.toast-action:hover {
+			background: color-mix(in oklab, var(--bg) 14%, transparent);
+		}
 	}
 
 	.toast-action:focus-visible {

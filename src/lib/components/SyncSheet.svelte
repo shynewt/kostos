@@ -47,5 +47,7 @@
 	.actions { display: flex; flex-direction: column; gap: 6px; margin-top: 18px; }
 	.action { width: 100%; padding: 14px; font-size: 15px; }
 	.done { color: var(--ink-2); font-weight: 500; }
-	.btn-ghost.done:hover { color: var(--ink); }
+	@media (hover: hover) {
+		.btn-ghost.done:hover { color: var(--ink); }
+	}
 </style>

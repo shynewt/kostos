@@ -245,8 +245,10 @@
 		color: var(--ink-3);
 	}
 
-	.line:hover {
-		border-color: var(--line-2);
+	@media (hover: hover) {
+		.line:hover {
+			border-color: var(--line-2);
+		}
 	}
 
 	.sheet-flow {
