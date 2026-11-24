@@ -18,8 +18,8 @@
 		currency: string;
 		currentMemberId: string | null;
 		onUpdatePayer: (id: string, updates: Partial<PaymentRow>) => void;
-		onSplitAcrossPayers: () => void;
-		onUseSinglePayer: () => void;
+		onAddPayer: (memberId: string) => void;
+		onRemovePayer: (id: string) => void;
 		onFillPayer: (id: string) => void;
 		/** "Saved as …" per payer row whose typed amount gets rounded on save */
 		roundingNotes?: Record<string, string>;
@@ -35,16 +35,21 @@
 		currency,
 		currentMemberId,
 		onUpdatePayer,
-		onSplitAcrossPayers,
-		onUseSinglePayer,
+		onAddPayer,
+		onRemovePayer,
 		onFillPayer,
 		roundingNotes = {}
 	}: Props = $props();
 
-	let openRow = $state<string | null>(null);
+	/** which row's person is being chosen, or 'new' while adding a payer */
+	let picking = $state<string | 'new' | null>(null);
 
 	const isMulti = $derived(payers.length > 1);
-	const openPayer = $derived(payers.find((payer) => payer.id === openRow));
+	const pickingRow = $derived(payers.find((payer) => payer.id === picking));
+	const payerIds = $derived(new Set(payers.map((payer) => payer.memberId)));
+	const canAddPayer = $derived(members.some((m) => !payerIds.has(m.id)));
+	// someone already paying can't be picked twice; the row being changed keeps its own person
+	const pickable = $derived(members.filter((m) => !payerIds.has(m.id) || m.id === pickingRow?.memberId));
 
 	function memberName(id: string): string {
 		const m = members.find((x) => x.id === id);
@@ -52,9 +57,10 @@
 		return m.id === currentMemberId ? `${m.name} (you)` : m.name;
 	}
 
-	function pickMember(rowId: string, memberId: string) {
-		onUpdatePayer(rowId, { memberId });
-		openRow = null;
+	function pickMember(memberId: string) {
+		if (picking === 'new') onAddPayer(memberId);
+		else if (pickingRow) onUpdatePayer(pickingRow.id, { memberId });
+		picking = null;
 	}
 </script>
 
@@ -66,7 +72,7 @@
 			type="button"
 			class="field field-button"
 			aria-haspopup="dialog"
-			onclick={() => (openRow = single?.id ?? null)}
+			onclick={() => (picking = single?.id ?? null)}
 		>
 			{#if payerMember}
 				<Avatar member={payerMember} size="md" />
@@ -83,12 +89,9 @@
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 9l6 6 6-6" /></svg>
 			</span>
 		</button>
-		{#if members.length > 1}
+		{#if canAddPayer}
 			<div class="add-payer-bar">
-				<button type="button" class="add-payer-btn" onclick={onSplitAcrossPayers}>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12" /></svg>
-					<span>Several people paid</span>
-				</button>
+				{@render addPayerButton()}
 			</div>
 		{/if}
 	{:else}
@@ -104,13 +107,14 @@
 				{/if}
 			</span>
 		</div>
-		<p class="dim multi-hint">Enter what each person paid. Leave it empty if they paid nothing.</p>
 		<div class="payer-lines">
 			{#each payers as p (p.id)}
 				{@const payerMember = members.find((m) => m.id === p.memberId)}
 				<div class="payer-line">
-					<Avatar member={payerMember} size="sm" />
-					<span class="payer-line-name">{memberName(p.memberId)}</span>
+					<button type="button" class="payer-who" aria-haspopup="dialog" aria-label="Change who paid: {memberName(p.memberId)}" onclick={() => (picking = p.id)}>
+						<Avatar member={payerMember} size="sm" />
+						<span class="payer-line-name">{memberName(p.memberId)}</span>
+					</button>
 					<div class="payer-amount-wrap">
 						<input
 							class="input payer-amount-input mono"
@@ -124,29 +128,41 @@
 						/>
 						<FillRowButton onfill={() => onFillPayer(p.id)} />
 					</div>
+					<button type="button" class="icon-btn payer-remove" onclick={() => onRemovePayer(p.id)} aria-label="Remove {memberName(p.memberId)} as a payer">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+					</button>
 				</div>
 				{#if roundingNotes[p.id]}
 					<p class="dim mono rounding-note">{roundingNotes[p.id]}</p>
 				{/if}
 			{/each}
 		</div>
-		<div class="add-payer-bar">
-			<button type="button" class="add-payer-btn" onclick={onUseSinglePayer}>Just one payer</button>
-		</div>
+		{#if canAddPayer}
+			<div class="add-payer-bar">
+				{@render addPayerButton()}
+			</div>
+		{/if}
 	{/if}
 </div>
 
-{#if openPayer}
-	<BottomSheet title="Who paid?" onclose={() => (openRow = null)}>
+{#snippet addPayerButton()}
+	<button type="button" class="add-payer-btn" aria-haspopup="dialog" onclick={() => (picking = 'new')}>
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12" /></svg>
+		<span>Add another payer</span>
+	</button>
+{/snippet}
+
+{#if picking === 'new' || pickingRow}
+	<BottomSheet title={picking === 'new' ? 'Who else paid?' : 'Who paid?'} onclose={() => (picking = null)}>
 		<ul class="payer-list">
-			{#each members as m (m.id)}
+			{#each pickable as m (m.id)}
 				<li>
-					<button type="button" class="payer-row" class:on={m.id === openPayer.memberId} onclick={() => pickMember(openPayer.id, m.id)}>
+					<button type="button" class="payer-row" class:on={m.id === pickingRow?.memberId} onclick={() => pickMember(m.id)}>
 						<Avatar member={m} size="sm" />
 						<span class="col payer-text">
 							<span class="payer-name">{memberName(m.id)}</span>
 						</span>
-						{#if m.id === openPayer.memberId}
+						{#if m.id === pickingRow?.memberId}
 							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="payer-check" aria-hidden="true"><path d="M5 12l5 5L20 7" /></svg>
 						{/if}
 					</button>
@@ -255,14 +271,9 @@
 		align-items: baseline;
 		justify-content: space-between;
 		gap: 12px;
-		padding: 14px 12px 0;
+		padding: 14px 12px 6px;
 	}
 
-	.multi-hint {
-		margin: 4px 12px 10px;
-		font-size: 13px;
-		line-height: 1.4;
-	}
 
 	.payer-lines {
 		display: flex;
@@ -279,6 +290,32 @@
 
 	.payer-line + .payer-line {
 		border-top: 1px solid var(--line);
+	}
+
+	.payer-who {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: 1;
+		min-width: 0;
+		padding: 4px 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.payer-remove {
+		flex-shrink: 0;
+		width: 30px;
+		height: 30px;
+	}
+
+	.payer-remove svg {
+		width: 14px;
+		height: 14px;
 	}
 
 	.payer-line-name {

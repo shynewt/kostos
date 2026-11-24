@@ -135,6 +135,7 @@
 		restoreExpense(roomHandle, deleted);
 		try {
 			await roomHandle.persistence?.flush();
+			showToast('Expense restored');
 		} catch {
 			showToast('Couldn’t save the undo on this phone', { label: 'Try again', run: () => undoDelete(roomHandle, deleted) });
 		}
@@ -295,7 +296,7 @@
 				<p class="dim repeat-stopped">Repeated {REPEAT_LABELS[rule.frequency].toLowerCase()} until {formatDay(rule.endDay)}</p>
 			{/if}
 			{#if !expense.isSettlement && (!rule || rule.endDay)}
-				<a class="repeat-start" href="/p/{roomId}/expenses/{expense.id}/edit?open=repeat">
+				<a class="btn repeat-start" href="/p/{roomId}/expenses/{expense.id}/edit?open=repeat">
 					<svg class="repeat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
 					Repeat this expense
 				</a>
@@ -522,15 +523,17 @@
 	}
 
 	.repeat-start {
-		display: inline-flex;
-		align-items: center;
-		gap: 8px;
-		margin: 2px 0 14px;
-		padding: 6px 2px;
-		color: var(--accent);
+		display: flex;
+		width: fit-content;
+		margin: 6px auto 22px;
+		padding: 10px 18px;
 		font-size: 14px;
-		font-weight: 500;
 		text-decoration: none;
+		transition: border-color 0.12s ease;
+	}
+
+	.repeat-start:hover {
+		border-color: var(--accent);
 	}
 
 	.repeat-start .repeat-icon {

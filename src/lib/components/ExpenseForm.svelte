@@ -113,13 +113,11 @@
 		if (seed.payments.length === 1) {
 			return [{ id: generateId(), memberId: seed.payments[0].memberId, amount: '' }];
 		}
-		const paidBy = new Map(seed.payments.map((p) => [p.memberId, toInputValue(p.amount, seed.currency)]));
-		return memberPayerRows((memberId) => paidBy.get(memberId) ?? '');
-	}
-
-	/** Multi-payer mode lists every member; a row left empty means that person didn't pay. */
-	function memberPayerRows(amountFor: (memberId: string) => string): PaymentRow[] {
-		return members.map((m) => ({ id: generateId(), memberId: m.id, amount: amountFor(m.id) }));
+		return seed.payments.map((p) => ({
+			id: generateId(),
+			memberId: p.memberId,
+			amount: toInputValue(p.amount, seed.currency)
+		}));
 	}
 
 	function seedInvolved(): Set<string> {
@@ -341,7 +339,7 @@
 		payers.length > 0 &&
 			payers.every((p) => p.memberId) &&
 			(!isMultiPayer ||
-				(paidTotal === amountCents && payerInputs.every((p) => !p.invalid) && payerCents.some((c) => c > 0)))
+				(paidTotal === amountCents && payerInputs.every((p) => !p.invalid) && payerCents.every((c) => c > 0)))
 	);
 
 	const splitInputs = $derived(
@@ -481,21 +479,15 @@
 		payers = payers.map((p) => (p.id === id ? { ...p, ...updates } : p));
 	}
 
-	function splitAcrossPayers() {
-		const singlePayerId = payers[0]?.memberId || currentMemberId || members[0]?.id || '';
-		if (members.length < 2) return;
-		payers = memberPayerRows(() => '');
-		// keep the person already chosen first, so their row is where the eye lands
-		payers.sort((a, b) => Number(b.memberId === singlePayerId) - Number(a.memberId === singlePayerId));
+	function addPayer(memberId: string) {
+		const row = { id: generateId(), memberId, amount: '' };
+		payers = payers.length === 1 ? [{ ...payers[0], amount: '' }, row] : [...payers, row];
 	}
 
-	function useSinglePayer() {
-		const largest = payers.reduce<{ memberId: string; cents: number } | null>((best, p, i) => {
-			const cents = payerCents[i];
-			return cents > (best?.cents ?? 0) ? { memberId: p.memberId, cents } : best;
-		}, null);
-		const memberId = largest?.memberId ?? payers[0]?.memberId ?? currentMemberId ?? members[0]?.id ?? '';
-		payers = [{ id: generateId(), memberId, amount: '' }];
+	function removePayer(id: string) {
+		if (payers.length <= 1) return;
+		payers = payers.filter((p) => p.id !== id);
+		if (payers.length === 1) payers = [{ ...payers[0], amount: '' }];
 	}
 
 	function fillPayerRow(id: string) {
@@ -569,7 +561,7 @@
 		saveFailure = null;
 
 		const finalPayments = isMultiPayer
-			? payers.map((p, i) => ({ memberId: p.memberId, amount: payerCents[i] })).filter((p) => p.amount > 0)
+			? payers.map((p, i) => ({ memberId: p.memberId, amount: payerCents[i] }))
 			: [{ memberId: payers[0].memberId, amount: amountCents }];
 
 		const conversion = isForeign ? fxForSave(fx, fxCtx, Date.now()) : null;
@@ -796,8 +788,8 @@
 				{currency}
 				{currentMemberId}
 				onUpdatePayer={setPayerRow}
-				onSplitAcrossPayers={splitAcrossPayers}
-				onUseSinglePayer={useSinglePayer}
+				onAddPayer={addPayer}
+				onRemovePayer={removePayer}
 				onFillPayer={fillPayerRow}
 			/>
 
