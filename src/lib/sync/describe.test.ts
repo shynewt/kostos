@@ -44,8 +44,8 @@ describe('describeSync', () => {
 
 	it('points to a backup when the server cannot store changes', () => {
 		const view = describeSync(status({ phase: 'error', problem: 'storage' }), null, NOW);
-		expect(view.body).toContain('export a backup from Settings');
-		expect(view.banner).toContain('export a backup from Settings');
+		expect(view.body).toContain('export a backup from the Group tab');
+		expect(view.banner).toContain('export a backup from the Group tab');
 	});
 
 	it('tells a full group to move to a new one, in the status and the banner', () => {
