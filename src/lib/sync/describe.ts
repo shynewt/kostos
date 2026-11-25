@@ -26,11 +26,11 @@ const BANNER_TEXT: Record<SyncProblem, string> = {
 	...PROBLEM_LABELS,
 	network: 'Can’t reach the group. Your changes are saved here.',
 	timeout: 'The server is slow to answer. Your changes are saved here.',
-	storage: 'The server couldn’t store your latest changes. They’re saved here. If this keeps happening, export a backup from Settings.',
+	storage: 'The server couldn’t store your latest changes. They’re saved here. If this keeps happening, export a backup from the Group tab.',
 	decrypt: 'Some group data couldn’t be read. Check that your invite link is the right one.',
 	protocol: 'This server needs an update before it can sync.',
-	history: 'Older server history is incomplete. Export a backup from Settings.',
-	size: 'This group is too large to sync. Export a backup from Settings.'
+	history: 'Older server history is incomplete. Export a backup from the Group tab.',
+	size: 'This group is too large to sync. Export a backup from the Group tab.'
 };
 
 /** Retrying cannot change these, so the status offers no retry button. */
@@ -73,7 +73,7 @@ export function describeSync(
 			...base,
 			tone: 'warn', state: 'local-error', label: 'Not saved here', attention: true,
 			headline: 'Not saved on this phone',
-			body: 'Your changes may be lost if the app closes. Keep it open and try again, or export a backup from Settings.'
+			body: 'Your changes may be lost if the app closes. Keep it open and try again, or export a backup from the Group tab.'
 		};
 	}
 	if (options.legacy) {
