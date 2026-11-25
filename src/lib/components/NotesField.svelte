@@ -11,6 +11,14 @@
 
 	// it only mounts when the person asks to write a note, so go straight to typing
 	$effect(() => textarea?.focus());
+
+	// one line to start, then taller with each line; max-height takes over with a scrollbar
+	$effect(() => {
+		void value;
+		if (!textarea) return;
+		textarea.style.height = 'auto';
+		textarea.style.height = `${textarea.scrollHeight + textarea.offsetHeight - textarea.clientHeight}px`;
+	});
 </script>
 
 <div class="notes">
@@ -20,7 +28,7 @@
 		bind:value
 		maxlength={maxLength}
 		{placeholder}
-		rows="3"
+		rows="1"
 		aria-label="Note"
 	></textarea>
 	<span class="dim note-count">{value.length} / {maxLength}</span>
@@ -38,8 +46,8 @@
 		padding: 12px;
 		font-size: 14px;
 		line-height: 1.45;
-		resize: vertical;
-		min-height: 72px;
+		resize: none;
+		max-height: 40dvh;
 		font-family: var(--font-sans);
 	}
 

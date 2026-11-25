@@ -72,13 +72,11 @@
 			class:on={splitMode === 'even'}
 			onclick={() => onSetSplitMode('even')}
 		>
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v16M6 7h12M4 11l2-4 2 4a2 2 0 1 1-4 0zM16 11l2-4 2 4a2 2 0 1 1-4 0z" /></svg>
-			<span class="split-tab-label">Evenly</span>
-			<span class="split-tab-sub">
-				{involvedList.length > 0
-					? `${formatAmount(Math.trunc(amountCents / involvedList.length), symbol, currency)} each`
-					: '—'}
+			<span class="split-tab-head">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 4v16M6 7h12M4 11l2-4 2 4a2 2 0 1 1-4 0zM16 11l2-4 2 4a2 2 0 1 1-4 0z" /></svg>
+				<span class="split-tab-label">Evenly</span>
 			</span>
+			<span class="split-tab-sub">equal parts</span>
 		</button>
 		<button
 			type="button"
@@ -86,8 +84,10 @@
 			class:on={splitMode === 'shares'}
 			onclick={() => onSetSplitMode('shares')}
 		>
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 18L18 6" /><circle cx="7.5" cy="7.5" r="2" /><circle cx="16.5" cy="16.5" r="2" /></svg>
-			<span class="split-tab-label">Shares</span>
+			<span class="split-tab-head">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M6 18L18 6" /><circle cx="7.5" cy="7.5" r="2" /><circle cx="16.5" cy="16.5" r="2" /></svg>
+				<span class="split-tab-label">Shares</span>
+			</span>
 			<span class="split-tab-sub">by weights</span>
 		</button>
 		<button
@@ -96,8 +96,10 @@
 			class:on={splitMode === 'amount'}
 			onclick={() => onSetSplitMode('amount')}
 		>
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="18" height="10" rx="2" /><circle cx="12" cy="12" r="2.5" /></svg>
-			<span class="split-tab-label">Amounts</span>
+			<span class="split-tab-head">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="7" width="18" height="10" rx="2" /><circle cx="12" cy="12" r="2.5" /></svg>
+				<span class="split-tab-label">Amounts</span>
+			</span>
 			<span class="split-tab-sub">precise</span>
 		</button>
 	</div>
@@ -221,12 +223,13 @@
 	}
 
 	.split-tab {
-		flex: 1;
+		flex: 1 1 0;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
-		gap: 2px;
-		padding: 10px 6px;
+		gap: 3px;
+		padding: 9px 6px;
 		border-radius: 14px;
 		background: var(--bg);
 		color: var(--ink-2);
@@ -241,9 +244,22 @@
 		border-color: var(--accent);
 	}
 
+	.split-tab-head {
+		display: inline-flex;
+		align-items: center;
+		gap: 5px;
+	}
+
 	.split-tab svg {
-		width: 18px;
-		height: 18px;
+		width: 15px;
+		height: 15px;
+	}
+
+	/* three tabs on a 320px phone are about 64px wide inside: "Amounts" only fits without its icon */
+	@media (max-width: 340px) {
+		.split-tab svg {
+			display: none;
+		}
 	}
 
 	.split-tab-label {
