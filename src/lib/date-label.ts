@@ -23,3 +23,18 @@ export function dayLabel(day: string, now: number, locale?: string): string {
 		timeZone: 'UTC'
 	});
 }
+
+/** dayLabel for tight spots: a date in another year turns numeric, "31/12/25", instead of "31 Dec 2025" */
+export function compactDayLabel(day: string, now: number, locale?: string): string {
+	const picked = Date.parse(day);
+	const today = utcDayStart(now);
+	const isNamedDay = Math.abs(picked - today) <= DAY_MS;
+	const isSameYear = new Date(picked).getUTCFullYear() === new Date(today).getUTCFullYear();
+	if (Number.isNaN(picked) || isNamedDay || isSameYear) return dayLabel(day, now, locale);
+	return new Date(picked).toLocaleDateString(locale, {
+		day: 'numeric',
+		month: 'numeric',
+		year: '2-digit',
+		timeZone: 'UTC'
+	});
+}
