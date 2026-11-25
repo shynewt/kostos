@@ -619,6 +619,7 @@
 				{currency}
 				{isExpression}
 				invalid={amountInvalid && shownProblem !== null}
+				onPickCurrency={() => (currencyOpen = true)}
 			/>
 			{#if amountParsed.rounded}
 				<p class="dim rounding-note">
@@ -627,19 +628,6 @@
 				</p>
 			{/if}
 
-			<div class="currency-chip-row">
-				<button
-					type="button"
-					class="currency-chip"
-					aria-label="Change currency ({currencyCode})"
-					aria-haspopup="dialog"
-					onclick={() => (currencyOpen = true)}
-				>
-					<span class="num currency-chip-sym">{currencySymbol}</span>
-					<span class="currency-chip-code">{currencyCode}</span>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="currency-chip-chevron" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
-				</button>
-			</div>
 			{#if currencyOpen}
 				<CurrencySheet
 					code={currencyCode}
@@ -718,13 +706,13 @@
 			{/if}
 
 			<div class="title-field">
-				<label class="title-label" for="expense-title">What for?</label>
 				<div class="title-row">
 					<input
 						id="expense-title"
 						class="input title-input"
 						bind:value={title}
-						placeholder="Dinner, taxi, groceries"
+						placeholder="What for? Dinner, taxi…"
+						aria-label="What for?"
 						autocomplete="off"
 						enterkeyhint="done"
 					/>
@@ -880,42 +868,6 @@
 		line-height: 1.45;
 	}
 
-	.currency-chip-row {
-		display: flex;
-		justify-content: center;
-		margin: 6px 0 14px;
-	}
-
-	.currency-chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		padding: 5px 10px 5px 12px;
-		background: transparent;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		color: var(--ink-2);
-		cursor: pointer;
-		font: inherit;
-		font-size: 12px;
-		-webkit-tap-highlight-color: transparent;
-	}
-
-	.currency-chip-sym {
-		color: var(--accent);
-		font-weight: 700;
-	}
-
-	.currency-chip-code {
-		letter-spacing: 0.04em;
-	}
-
-	.currency-chip-chevron {
-		width: 13px;
-		height: 13px;
-		color: var(--ink-3);
-	}
-
 	.fx-card {
 		padding: 12px 14px 14px;
 		margin-bottom: 10px;
@@ -1068,15 +1020,7 @@
 
 	.title-field {
 		display: block;
-		margin: 22px 0 12px;
-	}
-
-	.title-label {
-		display: block;
-		margin-bottom: 8px;
-		font-size: 15px;
-		font-weight: 600;
-		letter-spacing: -0.01em;
+		margin: 16px 0 12px;
 	}
 
 	.title-row {

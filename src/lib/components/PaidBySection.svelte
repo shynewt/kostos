@@ -90,9 +90,7 @@
 			</span>
 		</button>
 		{#if canAddPayer}
-			<div class="add-payer-bar">
-				{@render addPayerButton()}
-			</div>
+			{@render addPayerButton()}
 		{/if}
 	{:else}
 		<div class="multi-head">
@@ -138,9 +136,7 @@
 			{/each}
 		</div>
 		{#if canAddPayer}
-			<div class="add-payer-bar">
-				{@render addPayerButton()}
-			</div>
+			{@render addPayerButton()}
 		{/if}
 	{/if}
 </div>
@@ -345,26 +341,35 @@
 		text-align: right;
 	}
 
-	.add-payer-bar {
+	/* a footer strip that runs edge to edge inside the card, so adding a payer is always in sight */
+	.add-payer-btn {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 12px;
-		padding: 4px 12px 12px;
-		flex-wrap: wrap;
-	}
-
-	.add-payer-btn {
-		display: inline-flex;
-		align-items: center;
+		justify-content: center;
 		gap: 6px;
+		width: calc(100% + 8px);
+		min-height: 32px;
+		margin: 0 -4px -4px;
+		padding: 0;
 		background: transparent;
 		border: 0;
+		border-top: 1px solid var(--line);
+		border-radius: 0 0 calc(var(--radius-lg) - 1px) calc(var(--radius-lg) - 1px);
 		color: var(--accent);
-		font-size: 13px;
+		font: inherit;
+		font-size: 12.5px;
 		font-weight: 600;
 		cursor: pointer;
-		padding: 4px 0;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.add-payer-btn:active {
+		background: color-mix(in oklab, var(--accent) 10%, transparent);
+	}
+
+	.add-payer-btn:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
 	}
 
 	.add-payer-btn svg {
