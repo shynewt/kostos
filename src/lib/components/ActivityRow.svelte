@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { currencySymbolFor } from '$lib/currencies';
-	import { formatAmount } from '$lib/money';
+	import { formatAmount, formatSigned } from '$lib/money';
 	import type { ActivityEvent, Member } from '$lib/types';
 	import Avatar from './Avatar.svelte';
 
@@ -28,7 +28,8 @@
 	function money(cents: number | undefined, currency: string | undefined): string {
 		if (cents === undefined || !currency) return '';
 		const sym = currencySymbolFor(currency);
-		return formatAmount(cents, sym, currency);
+		// only an income is negative, and it reads as money coming in
+		return cents < 0 ? formatSigned(-cents, sym, currency) : formatAmount(cents, sym, currency);
 	}
 
 	function shortDate(ms: number): string {

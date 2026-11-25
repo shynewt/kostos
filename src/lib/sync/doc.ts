@@ -618,7 +618,7 @@ function logActivity(handle: RoomHandle, ev: Omit<ActivityEvent, 'id' | 'at' | '
  *  prefixed to the description, e.g. "🍕 Dinner". Reads the live category set so the
  *  glyph matches what the user saw when the event fired. */
 function expenseLabel(handle: RoomHandle, expense: Expense): string {
-	const name = expense.description || 'Expense';
+	const name = expense.description || (expense.amount < 0 ? 'Income' : 'Expense');
 	if (!expense.categoryId) return name;
 	const raw = handle.project.get('categories') as Y.Array<Y.Map<unknown>> | undefined;
 	const list = raw

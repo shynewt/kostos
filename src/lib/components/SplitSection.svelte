@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Avatar from './Avatar.svelte';
 	import FillRowButton from './FillRowButton.svelte';
+	import { longPress } from '$lib/actions/longPress';
 	import { mathInput } from '$lib/actions/mathInput';
 	import { formatAmount } from '$lib/money';
 	import type { Member, SplitMode } from '$lib/types';
@@ -22,6 +23,7 @@
 		canAutoFill: boolean;
 		onSetSplitMode: (mode: SplitMode) => void;
 		onToggleMember: (id: string) => void;
+		onSetInvolved: (ids: string[]) => void;
 		onStepShare: (id: string, delta: number) => void;
 		onUpdateAmount: (id: string, value: string) => void;
 		onAutoFillRest: () => void;
@@ -47,6 +49,7 @@
 		canAutoFill,
 		onSetSplitMode,
 		onToggleMember,
+		onSetInvolved,
 		onStepShare,
 		onUpdateAmount,
 		onAutoFillRest,
@@ -55,14 +58,34 @@
 	}: Props = $props();
 
 	const involvedList = $derived(members.filter((m) => involved.has(m.id)));
+	const isEveryoneIn = $derived(involvedList.length === members.length);
 </script>
 
 <div class="card split-card">
 	<div class="row between" style="margin-bottom: 12px;">
 		<div class="eyebrow">Split</div>
-		<div class="dim split-summary">
-			{involvedList.length} of {members.length} people
-		</div>
+		{#if members.length > 2}
+			<button
+				type="button"
+				class="split-summary"
+				role="checkbox"
+				aria-checked={isEveryoneIn ? 'true' : involvedList.length === 0 ? 'false' : 'mixed'}
+				aria-label="Everyone, {involvedList.length} of {members.length} people included"
+				onclick={() => onSetInvolved(isEveryoneIn ? [] : members.map((m) => m.id))}
+			>
+				<span class="dim">{involvedList.length} of {members.length} people</span>
+				<span class="everyone-box" class:on={involvedList.length > 0} aria-hidden="true">
+					{#if isEveryoneIn}
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7" /></svg>
+					{:else if involvedList.length > 0}
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><path d="M6 12h12" /></svg>
+					{/if}
+				</span>
+			</button>
+		{:else}
+			<!-- with two people, ticking the other row is already one tap -->
+			<div class="dim split-count">{involvedList.length} of {members.length} people</div>
+		{/if}
 	</div>
 
 	<div class="row gap-6 split-tabs">
@@ -129,7 +152,7 @@
 		{#each members as m (m.id)}
 			{@const isIn = involved.has(m.id)}
 			{@const portion = memberShares.get(m.id) ?? 0}
-			<div class="member-row" class:dim={!isIn}>
+			<div class="member-row" class:dim={!isIn} use:longPress={() => onSetInvolved([m.id])}>
 				<button
 					type="button"
 					class="checkbox"
@@ -150,14 +173,14 @@
 				{:else if splitMode === 'even'}
 					<span class="num member-amount">{formatAmount(portion, symbol, currency)}</span>
 				{:else if splitMode === 'shares'}
-					<div class="row gap-6 shares-controls">
+					<div class="row gap-6 shares-controls" data-no-hold>
 						<button type="button" class="step-btn" onclick={() => onStepShare(m.id, -1)} aria-label="Decrease shares">−</button>
 						<span class="num share-value">{shares[m.id] ?? 0}</span>
 						<button type="button" class="step-btn" onclick={() => onStepShare(m.id, 1)} aria-label="Increase shares">+</button>
 					</div>
 					<span class="num member-amount">{formatAmount(portion, symbol, currency)}</span>
 				{:else}
-					<div class="split-amount-wrap">
+					<div class="split-amount-wrap" data-no-hold>
 						<input
 							class="input amount-input-sm mono"
 							value={amounts[m.id] ?? ''}
@@ -215,7 +238,48 @@
 	}
 
 	.split-summary {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		min-height: 28px;
+		margin: -6px 0;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		font: inherit;
 		font-size: 12px;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+	}
+
+	.split-count {
+		font-size: 12px;
+	}
+
+	.split-summary:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+		border-radius: 6px;
+	}
+
+	/* ticked for everyone, a dash for some, empty for nobody; kept grey so the header stays quiet next to the filled row checkboxes */
+	.everyone-box {
+		display: grid;
+		place-items: center;
+		width: 16px;
+		height: 16px;
+		border: 1.5px solid var(--line-2);
+		border-radius: 5px;
+		color: var(--ink-2);
+	}
+
+	.everyone-box.on {
+		border-color: var(--ink-3);
+	}
+
+	.everyone-box svg {
+		width: 10px;
+		height: 10px;
 	}
 
 	.split-tabs {
@@ -325,10 +389,19 @@
 		text-align: right;
 	}
 
+	/* holding a row picks only that person; the hold shouldn't also select their name */
 	.member-row {
 		display: flex;
 		align-items: center;
 		gap: 10px;
+		user-select: none;
+		-webkit-user-select: none;
+		-webkit-touch-callout: none;
+	}
+
+	.member-row input {
+		user-select: text;
+		-webkit-user-select: text;
 	}
 
 	.checkbox {

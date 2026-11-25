@@ -3,6 +3,7 @@
 	import BottomSheet from './BottomSheet.svelte';
 	import FillRowButton from './FillRowButton.svelte';
 	import { mathInput } from '$lib/actions/mathInput';
+	import type { EntryKind } from '$lib/income';
 	import type { Member } from '$lib/types';
 	import { formatAmount } from '$lib/money';
 
@@ -21,6 +22,8 @@
 		onAddPayer: (memberId: string) => void;
 		onRemovePayer: (id: string) => void;
 		onFillPayer: (id: string) => void;
+		/** an income is received by people rather than paid by them */
+		kind?: EntryKind;
 		/** "Saved as …" per payer row whose typed amount gets rounded on save */
 		roundingNotes?: Record<string, string>;
 	};
@@ -38,8 +41,15 @@
 		onAddPayer,
 		onRemovePayer,
 		onFillPayer,
+		kind = 'expense',
 		roundingNotes = {}
 	}: Props = $props();
+
+	const words = $derived(
+		kind === 'income'
+			? { label: 'Received by', verb: 'received', role: 'receiver', complete: 'All received', who: 'Who received it?', whoElse: 'Who else received it?' }
+			: { label: 'Paid by', verb: 'paid', role: 'payer', complete: 'All paid', who: 'Who paid?', whoElse: 'Who else paid?' }
+	);
 
 	/** which row's person is being chosen, or 'new' while adding a payer */
 	let picking = $state<string | 'new' | null>(null);
@@ -82,7 +92,7 @@
 				</span>
 			{/if}
 			<span class="col field-text">
-				<span class="field-label">Paid by</span>
+				<span class="field-label">{words.label}</span>
 				<span class="field-value-static">{single ? memberName(single.memberId) : '—'}</span>
 			</span>
 			<span class="field-chevron" aria-hidden="true">
@@ -94,10 +104,10 @@
 		{/if}
 	{:else}
 		<div class="multi-head">
-			<span class="field-label">Paid by</span>
+			<span class="field-label">{words.label}</span>
 			<span class="paid-status" class:tone-owed={paidShort === 0} class:tone-owe={paidShort !== 0} aria-live="polite">
 				{#if paidShort === 0}
-					All paid
+					{words.complete}
 				{:else if paidShort > 0}
 					<span class="num">{formatAmount(paidShort, symbol, currency)}</span> left
 				{:else}
@@ -109,7 +119,7 @@
 			{#each payers as p (p.id)}
 				{@const payerMember = members.find((m) => m.id === p.memberId)}
 				<div class="payer-line">
-					<button type="button" class="payer-who" aria-haspopup="dialog" aria-label="Change who paid: {memberName(p.memberId)}" onclick={() => (picking = p.id)}>
+					<button type="button" class="payer-who" aria-haspopup="dialog" aria-label="Change who {words.verb}: {memberName(p.memberId)}" onclick={() => (picking = p.id)}>
 						<Avatar member={payerMember} size="sm" />
 						<span class="payer-line-name">{memberName(p.memberId)}</span>
 					</button>
@@ -122,11 +132,11 @@
 							placeholder="0.00"
 							inputmode="decimal"
 							autocomplete="off"
-							aria-label="Amount paid by {memberName(p.memberId)}"
+							aria-label="Amount {words.verb} by {memberName(p.memberId)}"
 						/>
 						<FillRowButton onfill={() => onFillPayer(p.id)} />
 					</div>
-					<button type="button" class="icon-btn payer-remove" onclick={() => onRemovePayer(p.id)} aria-label="Remove {memberName(p.memberId)} as a payer">
+					<button type="button" class="icon-btn payer-remove" onclick={() => onRemovePayer(p.id)} aria-label="Remove {memberName(p.memberId)} as a {words.role}">
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
 					</button>
 				</div>
@@ -144,12 +154,12 @@
 {#snippet addPayerButton()}
 	<button type="button" class="add-payer-btn" aria-haspopup="dialog" onclick={() => (picking = 'new')}>
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 6v12M6 12h12" /></svg>
-		<span>Add another payer</span>
+		<span>Add another {words.role}</span>
 	</button>
 {/snippet}
 
 {#if picking === 'new' || pickingRow}
-	<BottomSheet title={picking === 'new' ? 'Who else paid?' : 'Who paid?'} onclose={() => (picking = null)}>
+	<BottomSheet title={picking === 'new' ? words.whoElse : words.who} onclose={() => (picking = null)}>
 		<ul class="payer-list">
 			{#each pickable as m (m.id)}
 				<li>

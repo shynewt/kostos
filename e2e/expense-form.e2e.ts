@@ -241,3 +241,77 @@ describe('validation message timing', () => {
 		expect(await page.locator('.save-problem').innerText()).toContain("isn't a valid number");
 	});
 });
+
+describe('income', () => {
+	async function saveIncome(title: string): Promise<void> {
+		await openAddForm();
+		await page.getByRole('radio', { name: 'income' }).click();
+		await amountInput().fill('100');
+		await saveAndOpen(title);
+	}
+
+	async function openEditForm(): Promise<void> {
+		await page.getByRole('button', { name: 'Edit' }).first().click();
+		await amountInput().waitFor();
+	}
+
+	it('saves money coming in as received by one person and owed to the rest', async () => {
+		await openAddForm();
+		await page.getByRole('radio', { name: 'income' }).click();
+		await amountInput().fill('100');
+		expect(await page.getByRole('button', { name: /Received by/ }).count()).toBe(1);
+		expect(await page.locator('.save-btn').innerText()).toBe('Save income');
+		await saveAndOpen('E2E deposit back');
+		expect(await page.locator('.hero-amount').innerText()).toBe('+€100.00');
+		expect(await page.locator('.hero-stickers').innerText()).toContain('INCOME');
+		expect(await page.locator('.paid-tag').innerText()).toBe('RECEIVED');
+		expect(await page.locator('.share-amount').innerText()).toBe('€25.00');
+		expect(await page.locator('.share-impact').innerText()).toBe('−€75.00');
+	});
+
+	it('reopens for editing as an income with a positive amount', async () => {
+		await saveIncome('E2E refund to edit');
+		await openEditForm();
+		expect(await page.getByRole('radio', { name: 'income' }).getAttribute('aria-checked')).toBe('true');
+		expect(await amountInput().inputValue()).toBe('100.00');
+	});
+
+	it('turns back into an expense when the type is switched', async () => {
+		await saveIncome('E2E refund to flip');
+		await openEditForm();
+		await page.getByRole('radio', { name: 'expense' }).click();
+		await page.click('.save-btn');
+		await page.locator('.share-impact', { hasText: '+€75.00' }).waitFor();
+		expect(await page.locator('.hero-amount').innerText()).toBe('€100.00');
+	});
+});
+
+describe('choosing who shares', () => {
+	const checkedCount = () => page.locator('.member-row .checkbox.on').count();
+
+	it('clears everyone and brings them back from the split header', async () => {
+		await openAddForm();
+		expect(await checkedCount()).toBe(4);
+		const everyone = page.getByRole('checkbox', { name: /^Everyone/ });
+		expect(await everyone.getAttribute('aria-checked')).toBe('true');
+		await everyone.click();
+		expect(await checkedCount()).toBe(0);
+		expect(await everyone.getAttribute('aria-checked')).toBe('false');
+		await page.getByRole('checkbox', { name: 'Include Bob' }).click();
+		expect(await everyone.getAttribute('aria-checked')).toBe('mixed');
+		await everyone.click();
+		expect(await checkedCount()).toBe(4);
+	});
+
+	it('keeps only the person whose row is held down', async () => {
+		await openAddForm();
+		const row = page.locator('.member-row', { hasText: 'Bob' });
+		const box = (await row.locator('.checkbox').boundingBox())!;
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await page.waitForTimeout(650);
+		await page.mouse.up();
+		expect(await checkedCount()).toBe(1);
+		expect(await row.locator('.checkbox').getAttribute('aria-checked')).toBe('true');
+	});
+});

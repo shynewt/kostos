@@ -30,6 +30,7 @@
 		useMarket
 	} from '$lib/expense-draft';
 	import { resolveRate } from '$lib/fx-cache';
+	import { entryKind, isIncome, negateExpense, type EntryKind } from '$lib/income';
 	import { formatAmount, toInputValue } from '$lib/money';
 	import { defaultSplitSeed } from '$lib/split-default';
 	import { suggestTripIdForDate } from '$lib/trips';
@@ -82,10 +83,13 @@
 		openDetail
 	}: Props = $props();
 
-	const headerTitle = untrack(() => (mode === 'edit' ? 'Edit expense' : 'New expense'));
-	const saveLabel = untrack(() => (mode === 'edit' ? 'Save changes' : 'Save expense'));
-
-	const seed = untrack(() => initial);
+	// the form works in positive numbers; an income is flipped here and flipped back on save
+	const seed = untrack(() => (initial && isIncome(initial) ? negateExpense(initial) : initial));
+	let kind = $state<EntryKind>(untrack(() => (initial ? entryKind(initial) : 'expense')));
+	const headerTitle = $derived(`${mode === 'edit' ? 'Edit' : 'New'} ${kind}`);
+	const saveLabel = $derived(mode === 'edit' ? 'Save changes' : `Save ${kind}`);
+	const payerWord = $derived(kind === 'income' ? 'receiver' : 'payer');
+	const paidByWord = $derived(kind === 'income' ? 'received-by' : 'paid-by');
 	// a new expense starts from the group's split default; editing keeps what was saved
 	const splitSource = untrack(
 		() => seed ?? defaultSplitSeed(project.splitDefault, members, expenses, currentMemberId)
@@ -428,10 +432,11 @@
 		if (amountInvalid) return "The amount isn't a valid number or expression.";
 		if (amountCents <= 0) return null;
 		if (chargedInvalid) return "The charged amount isn't a valid number or expression.";
-		if (payerInvalid) return "One of the paid-by amounts isn't a valid number.";
+		if (payerInvalid) return `One of the ${paidByWord} amounts isn't a valid number.`;
 		if (!paymentsValid && !(isMultiPayer && paidTotal !== amountCents))
-			return 'Every payer needs a person and an amount.';
-		if (isMultiPayer && paidTotal !== amountCents) return "Paid-by amounts don't add up to the total.";
+			return `Every ${payerWord} needs a person and an amount.`;
+		if (isMultiPayer && paidTotal !== amountCents)
+			return `${kind === 'income' ? 'Received-by' : 'Paid-by'} amounts don't add up to the total.`;
 		if (involvedList.length === 0) return 'Pick at least one person to split with.';
 		if (splitInvalid) return "One of the split amounts isn't a valid number.";
 		if (splitMode === 'amount' && remaining !== 0) return "Split amounts don't add up to the total.";
@@ -591,7 +596,7 @@
 		};
 
 		try {
-			await onSave(expense, repeat);
+			await onSave(kind === 'income' ? negateExpense(expense) : expense, repeat);
 		} catch {
 			saveFailure = 'Couldn’t save on this phone. Your entries are still here, so you can try again.';
 		} finally {
@@ -605,7 +610,23 @@
 </svelte:head>
 
 <div class="screen" data-page="expense-form">
-	<ScreenAppBar title={headerTitle} {onCancel} />
+	{#snippet kindSwitch()}
+		<div class="kind-switch" role="radiogroup" aria-label="Type">
+			{#each ['expense', 'income'] as const as option (option)}
+				<button
+					type="button"
+					class="kind-option"
+					class:on={kind === option}
+					role="radio"
+					aria-checked={kind === option}
+					onclick={() => (kind = option)}
+				>
+					{option}
+				</button>
+			{/each}
+		</div>
+	{/snippet}
+	<ScreenAppBar title={headerTitle} {onCancel} center={seed?.isSettlement ? undefined : kindSwitch} />
 
 	<form class="form-body" onsubmit={handleSubmit}>
 		<div class="scroll">
@@ -711,7 +732,7 @@
 						id="expense-title"
 						class="input title-input"
 						bind:value={title}
-						placeholder="What for? Dinner, taxi…"
+						placeholder={kind === 'income' ? 'What for? Refund, deposit…' : 'What for? Dinner, taxi…'}
 						aria-label="What for?"
 						autocomplete="off"
 						enterkeyhint="done"
@@ -767,6 +788,7 @@
 
 			<PaidBySection
 				{payers}
+				{kind}
 				roundingNotes={payerRounding}
 				{members}
 				{amountCents}
@@ -799,6 +821,7 @@
 				{canAutoFill}
 				onSetSplitMode={(m) => (splitMode = m)}
 				onToggleMember={toggleMember}
+				onSetInvolved={(ids) => (involved = new Set(ids))}
 				onStepShare={stepShare}
 				onUpdateAmount={updateAmount}
 				onAutoFillRest={autoFillRest}
@@ -823,6 +846,42 @@
 </div>
 
 <style>
+	.kind-switch {
+		display: flex;
+		padding: 2px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+	}
+
+	.kind-option {
+		min-height: 28px;
+		padding: 0 12px;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--ink-3);
+		font-family: var(--font-mono);
+		font-size: 12px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		cursor: pointer;
+		-webkit-tap-highlight-color: transparent;
+		transition:
+			background-color 0.12s ease,
+			color 0.12s ease;
+	}
+
+	.kind-option.on {
+		background: color-mix(in oklab, var(--accent) 16%, transparent);
+		color: var(--ink);
+	}
+
+	.kind-option:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
 	.form-body {
 		flex: 1;
 		min-height: 0;
@@ -1083,6 +1142,18 @@
 	.category-icon {
 		width: 20px;
 		height: 20px;
+	}
+
+	/* same "still to add" plus as the empty slots in the details bar */
+	.category-btn:not(.is-set)::after {
+		content: '+';
+		position: absolute;
+		left: calc(50% + 9px);
+		top: 7px;
+		font-size: 11px;
+		font-weight: 700;
+		line-height: 1;
+		color: var(--accent);
 	}
 
 	/* the category was picked from the description; it goes away once someone chooses one */

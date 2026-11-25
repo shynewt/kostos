@@ -1,10 +1,9 @@
 /* Balance + settlement engine.
  *
- * All amounts are in minor units (cents) so the math is integer-exact. The settlement
- * planner uses the classic greedy max-creditor / max-debtor pairing; it is what Splitwise
- * and most expense apps use because the true minimum-transactions problem is NP-hard
- * (reduces to subset-sum) and this greedy variant is near-optimal in practice while
- * running in O(n log n).
+ * All amounts are in minor units (cents) so the math is integer-exact. Finding the fewest
+ * payments is NP-hard in general (it reduces to subset-sum), but a group of friends is small
+ * enough to search exhaustively, so the planner is exact up to EXACT_SEARCH_LIMIT people
+ * with an open balance and falls back to largest-creditor / largest-debtor pairing beyond.
  */
 
 import { expenseInBase } from './currency-convert';
@@ -48,9 +47,11 @@ export function expenseShares(expense: Expense): Map<string, number> {
 	}
 
 	if (expense.splitMode === 'amount') {
+		// an income's parts are negative like its total; a part against the total's sign counts as 0
+		const sign = expense.amount < 0 ? -1 : 1;
 		let assigned = 0;
 		for (const s of expense.splits) {
-			const amt = Math.max(0, Math.trunc(s.amount ?? 0));
+			const amt = sign * Math.max(0, sign * Math.trunc(s.amount ?? 0));
 			result.set(s.memberId, amt);
 			assigned += amt;
 		}
@@ -114,16 +115,88 @@ export function computeBalances(
 	return [...net.entries()].map(([memberId, value]) => ({ memberId, net: value }));
 }
 
-/** Greedy minimum-cashflow planner. Repeatedly pairs the largest creditor with the
- *  largest debtor, settles the overlap, and removes the zeroed party. Near-optimal for
- *  the n-party debt graph; trivially deterministic when amounts tie because the input
- *  ordering breaks ties. */
+/** Past this many people with an open balance, trying every grouping (2^n of them) is too
+ *  slow to rerun on a phone each time a balance changes. */
+const EXACT_SEARCH_LIMIT = 16;
+
+/** Who pays whom to bring everyone to zero, in as few payments as possible.
+ *
+ *  People who cancel out among themselves can settle without anyone else, and a group of k
+ *  such people needs k - 1 payments. So the fewest payments overall come from splitting the
+ *  members into as many of those groups as possible. Pairs that cancel exactly are taken
+ *  first, which is always part of some best split; the rest is searched exhaustively up to
+ *  EXACT_SEARCH_LIMIT people and settled as one group beyond that.
+ *
+ *  Every device has to show the same plan, so ties always go to the earlier member. */
 export function planSettlements(balances: MemberBalance[]): Settlement[] {
-	const creditors = balances
+	const open = balances.filter((b) => b.net !== 0);
+	const { pairs, unpaired } = takeExactPairs(open);
+	const groups = unpaired.length <= EXACT_SEARCH_LIMIT ? cancellingGroups(unpaired) : [unpaired];
+	return [...pairs, ...groups]
+		.flatMap(settleGroup)
+		.sort((a, b) => b.amount - a.amount);
+}
+
+function takeExactPairs(open: MemberBalance[]): { pairs: MemberBalance[][]; unpaired: MemberBalance[] } {
+	const pairs: MemberBalance[][] = [];
+	const taken = new Set<MemberBalance>();
+	for (const debtor of open) {
+		if (debtor.net > 0) continue;
+		const creditor = open.find((b) => b.net === -debtor.net && !taken.has(b));
+		if (!creditor) continue;
+		taken.add(debtor).add(creditor);
+		pairs.push([debtor, creditor]);
+	}
+	return { pairs, unpaired: open.filter((b) => !taken.has(b)) };
+}
+
+/** Splits the members into the most groups whose balances each sum to zero.
+ *
+ *  Each subset of members is a bitmask. `groupsIn[mask]` is the most cancelling groups a
+ *  chain of subsets can pass through on its way up to `mask`, adding one member at a time:
+ *  the best of the subsets one member smaller, plus one if `mask` itself sums to zero.
+ *  Walking that chain back down, the members removed between two zero sums are one group. */
+function cancellingGroups(members: MemberBalance[]): MemberBalance[][] {
+	const count = members.length;
+	if (count === 0) return [];
+	const subsets = 1 << count;
+	const sums = new Float64Array(subsets);
+	const groupsIn = new Uint8Array(subsets);
+	for (let mask = 1; mask < subsets; mask++) {
+		const lowest = 31 - Math.clz32(mask & -mask);
+		sums[mask] = sums[mask & (mask - 1)] + members[lowest].net;
+		let best = 0;
+		for (let i = 0; i < count; i++) {
+			if (mask & (1 << i)) best = Math.max(best, groupsIn[mask ^ (1 << i)]);
+		}
+		groupsIn[mask] = best + (sums[mask] === 0 ? 1 : 0);
+	}
+
+	const groups: MemberBalance[][] = [];
+	let group: MemberBalance[] = [];
+	let mask = subsets - 1;
+	while (mask !== 0) {
+		const wanted = groupsIn[mask] - (sums[mask] === 0 ? 1 : 0);
+		let next = 0;
+		while (!(mask & (1 << next)) || groupsIn[mask ^ (1 << next)] !== wanted) next++;
+		group.push(members[next]);
+		mask ^= 1 << next;
+		if (sums[mask] === 0) {
+			groups.push(group);
+			group = [];
+		}
+	}
+	return groups;
+}
+
+/** Largest creditor against largest debtor, down both lists. Each payment clears at least
+ *  one person and the last clears two, so k people take at most k - 1 payments. */
+function settleGroup(group: MemberBalance[]): Settlement[] {
+	const creditors = group
 		.filter((b) => b.net > 0)
 		.map((b) => ({ ...b }))
 		.sort((a, b) => b.net - a.net);
-	const debtors = balances
+	const debtors = group
 		.filter((b) => b.net < 0)
 		.map((b) => ({ ...b }))
 		.sort((a, b) => a.net - b.net);

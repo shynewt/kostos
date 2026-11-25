@@ -42,6 +42,49 @@ function netZero(balances: MemberBalance[]): boolean {
 	return balances.reduce((acc, b) => acc + b.net, 0) === 0;
 }
 
+function ledger(nets: Record<string, number>): MemberBalance[] {
+	return Object.entries(nets).map(([memberId, net]) => ({ memberId, net }));
+}
+
+function leftAfter(balances: MemberBalance[], plan: { from: string; to: string; amount: number }[]): number[] {
+	const left = new Map(balances.map((b) => [b.memberId, b.net]));
+	for (const tx of plan) {
+		left.set(tx.from, (left.get(tx.from) ?? 0) + tx.amount);
+		left.set(tx.to, (left.get(tx.to) ?? 0) - tx.amount);
+	}
+	return [...left.values()];
+}
+
+function seededRandom(seed: number): () => number {
+	let state = seed >>> 0;
+	return () => {
+		state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+		return state / 2 ** 32;
+	};
+}
+
+/** The true minimum, worked out the slow way: people minus the most groups that each cancel
+ *  out among themselves, trying every way to form the group the first person is in. */
+function fewestPayments(nets: number[]): number {
+	const open = nets.filter((net) => net !== 0);
+	const mostGroups = (left: number[]): number => {
+		if (left.length === 0) return 0;
+		const [first, ...others] = left;
+		let best = -Infinity;
+		for (let pick = 0; pick < 1 << others.length; pick++) {
+			let sum = first;
+			const remaining: number[] = [];
+			others.forEach((net, i) => {
+				if (pick & (1 << i)) sum += net;
+				else remaining.push(net);
+			});
+			if (sum === 0) best = Math.max(best, 1 + mostGroups(remaining));
+		}
+		return best;
+	};
+	return open.length - mostGroups(open);
+}
+
 describe('splitEvenly', () => {
 	it('divides evenly when total is divisible', () => {
 		expect(splitEvenly(900, 3)).toEqual([300, 300, 300]);
@@ -315,18 +358,61 @@ describe('planSettlements', () => {
 		expect(plan).toEqual([{ from: 'b', to: 'a', amount: 1000 }]);
 	});
 
-	it('uses a near-optimal number of transactions for a 4-way circle', () => {
+	it('settles a 4-way circle in three payments, the fewest there are', () => {
 		const plan = planSettlements([
 			{ memberId: 'a', net: 1500 },
 			{ memberId: 'b', net: -500 },
 			{ memberId: 'c', net: 200 },
 			{ memberId: 'd', net: -1200 }
 		]);
-		// Three balances are non-zero on each side combined, so a near-optimal plan
-		// hits the lower bound of max(creditors, debtors) - 0 = 2 transactions when
-		// possible. The greedy planner achieves either 2 or 3 here.
-		expect(plan.length).toBeLessThanOrEqual(3);
+		expect(plan.length).toBe(3);
 		expect(plan.reduce((sum, s) => sum + s.amount, 0)).toBe(1700);
+	});
+
+	it('pairs people whose balances cancel exactly instead of chaining through everyone', () => {
+		const balances = ledger({ alice: -10000, bob: -6000, charlie: 7000, dana: 6000, erin: 3000 });
+		const plan = planSettlements(balances);
+		expect(plan).toEqual([
+			{ from: 'alice', to: 'charlie', amount: 7000 },
+			{ from: 'bob', to: 'dana', amount: 6000 },
+			{ from: 'alice', to: 'erin', amount: 3000 }
+		]);
+	});
+
+	it('finds groups of three that cancel among themselves', () => {
+		const balances = ledger({ a: 300, b: 200, c: -500, d: 400, e: 100, f: -500 });
+		const plan = planSettlements(balances);
+		expect(plan.length).toBe(4);
+		expect(leftAfter(balances, plan).every((net) => net === 0)).toBe(true);
+	});
+
+	it('never needs more payments than the proven minimum', () => {
+		const random = seededRandom(20261125);
+		for (let round = 0; round < 400; round++) {
+			const size = 2 + Math.floor(random() * 8);
+			const nets = Array.from({ length: size - 1 }, () => Math.floor(random() * 41) - 20);
+			nets.push(-nets.reduce((a, b) => a + b, 0));
+			const balances = nets.map((net, i) => ({ memberId: `m${i}`, net }));
+			const plan = planSettlements(balances);
+			expect(plan.length, `balances ${nets.join(', ')}`).toBe(fewestPayments(nets));
+			expect(leftAfter(balances, plan).every((net) => net === 0)).toBe(true);
+			expect(plan.every((tx) => tx.amount > 0 && tx.from !== tx.to)).toBe(true);
+		}
+	});
+
+	it('still settles a group too big for the exact search', () => {
+		const random = seededRandom(7);
+		const nets = Array.from({ length: 39 }, () => Math.floor(random() * 20001) - 10000);
+		nets.push(-nets.reduce((a, b) => a + b, 0));
+		const balances = nets.map((net, i) => ({ memberId: `m${i}`, net }));
+		const plan = planSettlements(balances);
+		expect(leftAfter(balances, plan).every((net) => net === 0)).toBe(true);
+		expect(plan.length).toBeLessThan(balances.filter((b) => b.net !== 0).length);
+	});
+
+	it('gives the same plan every time for the same balances', () => {
+		const balances = ledger({ a: 700, b: -300, c: -400, d: 250, e: -250, f: 900, g: -900 });
+		expect(planSettlements(balances)).toEqual(planSettlements(balances.map((b) => ({ ...b }))));
 	});
 
 	it('produces a plan that zeroes out the ledger', () => {

@@ -29,7 +29,7 @@ Try it at [kostos.app](https://kostos.app). The demo has sample data and needs n
 
 ### Balances and stats
 
-- Settle up works out the fewest payments that bring everyone to zero and draws them as a graph on the home screen. Tap one to record it, for the full amount or just part of it. "How your balance adds up" shows what you paid, your share and what's been paid back.
+- Settle up works out the fewest payments that bring everyone to zero and draws them as a graph on the home screen. Tap one to record it, for the full amount or just part of it. Tap your balance to see how it adds up: what you paid, your share and what's been paid back.
 - Use any of 153 currencies. Each expense keeps the exchange rate from when it was added, so its value never drifts, and the day's rate is cached on your device so foreign expenses work offline. You can also type rates in yourself.
 - Stats cover all time, a month or a year, optionally for a single trip, and either the whole group or just your share. You get spending by day, week or month (tap a bar for its total), categories you can tap to see their expenses, what each person paid against their share, and the biggest expenses.
 
