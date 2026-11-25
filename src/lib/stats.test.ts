@@ -351,6 +351,11 @@ describe('biggestExpenses', () => {
 		expect(biggestExpenses(spendLines(expenses, 'EUR', group)).map((l) => l.amount)).toEqual([900, 700, 500, 300, 200]);
 	});
 
+	it('leaves income out instead of ranking it last', () => {
+		const expenses = [300, -900, 100].map((amount) => expense({ amount }));
+		expect(biggestExpenses(spendLines(expenses, 'EUR', group)).map((l) => l.amount)).toEqual([300, 100]);
+	});
+
 	it('ranks by share in a member view', () => {
 		const big = expense({
 			amount: 10000,

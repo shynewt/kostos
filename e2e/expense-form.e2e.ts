@@ -242,6 +242,50 @@ describe('validation message timing', () => {
 	});
 });
 
+describe('income', () => {
+	async function saveIncome(title: string): Promise<void> {
+		await openAddForm();
+		await page.getByRole('radio', { name: 'income' }).click();
+		await amountInput().fill('100');
+		await saveAndOpen(title);
+	}
+
+	async function openEditForm(): Promise<void> {
+		await page.getByRole('button', { name: 'Edit' }).first().click();
+		await amountInput().waitFor();
+	}
+
+	it('saves money coming in as received by one person and owed to the rest', async () => {
+		await openAddForm();
+		await page.getByRole('radio', { name: 'income' }).click();
+		await amountInput().fill('100');
+		expect(await page.getByRole('button', { name: /Received by/ }).count()).toBe(1);
+		expect(await page.locator('.save-btn').innerText()).toBe('Save income');
+		await saveAndOpen('E2E deposit back');
+		expect(await page.locator('.hero-amount').innerText()).toBe('+€100.00');
+		expect(await page.locator('.hero-stickers').innerText()).toContain('INCOME');
+		expect(await page.locator('.paid-tag').innerText()).toBe('RECEIVED');
+		expect(await page.locator('.share-amount').innerText()).toBe('€25.00');
+		expect(await page.locator('.share-impact').innerText()).toBe('−€75.00');
+	});
+
+	it('reopens for editing as an income with a positive amount', async () => {
+		await saveIncome('E2E refund to edit');
+		await openEditForm();
+		expect(await page.getByRole('radio', { name: 'income' }).getAttribute('aria-checked')).toBe('true');
+		expect(await amountInput().inputValue()).toBe('100.00');
+	});
+
+	it('turns back into an expense when the type is switched', async () => {
+		await saveIncome('E2E refund to flip');
+		await openEditForm();
+		await page.getByRole('radio', { name: 'expense' }).click();
+		await page.click('.save-btn');
+		await page.locator('.share-impact', { hasText: '+€75.00' }).waitFor();
+		expect(await page.locator('.hero-amount').innerText()).toBe('€100.00');
+	});
+});
+
 describe('choosing who shares', () => {
 	const checkedCount = () => page.locator('.member-row .checkbox.on').count();
 

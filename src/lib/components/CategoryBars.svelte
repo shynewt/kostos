@@ -34,7 +34,7 @@
 					</span>
 					<span class="category-bottom">
 						<span class="bar-track category-track">
-							<span class="bar-fill category-fill" style="width: {(row.amount / max) * 100}%;"></span>
+							<span class="bar-fill category-fill" style="width: {Math.max(0, row.amount / max) * 100}%;"></span>
 						</span>
 						<span class="dim mono category-percent">{row.percent}%</span>
 					</span>

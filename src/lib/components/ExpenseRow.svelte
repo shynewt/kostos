@@ -2,6 +2,7 @@
 	import { expenseShares } from '$lib/balance';
 	import { currencySymbolFor } from '$lib/currencies';
 	import { expenseInBase } from '$lib/currency-convert';
+	import { isIncome } from '$lib/income';
 	import { formatAmount, formatSigned } from '$lib/money';
 	import type { Category, Expense, Member, Trip } from '$lib/types';
 	import Highlight from './Highlight.svelte';
@@ -54,6 +55,11 @@
 		return m.id === currentMemberId ? 'You' : m.name;
 	}
 
+	const income = $derived(isIncome(expense));
+	// money coming in reads as "+€40.00"; a plain minus would look like a correction
+	const rowAmount = (cents: number, amountSymbol: string, amountCurrency: string) =>
+		income ? formatSigned(-cents, amountSymbol, amountCurrency) : formatAmount(cents, amountSymbol, amountCurrency);
+
 	const payersLabel = $derived.by(() => {
 		if (expense.payments.length === 0) return '—';
 		const first = payerName(expense.payments[0].memberId);
@@ -63,11 +69,12 @@
 			const recipient = recipientId === currentMemberId ? 'you' : payerName(recipientId);
 			return `${first} paid ${recipient}`;
 		}
-		if (expense.payments.length === 1) return `${first} paid`;
+		const verb = income ? 'received' : 'paid';
+		if (expense.payments.length === 1) return `${first} ${verb}`;
 		if (expense.payments.length === 2) {
-			return `${first} & ${payerName(expense.payments[1].memberId)} paid`;
+			return `${first} & ${payerName(expense.payments[1].memberId)} ${verb}`;
 		}
-		return `${first} + ${expense.payments.length - 1} others paid`;
+		return `${first} + ${expense.payments.length - 1} others ${verb}`;
 	});
 
 	const involvedLabel = $derived.by(() => {
@@ -157,9 +164,9 @@
 		{/if}
 	</span>
 	<span class="col row-amount-col">
-		<span class="num row-amount">{formatAmount(expense.amount, nativeSymbol, expense.currency)}</span>
+		<span class="num row-amount" class:tone-owed={income}>{rowAmount(expense.amount, nativeSymbol, expense.currency)}</span>
 		{#if isForeign}
-			<span class="dim mono row-base">≈ {formatAmount(baseExpense.amount, symbol, currency)}</span>
+			<span class="dim mono row-base">≈ {rowAmount(baseExpense.amount, symbol, currency)}</span>
 		{/if}
 		{#if currentMemberId}
 			{#if !inExpense && yourImpact === 0}

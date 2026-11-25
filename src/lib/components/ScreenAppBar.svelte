@@ -11,9 +11,11 @@
 		onCancel?: () => void;
 		project?: Project | null;
 		right?: Snippet;
+		/** shown in place of the title text */
+		center?: Snippet;
 	};
 
-	let { title, backHref, onCancel, project, right }: Props = $props();
+	let { title, backHref, onCancel, project, right, center }: Props = $props();
 </script>
 
 <header class="app-bar">
@@ -37,7 +39,7 @@
 		{/if}
 	</div>
 	<div class="title-wrap">
-		<div class="app-bar-title">{title}</div>
+		{#if center}{@render center()}{:else}<div class="app-bar-title">{title}</div>{/if}
 		<SyncStatus variant="dot" />
 	</div>
 	<div class="row gap-6 right-side">

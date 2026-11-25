@@ -9,6 +9,7 @@
 	import ScreenAppBar from '$lib/components/ScreenAppBar.svelte';
 	import { currencySymbolFor } from '$lib/currencies';
 	import { exchangeFee, expenseBaseAmount, formatRate } from '$lib/currency-convert';
+	import { isIncome } from '$lib/income';
 	import { formatAmount, formatSigned } from '$lib/money';
 	import { REPEAT_LABELS, repeatSummary, todayDay } from '$lib/recurring';
 	import { getCurrentMember } from '$lib/storage';
@@ -77,6 +78,10 @@
 	});
 	const yourImpact = $derived(yourPaidCents - yourShareCents);
 
+	const income = $derived(expense ? isIncome(expense) : false);
+	// an income's amounts are stored negative; its parts are shown as plain positive figures
+	const magnitude = (cents: number) => (income ? -cents : cents);
+
 	function memberLabel(id: string): string {
 		const m = membersById.get(id);
 		if (!m) return '—';
@@ -128,7 +133,7 @@
 	}
 
 	function offerUndo(roomHandle: RoomHandle, deleted: Expense) {
-		showToast('Expense deleted', { label: 'Undo', run: () => undoDelete(roomHandle, deleted) });
+		showToast(isIncome(deleted) ? 'Income deleted' : 'Expense deleted', { label: 'Undo', run: () => undoDelete(roomHandle, deleted) });
 	}
 
 	async function undoDelete(roomHandle: RoomHandle, deleted: Expense) {
@@ -170,7 +175,7 @@
 </svelte:head>
 
 <div class="screen" data-page="expense-detail">
-	<ScreenAppBar title="Expense" backHref="/p/{roomId}/expenses">
+	<ScreenAppBar title={income ? 'Income' : 'Expense'} backHref="/p/{roomId}/expenses">
 		{#snippet right()}
 			<button class="icon-btn" type="button" onclick={onEdit} aria-label="Edit" disabled={!expense}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 20h4l11-11-4-4L4 16v4zM14 6l4 4" /></svg>
@@ -195,15 +200,15 @@
 					<span class="cat-tile hero-icon">{category?.emoji ?? '📦'}</span>
 					<div class="col">
 						<div class="hero-meta">{category?.name ?? 'Uncategorised'} · {formatDate(expense.date)}</div>
-						<div class="h2 hero-title">{expense.description || 'Expense'}</div>
+						<div class="h2 hero-title">{expense.description || (income ? 'Income' : 'Expense')}</div>
 					</div>
 				</div>
-				<div class="hero-amount">
-					<span class="hero-sym">{nativeSymbol}</span>{formatAmount(expense.amount, "", nativeCurrency)}
+				<div class="hero-amount" class:tone-owed={income}>
+					<span class="hero-sym">{income ? '+' : ''}{nativeSymbol}</span>{formatAmount(magnitude(expense.amount), "", nativeCurrency)}
 				</div>
 				{#if isForeign}
 					<div class="dim mono hero-fx">
-						{expense.chargedAmount !== undefined ? '=' : '≈'} {formatAmount(baseAmount, currencySymbol, currency)}
+						{expense.chargedAmount !== undefined ? '=' : '≈'} {formatAmount(magnitude(baseAmount), currencySymbol, currency)}
 						{#if expense.exchangeRate}· 1 {nativeCurrency} = {formatRate(expense.exchangeRate)} {currency}{/if}
 					</div>
 					{#if fee && Math.abs(fee.percent) >= 0.05}
@@ -216,12 +221,13 @@
 					{/if}
 				{/if}
 				<div class="row gap-8 hero-stickers">
+					{#if income}<span class="sticker sticker-on">INCOME</span>{/if}
 					{#each expense.payments as p, idx (idx)}
 						<span class="sticker">
 							<Avatar member={membersById.get(p.memberId)} size="xs" />
 							{memberLabel(p.memberId)}
 							{#if expense.payments.length > 1}
-								<span class="dim">{formatAmount(p.amount, nativeSymbol, nativeCurrency)}</span>
+								<span class="dim">{formatAmount(magnitude(p.amount), nativeSymbol, nativeCurrency)}</span>
 							{/if}
 						</span>
 					{/each}
@@ -236,12 +242,12 @@
 
 			{#if currentMemberId}
 				{@const inExpense = expense.splits.some((s) => s.memberId === currentMemberId)}
-				{#if inExpense || yourPaidCents > 0}
+				{#if inExpense || yourPaidCents !== 0}
 					<section class="card share-callout">
 						<div class="row between">
 							<div class="col">
 								<div class="eyebrow share-eyebrow">Your share</div>
-								<div class="num share-amount">{formatAmount(yourShareCents, nativeSymbol, nativeCurrency)}</div>
+								<div class="num share-amount">{formatAmount(magnitude(yourShareCents), nativeSymbol, nativeCurrency)}</div>
 								<div class="dim mono share-sub">{shareLabelFor(currentMemberId)}</div>
 							</div>
 							<div class="col" style="align-items: flex-end;">
@@ -274,11 +280,11 @@
 						<div class="col" style="flex: 1;">
 							<div class="row gap-6">
 								<span class="breakdown-name">{memberLabel(s.memberId)}</span>
-								{#if paid}<span class="sticker sticker-on paid-tag">PAID</span>{/if}
+								{#if paid}<span class="sticker sticker-on paid-tag">{income ? 'RECEIVED' : 'PAID'}</span>{/if}
 							</div>
 							<div class="dim mono breakdown-meta">{shareLabelFor(s.memberId)}</div>
 						</div>
-						<span class="num breakdown-amount">{formatAmount(cents, nativeSymbol, nativeCurrency)}</span>
+						<span class="num breakdown-amount">{formatAmount(magnitude(cents), nativeSymbol, nativeCurrency)}</span>
 					</div>
 				{/each}
 			</div>
@@ -298,7 +304,7 @@
 			{#if !expense.isSettlement && (!rule || rule.endDay)}
 				<a class="btn repeat-start" href="/p/{roomId}/expenses/{expense.id}/edit?open=repeat">
 					<svg class="repeat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 2l3 3-3 3" /><path d="M4 11V9a4 4 0 0 1 4-4h12" /><path d="M7 22l-3-3 3-3" /><path d="M20 13v2a4 4 0 0 1-4 4H4" /></svg>
-					Repeat this expense
+					Repeat this {income ? 'income' : 'expense'}
 				</a>
 			{/if}
 

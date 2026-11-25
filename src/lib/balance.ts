@@ -48,9 +48,11 @@ export function expenseShares(expense: Expense): Map<string, number> {
 	}
 
 	if (expense.splitMode === 'amount') {
+		// an income's parts are negative like its total; a part against the total's sign counts as 0
+		const sign = expense.amount < 0 ? -1 : 1;
 		let assigned = 0;
 		for (const s of expense.splits) {
-			const amt = Math.max(0, Math.trunc(s.amount ?? 0));
+			const amt = sign * Math.max(0, sign * Math.trunc(s.amount ?? 0));
 			result.set(s.memberId, amt);
 			assigned += amt;
 		}

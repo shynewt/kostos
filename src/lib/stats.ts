@@ -261,8 +261,12 @@ export function perPerson(expenses: Expense[], baseCurrency: string | undefined)
 		.sort((a, b) => b.difference - a.difference || b.cost - a.cost);
 }
 
+/** Income lines are negative, so they're left out rather than listed as the smallest expenses. */
 export function biggestExpenses(lines: SpendLine[], limit = 5): SpendLine[] {
-	return lines.toSorted((a, b) => b.amount - a.amount).slice(0, limit);
+	return lines
+		.filter((line) => line.amount > 0)
+		.toSorted((a, b) => b.amount - a.amount)
+		.slice(0, limit);
 }
 
 export type FeeSummary = { fee: number; atMarket: number; count: number; percent: number };
