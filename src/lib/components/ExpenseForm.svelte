@@ -799,6 +799,7 @@
 				{canAutoFill}
 				onSetSplitMode={(m) => (splitMode = m)}
 				onToggleMember={toggleMember}
+				onSetInvolved={(ids) => (involved = new Set(ids))}
 				onStepShare={stepShare}
 				onUpdateAmount={updateAmount}
 				onAutoFillRest={autoFillRest}

@@ -241,3 +241,33 @@ describe('validation message timing', () => {
 		expect(await page.locator('.save-problem').innerText()).toContain("isn't a valid number");
 	});
 });
+
+describe('choosing who shares', () => {
+	const checkedCount = () => page.locator('.member-row .checkbox.on').count();
+
+	it('clears everyone and brings them back from the split header', async () => {
+		await openAddForm();
+		expect(await checkedCount()).toBe(4);
+		const everyone = page.getByRole('checkbox', { name: /^Everyone/ });
+		expect(await everyone.getAttribute('aria-checked')).toBe('true');
+		await everyone.click();
+		expect(await checkedCount()).toBe(0);
+		expect(await everyone.getAttribute('aria-checked')).toBe('false');
+		await page.getByRole('checkbox', { name: 'Include Bob' }).click();
+		expect(await everyone.getAttribute('aria-checked')).toBe('mixed');
+		await everyone.click();
+		expect(await checkedCount()).toBe(4);
+	});
+
+	it('keeps only the person whose row is held down', async () => {
+		await openAddForm();
+		const row = page.locator('.member-row', { hasText: 'Bob' });
+		const box = (await row.locator('.checkbox').boundingBox())!;
+		await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+		await page.mouse.down();
+		await page.waitForTimeout(650);
+		await page.mouse.up();
+		expect(await checkedCount()).toBe(1);
+		expect(await row.locator('.checkbox').getAttribute('aria-checked')).toBe('true');
+	});
+});
