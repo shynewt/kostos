@@ -47,14 +47,17 @@
 				autocomplete="off"
 				aria-label="Amount, accepts math expressions"
 				aria-invalid={invalid}
-				aria-describedby={isExpression ? 'amount-result' : undefined}
+				aria-describedby={isExpression || invalid ? 'amount-result' : undefined}
 			/>
 		</label>
 	</div>
-	{#if isExpression}
-		<p class="amount-result num" id="amount-result" aria-live="polite">
-			{invalid ? 'Not a valid sum yet' : `= ${formatAmount(cents, symbol, currency)}`}
+	{#if invalid}
+		<p class="amount-result is-invalid" id="amount-result" aria-live="polite">
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 2.8 19.5h18.4L12 4z" /><path d="M12 10v4.5M12 17.2v.1" /></svg>
+			{isExpression ? 'Not a valid sum yet' : 'Not a valid amount'}
 		</p>
+	{:else if isExpression}
+		<p class="amount-result num" id="amount-result" aria-live="polite">= {formatAmount(cents, symbol, currency)}</p>
 	{/if}
 </div>
 
@@ -182,6 +185,7 @@
 	}
 
 	.amount-input[aria-invalid='true'] {
+		color: var(--owe);
 		border-bottom-color: var(--owe);
 	}
 
@@ -189,5 +193,19 @@
 		margin: 0;
 		font-size: 15px;
 		color: var(--ink-2);
+	}
+
+	.amount-result.is-invalid {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--owe);
+	}
+
+	.amount-result svg {
+		width: 15px;
+		height: 15px;
 	}
 </style>
