@@ -1086,6 +1086,18 @@
 		height: 20px;
 	}
 
+	/* same "still to add" plus as the empty slots in the details bar */
+	.category-btn:not(.is-set)::after {
+		content: '+';
+		position: absolute;
+		left: calc(50% + 9px);
+		top: 7px;
+		font-size: 11px;
+		font-weight: 700;
+		line-height: 1;
+		color: var(--accent);
+	}
+
 	/* the category was picked from the description; it goes away once someone chooses one */
 	.category-guessed-dot {
 		position: absolute;
