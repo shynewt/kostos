@@ -87,12 +87,6 @@
 	<div class="scroll">
 		{#if room.blank}<BalanceSkeleton />{:else}
 		<div class="reveal">
-		{#if showGraph}
-			<div class="graph-wrap">
-				<SettlementGraph {members} {plan} {currentMemberId} symbol={currencySymbol} {currency} />
-			</div>
-		{/if}
-
 		<section class="balance-block">
 			{#snippet balance()}
 				<span class="eyebrow balance-eyebrow">{balanceEyebrow(yourBalance)}</span>
@@ -105,18 +99,26 @@
 				</span>
 			{/snippet}
 			{#if youMember}
-				<button class="balance-button" type="button" aria-haspopup="dialog" onclick={() => (showBreakdown = true)}>
+				<button
+					class="balance-button"
+					type="button"
+					aria-haspopup="dialog"
+					aria-label="{balanceEyebrow(yourBalance)} {formatAmount(Math.abs(yourBalance), currencySymbol, currency)}. How your balance adds up"
+					onclick={() => (showBreakdown = true)}
+				>
 					{@render balance()}
-					<span class="balance-explain">
-						How your balance adds up
-						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
-					</span>
 				</button>
 			{:else}
 				{@render balance()}
 				<p class="dim balance-sub">No member claimed on this device.</p>
 			{/if}
 		</section>
+
+		{#if showGraph}
+			<div class="graph-wrap">
+				<SettlementGraph {members} {plan} {currentMemberId} symbol={currencySymbol} {currency} />
+			</div>
+		{/if}
 
 		{#if bestPayer}
 			<div class="tip">
@@ -175,13 +177,18 @@
 
 <style>
 	.graph-wrap {
-		margin: 4px 0 0;
+		margin: 0 0 22px;
 		padding: 0 4px;
 	}
 
 	.balance-block {
 		padding: 2px 0 28px;
 		text-align: center;
+	}
+
+	/* the graph right below brings its own spacing */
+	.balance-block:has(+ .graph-wrap) {
+		padding-bottom: 14px;
 	}
 
 	.balance-button {
@@ -225,24 +232,11 @@
 		opacity: 0.7;
 	}
 
-	.balance-explain {
-		display: inline-flex;
-		align-items: center;
-		gap: 2px;
-		margin-top: 14px;
-		font-size: 13px;
-		color: var(--ink-2);
-	}
-
-	.balance-explain svg {
-		width: 14px;
-		height: 14px;
-	}
-
-	@media (hover: hover) {
-		.balance-button:hover .balance-explain {
-			color: var(--ink);
-		}
+	/* the only hint that the balance opens its breakdown */
+	.balance-button .balance-eyebrow::after {
+		content: '›';
+		margin-left: 6px;
+		color: var(--ink-3);
 	}
 
 	.balance-sub {

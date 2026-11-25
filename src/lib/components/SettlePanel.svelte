@@ -124,7 +124,7 @@
 			<span class="line-head">
 				<strong>{label(t.from)}</strong>
 				<span class="line-verb">{youFrom ? 'pay' : 'pays'}</span>
-				<strong>{label(t.to)}</strong>
+				<strong>{youTo ? 'you' : label(t.to)}</strong>
 			</span>
 			<span
 				class="num line-amount"
