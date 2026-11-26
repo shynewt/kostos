@@ -14,8 +14,9 @@ export const mathInput: Action<HTMLInputElement> = (node) => {
 		mathInputTarget.set(node);
 	}
 
+	// deferred: removing a focused field blurs it mid-teardown, where Svelte forbids state changes
 	function onBlur() {
-		mathInputTarget.update((current) => (current === node ? null : current));
+		queueMicrotask(() => mathInputTarget.update((current) => (current === node ? null : current)));
 	}
 
 	function onBeforeInput(event: InputEvent) {
