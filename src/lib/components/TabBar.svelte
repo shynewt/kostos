@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { pushState } from '$app/navigation';
+
 	type Tab = 'home' | 'expenses' | 'stats' | 'group';
 
 	type Props = {
@@ -7,6 +9,13 @@
 	};
 
 	let { roomId, active }: Props = $props();
+
+	// opens the form over this screen; a new tab or a reload gets the full /add page instead
+	function openAddSheet(event: MouseEvent) {
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		event.preventDefault();
+		pushState(`/p/${roomId}/add`, { addingExpense: true });
+	}
 </script>
 
 <nav class="tabbar">
@@ -22,7 +31,7 @@
 		</div>
 		<span>EXPENSES</span>
 	</a>
-	<a class="fab" href="/p/{roomId}/add" aria-label="Add expense">
+	<a class="fab" href="/p/{roomId}/add" aria-label="Add expense" onclick={openAddSheet}>
 		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 6v12M6 12h12" /></svg>
 	</a>
 	<a href="/p/{roomId}/stats" class="tab" class:active={active === 'stats'}>

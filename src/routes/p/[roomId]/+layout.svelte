@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import AddExpenseSheet from '$lib/components/AddExpenseSheet.svelte';
 	import LoadingScreen from '$lib/components/LoadingScreen.svelte';
 	import SyncBanner from '$lib/components/SyncBanner.svelte';
 	import SyncStatus from '$lib/components/SyncStatus.svelte';
@@ -12,6 +13,16 @@
 	const room = $derived(useRoom(roomId));
 	provideRoomContext(() => room);
 	let loadedRoomId = $state('');
+
+	// the + opens this over the current screen; the sheet unmounts itself once it has closed
+	let isAddSheetShown = $state(false);
+	$effect(() => {
+		if (page.state.addingExpense) isAddSheetShown = true;
+	});
+	function leaveAddSheet() {
+		isAddSheetShown = false;
+		if (page.state.addingExpense) history.back();
+	}
 	let localError = $state(false);
 	$effect(() => room.observe());
 	$effect(() => {
@@ -35,6 +46,9 @@
 
 {#if loadedRoomId === roomId && room.project}
 	{@render children()}
+	{#if isAddSheetShown}
+		<AddExpenseSheet isOpen={page.state.addingExpense === true} onLeave={leaveAddSheet} />
+	{/if}
 {:else if localError}
 	<div class="screen">
 		<header class="app-bar"><a href="/" class="btn btn-ghost">Back to groups</a><SyncStatus variant="dot" /></header>

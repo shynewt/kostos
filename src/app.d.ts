@@ -6,7 +6,10 @@ declare global {
 		// interface Error {}
 		// interface Locals {}
 		// interface PageData {}
-		// interface PageState {}
+		interface PageState {
+			/** the add form, opened as a sheet over the current screen */
+			addingExpense?: boolean;
+		}
 		// interface Platform {}
 	}
 }
