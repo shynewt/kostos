@@ -4,9 +4,11 @@ import {
 	ALL_TIME,
 	biggestExpenses,
 	bucketSizeFor,
+	defaultPeriod,
 	exchangeFees,
 	inPeriod,
 	isSamePeriod,
+	last12MonthsOf,
 	monthOf,
 	monthsWithExpenses,
 	parsePeriodKey,
@@ -88,18 +90,44 @@ describe('periods', () => {
 	});
 
 	it('round-trips through its key and falls back to all time on junk', () => {
-		for (const period of [ALL_TIME, october, { kind: 'year', year: 2026 } as Period]) {
-			expect(isSamePeriod(parsePeriodKey(periodKey(period)), period)).toBe(true);
+		const now = utc(2026, 11, 26);
+		for (const period of [ALL_TIME, october, { kind: 'year', year: 2026 } as Period, last12MonthsOf(now)]) {
+			expect(isSamePeriod(parsePeriodKey(periodKey(period), now), period)).toBe(true);
 		}
-		expect(parsePeriodKey(null)).toEqual(ALL_TIME);
-		expect(parsePeriodKey('2026-13')).toEqual(ALL_TIME);
-		expect(parsePeriodKey('last-week')).toEqual(ALL_TIME);
+		expect(parsePeriodKey(null, now)).toEqual(ALL_TIME);
+		expect(parsePeriodKey('2026-13', now)).toEqual(ALL_TIME);
+		expect(parsePeriodKey('last-week', now)).toEqual(ALL_TIME);
+	});
+
+	it('reads the last 12 months from the day it is opened', () => {
+		expect(parsePeriodKey('last-12-months', utc(2027, 1, 5))).toEqual({ kind: 'last12Months', year: 2027, month: 0 });
+	});
+
+	it('counts the last 12 months as this month and the eleven whole months before it', () => {
+		expect(periodBounds(last12MonthsOf(utc(2026, 11, 26)))).toEqual({
+			start: Date.UTC(2025, 11, 1),
+			end: Date.UTC(2026, 11, 1)
+		});
+		expect(periodBounds(last12MonthsOf(utc(2027, 1, 1, 0)))).toEqual({
+			start: Date.UTC(2026, 1, 1),
+			end: Date.UTC(2027, 1, 1)
+		});
+	});
+
+	it('opens on the last 12 months only once a group has older expenses', () => {
+		const now = utc(2026, 11, 26);
+		const thisYear = [expense({ date: utc(2026, 1, 3) }), expense({ date: utc(2026, 11, 20) })];
+		expect(defaultPeriod(thisYear, now)).toEqual(ALL_TIME);
+		expect(defaultPeriod([expense({ date: utc(2025, 12, 1) })], now)).toEqual(ALL_TIME);
+		expect(defaultPeriod([...thisYear, expense({ date: utc(2025, 11, 30) })], now)).toEqual(last12MonthsOf(now));
+		expect(defaultPeriod([], now)).toEqual(ALL_TIME);
 	});
 
 	it('names periods for people', () => {
 		expect(periodLabel(october, 'en-GB')).toBe('October 2026');
 		expect(periodLabel({ kind: 'year', year: 2026 }, 'en-GB')).toBe('2026');
 		expect(periodLabel(ALL_TIME)).toBe('All time');
+		expect(periodLabel(last12MonthsOf(utc(2026, 11, 26)))).toBe('Last 12 months');
 	});
 });
 

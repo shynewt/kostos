@@ -46,7 +46,7 @@
 		<div class="sum-row sum-result">
 			<dt><span class="sum-label">{resultLabel}</span></dt>
 			<dd
-				class="sum-total"
+				class="num sum-total"
 				class:tone-owed={breakdown.net > 0}
 				class:tone-owe={breakdown.net < 0}
 			>
@@ -123,10 +123,9 @@
 		font-weight: 600;
 	}
 
-	.sum-total {
-		font-family: var(--font-display);
-		font-size: 40px;
-		line-height: 1;
+	.sum-row .sum-total {
+		font-size: 18px;
+		font-weight: 600;
 	}
 
 	.settled-note {

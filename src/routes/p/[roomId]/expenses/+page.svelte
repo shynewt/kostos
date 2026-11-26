@@ -1,19 +1,21 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import Avatar from '$lib/components/Avatar.svelte';
 	import EmptyCard from '$lib/components/EmptyCard.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import ExpenseFilterSheet from '$lib/components/ExpenseFilterSheet.svelte';
 	import ExpenseRow from '$lib/components/ExpenseRow.svelte';
 	import ProjectAppBar from '$lib/components/ProjectAppBar.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import TripSheet from '$lib/components/TripSheet.svelte';
-	import TripStrip from '$lib/components/TripStrip.svelte';
 	import { spentInBase } from '$lib/currency-convert';
+	import { EMPTY_FILTER, NONE, activeFilterCount, applyFilter, filterFromParams, writeFilterParams, type ExpenseFilter } from '$lib/expense-filter';
+	import { matchesSearch, searchTerms, type SearchLookup } from '$lib/expense-search';
 	import { formatAmount } from '$lib/money';
+	import { monthOf, periodKey, periodLabel, spendLines } from '$lib/stats';
 	import { getCurrentMember } from '$lib/storage';
 	import { useRoom } from '$lib/sync/useRoom.svelte';
-	import { readTripSelection, scopeExpenses, writeTripSelection } from '$lib/trips';
-	import type { Expense } from '$lib/types';
+	import type { Expense, Member } from '$lib/types';
 
 	const roomId = $derived(page.params.roomId ?? '');
 	const room = $derived(useRoom(roomId));
@@ -31,6 +33,7 @@
 	const categoryById = $derived(room.categoryById);
 	const methodById = $derived(room.methodById);
 	const tripsById = $derived(room.tripsById);
+	const myMemberId = $derived(currentMemberId && membersById.has(currentMemberId) ? currentMemberId : null);
 
 	let query = $state('');
 	let searchEl = $state<HTMLInputElement | null>(null);
@@ -40,80 +43,95 @@
 		searchEl?.focus();
 	}
 
-	function matchesQuery(e: Expense, q: string): boolean {
-		if (e.description && e.description.toLowerCase().includes(q)) return true;
-		if (e.notes && e.notes.toLowerCase().includes(q)) return true;
-		for (const p of e.payments) {
-			const name = membersById.get(p.memberId)?.name?.toLowerCase();
-			if (name && name.includes(q)) return true;
-		}
-		if (e.categoryId) {
-			const cat = categoryById.get(e.categoryId)?.name?.toLowerCase();
-			if (cat && cat.includes(q)) return true;
-		}
-		if (e.paymentMethodId) {
-			const method = methodById.get(e.paymentMethodId)?.name?.toLowerCase();
-			if (method && method.includes(q)) return true;
-		}
-		return false;
-	}
+	const searchLookup = $derived<SearchLookup>({
+		memberNames: new Map(members.map((m) => [m.id, m.name])),
+		categoryNames: new Map([...categoryById.values()].map((c) => [c.id, c.name])),
+		methodNames: new Map([...methodById.values()].map((m) => [m.id, m.name])),
+		tripNames: new Map(room.trips.map((t) => [t.id, t.name])),
+		baseCurrency: currency
+	});
 
 	const trips = $derived(room.trips);
-	let selectedTripId = $state<string | null>(null);
-	$effect(() => {
-		const saved = readTripSelection(roomId);
-		selectedTripId =
-			saved && trips.some((t) => t.id === saved && t.closedAt === undefined) ? saved : null;
-	});
-	const selectedTrip = $derived(
-		selectedTripId ? (trips.find((t) => t.id === selectedTripId) ?? null) : null
-	);
-	const scopedExpenses = $derived(scopeExpenses(expenses, selectedTripId));
 
-	function selectTrip(tripId: string | null) {
-		selectedTripId = tripId;
-		writeTripSelection(roomId, tripId);
-	}
+	const filter = $derived(filterFromParams(page.url.searchParams));
+	const filterCount = $derived(activeFilterCount(filter));
+	let filterSheetOpen = $state(false);
 
-	let tripSheetOpen = $state(false);
-	function selectFromSheet(tripId: string | null) {
-		selectTrip(tripId);
-		tripSheetOpen = false;
-	}
-
-	const expenseCountForTrip = $derived((tripId: string) =>
-		expenses.reduce((n, e) => (e.tripId === tripId ? n + 1 : n), 0)
-	);
-
-	// "none" means no category; settlements never have one, so they stay out of that list
-	const categoryFilter = $derived(page.url.searchParams.get('category'));
-	const filterCategory = $derived(
-		categoryFilter && categoryFilter !== 'none' ? categoryById.get(categoryFilter) : undefined
-	);
-	const categoryFilterLabel = $derived(
-		filterCategory ? `${filterCategory.emoji} ${filterCategory.name}` : categoryFilter === 'none' ? 'No category' : 'Removed category'
-	);
-	const categoryScoped = $derived(
-		categoryFilter === null
-			? scopedExpenses
-			: categoryFilter === 'none'
-				? scopedExpenses.filter((e) => !e.categoryId && !e.isSettlement)
-				: scopedExpenses.filter((e) => e.categoryId === categoryFilter)
-	);
-
-	function clearCategoryFilter() {
+	function setFilter(next: ExpenseFilter) {
 		const url = new URL(page.url);
-		url.searchParams.delete('category');
+		writeFilterParams(next, url.searchParams);
 		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
 	}
 
-	const filtered = $derived.by(() => {
-		const trimmed = query.trim().toLowerCase();
-		if (!trimmed) return categoryScoped;
-		return categoryScoped.filter((e) => matchesQuery(e, trimmed));
+	const filterScoped = $derived(applyFilter(expenses, filter, currency));
+	const terms = $derived(searchTerms(query));
+	const filtered = $derived(terms.length === 0 ? filterScoped : filterScoped.filter((e) => matchesSearch(e, terms, searchLookup)));
+
+	type FilterChip = { key: string; label: string; clear: () => void; member?: Member };
+
+	function pickedNames(ids: string[], nameOf: (id: string) => string): string {
+		const first = nameOf(ids[0]);
+		return ids.length > 1 ? `${first} +${ids.length - 1}` : first;
+	}
+
+	function dateRangeLabel(from: string | null, to: string | null): string {
+		const format = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+		const day = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
+		if (from && to) return format.formatRange(day(from), day(to));
+		return from ? `From ${format.format(day(from))}` : `Until ${format.format(day(to ?? ''))}`;
+	}
+
+	const filterChips = $derived.by<FilterChip[]>(() => {
+		const chips: FilterChip[] = [];
+		if (filter.from !== null || filter.to !== null) {
+			chips.push({ key: 'date', label: dateRangeLabel(filter.from, filter.to), clear: () => setFilter({ ...filter, from: null, to: null }) });
+		}
+		if (filter.minAmount !== null || filter.maxAmount !== null) {
+			const money = (cents: number) => formatAmount(cents, currencySymbol, currency);
+			const label =
+				filter.minAmount !== null && filter.maxAmount !== null
+					? `${money(filter.minAmount)} – ${money(filter.maxAmount)}`
+					: filter.minAmount !== null
+						? `≥ ${money(filter.minAmount)}`
+						: `≤ ${money(filter.maxAmount ?? 0)}`;
+			chips.push({ key: 'amount', label, clear: () => setFilter({ ...filter, minAmount: null, maxAmount: null }) });
+		}
+		if (filter.payerIds.length > 0) {
+			const label = `Paid by ${pickedNames(filter.payerIds, (id) => membersById.get(id)?.name ?? 'Removed member')}`;
+			const member = membersById.get(filter.payerIds[0]);
+			chips.push({ key: 'payer', label, member, clear: () => setFilter({ ...filter, payerIds: [] }) });
+		}
+		if (filter.categoryIds.length > 0) {
+			const label = pickedNames(filter.categoryIds, (id) => {
+				if (id === NONE) return 'No category';
+				const category = categoryById.get(id);
+				return category ? `${category.emoji} ${category.name}` : 'Removed category';
+			});
+			chips.push({ key: 'category', label, clear: () => setFilter({ ...filter, categoryIds: [] }) });
+		}
+		if (filter.methodIds.length > 0) {
+			const label = pickedNames(filter.methodIds, (id) => {
+				if (id === NONE) return 'No payment method';
+				const method = methodById.get(id);
+				return method ? `${method.emoji} ${method.name}` : 'Removed method';
+			});
+			chips.push({ key: 'method', label, clear: () => setFilter({ ...filter, methodIds: [] }) });
+		}
+		if (filter.tripIds.length > 0) {
+			const label = pickedNames(filter.tripIds, (id) => {
+				if (id === NONE) return 'No trip';
+				const trip = tripsById.get(id);
+				return trip ? `${trip.emoji} ${trip.name}` : 'Removed trip';
+			});
+			chips.push({ key: 'trip', label, clear: () => setFilter({ ...filter, tripIds: [] }) });
+		}
+		return chips;
 	});
 
-	type DayGroup = { key: string; label: string; total: number; items: Expense[] };
+	const singleTripId = $derived(filter.tripIds.length === 1 && filter.tripIds[0] !== NONE ? filter.tripIds[0] : null);
+
+	type DayGroup = { key: string; monthKey: string; label: string; total: number; items: Expense[] };
+	type MonthSummary = { label: string; total: number; myShare: number | null };
 
 	const allGroups = $derived.by<DayGroup[]>(() => {
 		const buckets = new Map<string, DayGroup>();
@@ -122,7 +140,7 @@
 			const key = dayKey(e.date);
 			let bucket = buckets.get(key);
 			if (!bucket) {
-				bucket = { key, label: dayLabel(e.date), total: 0, items: [] };
+				bucket = { key, monthKey: periodKey(monthOf(e.date)), label: dayLabel(e.date), total: 0, items: [] };
 				buckets.set(key, bucket);
 			}
 			bucket.items.push(e);
@@ -131,6 +149,25 @@
 		return [...buckets.values()];
 	});
 
+	const monthSummaries = $derived.by(() => {
+		const itemsByMonth = new Map<string, Expense[]>();
+		for (const day of allGroups) {
+			const items = itemsByMonth.get(day.monthKey) ?? [];
+			items.push(...day.items);
+			itemsByMonth.set(day.monthKey, items);
+		}
+		const summaries = new Map<string, MonthSummary>();
+		for (const [key, items] of itemsByMonth) {
+			summaries.set(key, { label: monthLabel(items[0].date), total: spentInBase(items, currency), myShare: shareOf(items) });
+		}
+		return summaries;
+	});
+
+	function shareOf(items: Expense[]): number | null {
+		if (!myMemberId) return null;
+		return spendLines(items, currency, { kind: 'member', memberId: myMemberId }).reduce((sum, line) => sum + line.amount, 0);
+	}
+
 	const INITIAL_DAYS = 12;
 	const DAY_STEP = 10;
 	let visibleDays = $state(INITIAL_DAYS);
@@ -138,7 +175,7 @@
 	// Reset window whenever the filter changes so search results start at the top.
 	$effect(() => {
 		query;
-		categoryFilter;
+		page.url.search;
 		visibleDays = INITIAL_DAYS;
 	});
 
@@ -155,32 +192,28 @@
 	}
 
 	const overallTotal = $derived(spentInBase(filtered, currency));
+	const overallShare = $derived(shareOf(filtered));
 	const isFiltering = $derived(query.trim().length > 0);
+	// across the whole group a lifetime total says little; the month headers carry the totals
+	const showSummary = $derived(isFiltering || filterCount > 0);
 
+	// expense days are UTC days, see $lib/stats, so months and days here must be UTC too
 	function dayKey(ts: number): string {
-		const d = new Date(ts);
-		return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d
-			.getDate()
-			.toString()
-			.padStart(2, '0')}`;
+		return new Date(ts).toISOString().slice(0, 10);
 	}
 
+	// the month header above already names the month
 	function dayLabel(ts: number): string {
-		const d = new Date(ts);
-		const today = new Date();
-		const yesterday = new Date();
-		yesterday.setDate(today.getDate() - 1);
-		const isSameDay = (a: Date, b: Date) =>
-			a.getFullYear() === b.getFullYear() &&
-			a.getMonth() === b.getMonth() &&
-			a.getDate() === b.getDate();
-		if (isSameDay(d, today)) return `${formatShort(d)} · TODAY`;
-		if (isSameDay(d, yesterday)) return `${formatShort(d)} · YESTERDAY`;
-		return `${formatShort(d)} · ${d.toLocaleDateString(undefined, { weekday: 'short' }).toUpperCase()}`;
+		const today = Date.now();
+		const weekday = new Date(ts).toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' });
+		const label = `${weekday} ${new Date(ts).getUTCDate()}`.toUpperCase();
+		if (dayKey(ts) === dayKey(today)) return `${label} · TODAY`;
+		if (dayKey(ts) === dayKey(today - 86_400_000)) return `${label} · YESTERDAY`;
+		return label;
 	}
 
-	function formatShort(d: Date): string {
-		return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }).toUpperCase();
+	function monthLabel(ts: number): string {
+		return periodLabel(monthOf(ts)).toUpperCase();
 	}
 
 </script>
@@ -193,59 +226,73 @@
 	<ProjectAppBar {roomId} {project} />
 
 	<div class="search-bar">
-		<span class="search-icon" aria-hidden="true">
-			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="6" /><path d="M16 16l4 4" /></svg>
-		</span>
-		<input
-			bind:this={searchEl}
-			bind:value={query}
-			class="search-input"
-			placeholder="Search expenses"
-			aria-label="Search expenses by title, payer, category, payment method or note"
-			type="search"
-			autocomplete="off"
-			spellcheck="false"
-		/>
-		{#if query}
-			<button
-				class="search-clear"
-				type="button"
-				onclick={clearQuery}
-				aria-label="Clear search"
-			>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
-			</button>
-		{/if}
+		<div class="search-field">
+			<span class="search-icon" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="6" /><path d="M16 16l4 4" /></svg>
+			</span>
+			<input
+				bind:this={searchEl}
+				bind:value={query}
+				class="search-input"
+				placeholder="Search expenses"
+				aria-label="Search expenses by title, payer, category, payment method or note"
+				type="search"
+				autocomplete="off"
+				spellcheck="false"
+			/>
+			{#if query}
+				<button
+					class="search-clear"
+					type="button"
+					onclick={clearQuery}
+					aria-label="Clear search"
+				>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+				</button>
+			{/if}
+		</div>
+		<button
+			type="button"
+			class="icon-btn filter-btn"
+			class:on={filterCount > 0}
+			aria-haspopup="dialog"
+			aria-label={filterCount > 0 ? `Filters, ${filterCount} on` : 'Filters'}
+			onclick={() => (filterSheetOpen = true)}
+		>
+			<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></svg>
+			{#if filterCount > 0}<span class="filter-badge">{filterCount}</span>{/if}
+		</button>
 	</div>
 
 	<div class="scroll" onscroll={onScroll}>
-		<TripStrip
-			{trips}
-			{selectedTripId}
-			expenseCountAll={expenses.length}
-			{expenseCountForTrip}
-			onSelect={selectTrip}
-			onOverflowOpen={() => (tripSheetOpen = true)}
-		/>
-
-		<TripSheet
-			open={tripSheetOpen}
-			{trips}
-			{selectedTripId}
-			manageHref="/p/{roomId}/settings/trips"
-			onSelect={selectFromSheet}
-			onClose={() => (tripSheetOpen = false)}
-		/>
-
-		{#if categoryFilter !== null}
+		{#if filterChips.length > 0}
 			<div class="filter-row">
-				<button type="button" class="chip category-filter" onclick={clearCategoryFilter} aria-label="Remove filter: {categoryFilterLabel}">
-					<span>{categoryFilterLabel}</span>
-					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
-				</button>
+				{#each filterChips as chip (chip.key)}
+					<button type="button" class="chip active-filter" onclick={chip.clear} aria-label="Remove filter: {chip.label}">
+						{#if chip.member}<Avatar member={chip.member} size="xs" />{/if}
+						<span>{chip.label}</span>
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17" /></svg>
+					</button>
+				{/each}
 			</div>
 		{/if}
 
+		{#if filterSheetOpen}
+			<ExpenseFilterSheet
+				{filter}
+				{members}
+				categories={project?.categories ?? []}
+				methods={[...methodById.values()]}
+				{trips}
+				{currencySymbol}
+				{currency}
+				resultCount={filtered.length}
+				onChange={setFilter}
+				onClose={() => (filterSheetOpen = false)}
+			/>
+		{/if}
+
+		{#if showSummary && filtered.length > 0}
 		<section class="card summary-card">
 			<div class="col">
 				<div class="eyebrow summary-eyebrow">
@@ -259,30 +306,44 @@
 				<div class="dim mono summary-count">
 					{filtered.length} {filtered.length === 1 ? 'EXPENSE' : 'EXPENSES'}
 				</div>
-				<div class="dim mono summary-count">
-					{allGroups.length} {allGroups.length === 1 ? 'DAY' : 'DAYS'}
-				</div>
+				{#if overallShare !== null}
+					<div class="dim mono summary-count">
+						YOUR SHARE {formatAmount(overallShare, currencySymbol, currency)}
+					</div>
+				{/if}
 			</div>
 		</section>
+		{/if}
 
-		{#if scopedExpenses.length === 0 && selectedTrip}
-			<EmptyState>
-				<p>No expenses tagged to <strong>{selectedTrip.name}</strong> yet.</p>
-			</EmptyState>
-		{:else if expenses.length === 0}
+		{#if expenses.length === 0}
 			<EmptyState>
 				<p>No expenses yet. Tap the + button to add the first one.</p>
 			</EmptyState>
-		{:else if filtered.length === 0 && query.trim()}
-			<EmptyCard>
-				<p>No expenses match <strong>“{query.trim()}”</strong>.</p>
-			</EmptyCard>
 		{:else if filtered.length === 0}
 			<EmptyCard>
-				<p>No expenses in <strong>{categoryFilterLabel}</strong> here.</p>
+				{#if query.trim()}
+					<p>No expenses match <strong>“{query.trim()}”</strong>{filterCount > 0 ? ' with these filters' : ''}.</p>
+				{:else}
+					<p>No expenses match these filters.</p>
+				{/if}
+				{#if filterCount > 0}
+					<button type="button" class="btn clear-filters" onclick={() => setFilter(EMPTY_FILTER)}>Clear filters</button>
+				{/if}
 			</EmptyCard>
 		{:else}
-			{#each visibleGroups as g (g.key)}
+			{#each visibleGroups as g, i (g.key)}
+				{#if i === 0 || visibleGroups[i - 1].monthKey !== g.monthKey}
+					{@const month = monthSummaries.get(g.monthKey)}
+					{#if month}
+						<div class="month-head">
+							<h2 class="eyebrow month-label">{month.label}</h2>
+							<div class="mono month-totals">
+								<span>{formatAmount(month.total, currencySymbol, currency)}</span>
+								{#if month.myShare !== null}<span class="dim">· your share {formatAmount(month.myShare, currencySymbol, currency)}</span>{/if}
+							</div>
+						</div>
+					{/if}
+				{/if}
 				<div class="section-head day-head">
 					<div class="eyebrow">{g.label}</div>
 					<div class="dim mono day-total">{formatAmount(g.total, currencySymbol, currency)}</div>
@@ -295,7 +356,7 @@
 							href="/p/{roomId}/expenses/{e.id}"
 							{membersById}
 							{categoryById}
-							tripsById={selectedTripId ? undefined : tripsById}
+							tripsById={singleTripId ? undefined : tripsById}
 							{currentMemberId}
 							symbol={currencySymbol} {currency}
 							totalMembers={members.length}
@@ -319,10 +380,12 @@
 <style>
 	.filter-row {
 		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
 		margin: 0 0 10px;
 	}
 
-	.category-filter {
+	.active-filter {
 		background: color-mix(in oklab, var(--accent) 16%, var(--bg-2));
 		border-color: var(--accent);
 		color: var(--ink);
@@ -330,7 +393,7 @@
 		font-family: var(--font-sans);
 	}
 
-	.category-filter svg {
+	.active-filter svg {
 		width: 13px;
 		height: 13px;
 		opacity: 0.7;
@@ -364,8 +427,41 @@
 		letter-spacing: 0.06em;
 	}
 
+	.month-head {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 12px;
+		margin: 14px -4px 0;
+		padding: 10px 8px 8px;
+		background: var(--bg);
+		border-bottom: 1px solid var(--line);
+	}
+
+	.month-label {
+		margin: 0;
+		color: var(--ink);
+	}
+
+	.month-totals {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+		column-gap: 6px;
+		font-size: 12px;
+		color: var(--ink);
+		text-align: right;
+	}
+
 	.day-head {
 		margin: 20px 4px 8px;
+	}
+
+	.month-head + .day-head {
+		margin-top: 12px;
 	}
 
 	/* match the list's first-gap so the empty state isn't crammed under the summary */
@@ -399,10 +495,22 @@
 		background: var(--bg);
 	}
 
+	.search-field {
+		position: relative;
+		flex: 1;
+		display: flex;
+		min-width: 0;
+	}
+
 	.search-icon {
+		position: absolute;
+		left: 12px;
+		top: 50%;
+		transform: translateY(-50%);
 		display: grid;
 		place-items: center;
 		color: var(--ink-3);
+		pointer-events: none;
 	}
 
 	.search-icon svg {
@@ -416,7 +524,8 @@
 		border: 1px solid var(--line);
 		border-radius: var(--radius);
 		color: var(--ink);
-		padding: 10px 14px;
+		padding: 10px 38px;
+		min-width: 0;
 		font-size: 14px;
 		outline: none;
 		font-family: var(--font-sans);
@@ -427,11 +536,19 @@
 		box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
 	}
 
+	.search-input::-webkit-search-cancel-button {
+		display: none;
+	}
+
 	.search-input::placeholder {
 		color: var(--ink-3);
 	}
 
 	.search-clear {
+		position: absolute;
+		right: 6px;
+		top: 50%;
+		transform: translateY(-50%);
 		display: grid;
 		place-items: center;
 		width: 30px;
@@ -441,6 +558,42 @@
 		border: 0;
 		color: var(--ink-2);
 		cursor: pointer;
+	}
+
+	.filter-btn {
+		position: relative;
+		align-self: stretch;
+		width: auto;
+		height: auto;
+		aspect-ratio: 1;
+		flex-shrink: 0;
+		border-radius: var(--radius);
+		background: var(--bg-2);
+	}
+
+	.filter-btn.on {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+
+	.filter-badge {
+		position: absolute;
+		top: -5px;
+		right: -5px;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 4px;
+		border-radius: 999px;
+		background: var(--accent);
+		color: var(--accent-ink);
+		font-size: 11px;
+		font-weight: 700;
+		line-height: 18px;
+		text-align: center;
+	}
+
+	.clear-filters {
+		margin-top: 10px;
 	}
 
 	.search-clear svg {
