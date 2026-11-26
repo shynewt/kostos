@@ -58,6 +58,8 @@ function fxResponse(rate: number) {
 async function openAddForm(): Promise<void> {
 	await page.goto(`${BASE}/p/DEMO/add`);
 	await page.waitForSelector('[aria-label="Amount, accepts math expressions"]');
+	// the form slides up as a sheet; positions are only stable once it lands
+	await page.locator('.page-sheet').evaluate((sheet) => Promise.all(sheet.getAnimations().map((a) => a.finished)));
 }
 
 async function pickCurrency(code: string): Promise<void> {
@@ -313,5 +315,43 @@ describe('choosing who shares', () => {
 		await page.mouse.up();
 		expect(await checkedCount()).toBe(1);
 		expect(await row.locator('.checkbox').getAttribute('aria-checked')).toBe('true');
+	});
+});
+
+describe('leaving the add form', () => {
+	const discardSheet = () => page.getByRole('dialog', { name: 'Discard this expense?' });
+
+	it('closes an empty form straight away', async () => {
+		await openAddForm();
+		await page.getByRole('button', { name: 'Cancel' }).click();
+		await page.waitForURL(/\/p\/DEMO$/);
+		expect(await discardSheet().count()).toBe(0);
+	});
+
+	it('asks before throwing away what was typed', async () => {
+		await openAddForm();
+		await page.getByLabel('Amount, accepts math expressions').fill('12');
+		await page.getByRole('button', { name: 'Cancel' }).click();
+		await discardSheet().getByRole('button', { name: 'Keep editing' }).click();
+		await expect.poll(() => discardSheet().count()).toBe(0);
+		expect(await page.getByLabel('Amount, accepts math expressions').inputValue()).toBe('12');
+
+		await page.getByRole('button', { name: 'Cancel' }).click();
+		await discardSheet().getByRole('button', { name: 'Discard' }).click();
+		await page.waitForURL(/\/p\/DEMO$/);
+	});
+
+	it('opens over the current screen from the + button, and back asks before discarding', async () => {
+		await page.goto(`${BASE}/p/DEMO/expenses`);
+		await page.locator('.expense-row').first().waitFor();
+		await page.getByRole('link', { name: 'Add expense' }).click();
+		await page.waitForURL(/\/p\/DEMO\/add$/);
+		expect(await page.locator('[data-page="expenses-list"]').count()).toBe(1);
+
+		await page.getByLabel('Amount, accepts math expressions').fill('7');
+		await page.goBack();
+		await discardSheet().getByRole('button', { name: 'Discard' }).click();
+		await page.waitForURL(/\/p\/DEMO\/expenses$/);
+		await expect.poll(() => page.locator('.page-sheet').count()).toBe(0);
 	});
 });

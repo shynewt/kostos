@@ -64,6 +64,8 @@
 		onAddPaymentMethod: (item: PaymentMethodItem) => void;
 		generateId: () => string;
 		openDetail?: DetailPanel;
+		/** true once the amount, title or note has text, so leaving can ask first */
+		hasInput?: boolean;
 	};
 
 	let {
@@ -80,7 +82,8 @@
 		onAddCategory,
 		onAddPaymentMethod,
 		generateId,
-		openDetail
+		openDetail,
+		hasInput = $bindable(false)
 	}: Props = $props();
 
 	// the form works in positive numbers; an income is flipped here and flipped back on save
@@ -159,6 +162,9 @@
 	let shares = $state<Record<string, number>>(seedShares());
 	let amounts = $state<Record<string, string>>(seedAmounts());
 	let notes = $state(seed?.notes ?? '');
+	$effect(() => {
+		hasInput = amountInput.trim() !== '' || title.trim() !== '' || notes.trim() !== '';
+	});
 	let repeat = $state<RepeatFrequency | null>(untrack(() => initialRepeat));
 	// a frequency change starts a new rule from this expense's date
 	const repeatStartDay = $derived(repeat === initialRepeat && ruleStartDay ? ruleStartDay : dateStr);
