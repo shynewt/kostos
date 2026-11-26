@@ -130,7 +130,7 @@
 				emoji: category?.emoji ?? '📦',
 				amount,
 				percent,
-				href: `/p/${roomId}/expenses?category=${encodeURIComponent(id ?? 'none')}`
+				href: `/p/${roomId}/expenses?category=${encodeURIComponent(id ?? 'none')}${selectedTripId ? `&trip=${encodeURIComponent(selectedTripId)}` : ''}`
 			};
 		})
 	);

@@ -109,19 +109,78 @@ describe('stats', () => {
 		expect(page.url()).toContain('view=me');
 	});
 
+	it('groups the expense list by month, with a total and your share for each', async () => {
+		await page.goto(`${BASE}/p/DEMO/expenses`);
+		const monthHeads = page.locator('.month-head');
+		await expect.poll(() => monthHeads.count()).toBe(2);
+		expect(await monthHeads.nth(0).innerText()).toMatch(/^MAY 2026[\s\S]*€1,129\.75[\s\S]*your share €296\.50$/);
+		expect(await monthHeads.nth(1).innerText()).toMatch(/^APRIL 2026[\s\S]*€599\.70[\s\S]*your share €178\.98$/);
+		expect(await page.locator('.summary-card').count()).toBe(0);
+
+		// a trip picked in the filters gets the total card as well
+		await page.getByRole('button', { name: 'Filters' }).click();
+		const sheet = page.getByRole('dialog', { name: 'Filter expenses' });
+		await sheet.getByRole('button', { name: 'Berlin trip' }).click();
+		await sheet.getByRole('button', { name: /^Show/ }).click();
+		await expect.poll(() => page.locator('.summary-card').innerText()).toMatch(/€1,087\.75[\s\S]*YOUR SHARE €275\.50/);
+		expect(await monthHeads.count()).toBe(1);
+	});
+
 	it('opens the expense list filtered to a category and the selected trip', async () => {
 		await page.getByRole('tab', { name: /Berlin trip/ }).click();
 		await expect.poll(heroAmount).toBe('€1,087.75');
 		await page.getByRole('link', { name: /^Lodging/ }).click();
-		await page.waitForURL(/\/expenses\?category=cat-lodging$/);
+		await page.waitForURL(/\/expenses\?category=cat-lodging&trip=trip-berlin$/);
 
 		const removeFilter = page.getByRole('button', { name: /^Remove filter: .*Lodging$/ });
 		await removeFilter.waitFor();
 		await expect.poll(() => page.locator('.expense-row').count()).toBe(1);
-		expect(await page.locator('.expense-row').innerText()).toContain('Airbnb 3 nights');
+		// rows use content-visibility: auto, so their text is empty until the first paint
+		await expect.poll(() => page.locator('.expense-row').innerText()).toContain('Airbnb 3 nights');
 
 		await removeFilter.click();
 		await expect.poll(() => page.url()).not.toContain('category=');
 		await expect.poll(() => page.locator('.expense-row').count()).toBe(4);
+	});
+});
+
+describe('expense list filters and search', () => {
+	beforeEach(async () => {
+		await page.goto(`${BASE}/p/DEMO/expenses`);
+		await page.locator('.expense-row').first().waitFor();
+	});
+
+	const rows = () => page.locator('.expense-row');
+	const filterSheet = () => page.getByRole('dialog', { name: 'Filter expenses' });
+
+	it('narrows the list from the filter sheet and clears one filter from its chip', async () => {
+		await page.getByRole('button', { name: 'Filters' }).click();
+		await filterSheet().getByRole('button', { name: 'Bob' }).click();
+		await filterSheet().getByLabel(/^Min/).fill('20');
+		await expect.poll(() => filterSheet().getByRole('button', { name: /^Show/ }).innerText()).toBe('Show 2 expenses');
+		await filterSheet().getByRole('button', { name: /^Show/ }).click();
+
+		await expect.poll(() => rows().count()).toBe(2);
+		expect(page.url()).toMatch(/payer=m-bob/);
+		expect(page.url()).toMatch(/min=2000/);
+		expect(await page.getByRole('button', { name: 'Filters, 2 on' }).count()).toBe(1);
+
+		await page.getByRole('button', { name: 'Remove filter: Paid by Bob' }).click();
+		await expect.poll(() => page.url()).not.toContain('payer=');
+		await expect.poll(() => rows().count()).toBe(9);
+	});
+
+	it('needs every search word to match, including amounts and month names', async () => {
+		const search = page.getByLabel(/^Search expenses/);
+		await search.fill('dinner apr');
+		await expect.poll(() => rows().count()).toBe(1);
+		await expect.poll(() => rows().innerText()).toContain('Casa do Bacalhau');
+
+		await search.fill('556');
+		await expect.poll(() => rows().count()).toBe(1);
+		await expect.poll(() => rows().innerText()).toContain('Airbnb 3 nights');
+
+		await search.fill('dinner may');
+		await expect.poll(() => page.getByText('No expenses match').count()).toBe(1);
 	});
 });
