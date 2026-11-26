@@ -211,7 +211,9 @@
 		outline-offset: 2px;
 	}
 
+	/* the € and › hang outside, so the words and the number themselves sit on the centre line */
 	.balance-eyebrow {
+		position: relative;
 		display: block;
 		margin-bottom: 8px;
 	}
@@ -225,16 +227,21 @@
 		font-weight: 400;
 	}
 
+	/* zero width and right-to-left, so the € spills out to the left while staying in the text */
 	.balance-amount .symbol {
+		display: inline-block;
+		width: 0;
+		direction: rtl;
 		font-size: 32px;
 		vertical-align: top;
-		margin-right: 4px;
 		opacity: 0.7;
 	}
 
 	/* the only hint that the balance opens its breakdown */
 	.balance-button .balance-eyebrow::after {
 		content: '›';
+		position: absolute;
+		left: 100%;
 		margin-left: 6px;
 		color: var(--ink-3);
 	}
