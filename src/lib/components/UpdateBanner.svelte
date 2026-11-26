@@ -8,15 +8,19 @@
 	 * and reloads once the new SW takes control. No clientsClaim, so the live page is never
 	 * handed to the new SW mid-session.
 	 *
-	 * We also poll every 30 minutes so a long-lived session picks up new releases.
+	 * The browser only looks for a new SW when the page loads. An installed app on a phone
+	 * is usually resumed rather than reloaded, and timers pause in the background, so we also
+	 * check whenever the app comes back on screen or back online, plus every 30 minutes.
 	 */
 
 	let needRefresh = $state(false);
 	let updating = $state(false);
 	let triggerUpdate: (() => Promise<void>) | null = null;
 	let fallbackReload: ReturnType<typeof setTimeout> | null = null;
+	let stopChecking: (() => void) | null = null;
 
 	const POLL_INTERVAL_MS = 30 * 60 * 1000;
+	const MIN_CHECK_GAP_MS = 60 * 1000;
 
 	onMount(async () => {
 		if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -30,10 +34,7 @@
 				needRefresh = true;
 			},
 			onRegistered(reg) {
-				if (!reg) return;
-				setInterval(() => {
-					reg.update().catch(() => undefined);
-				}, POLL_INTERVAL_MS);
+				if (reg) stopChecking = checkForUpdates(reg);
 			}
 		});
 
@@ -52,8 +53,30 @@
 		};
 	});
 
+	function checkForUpdates(reg: ServiceWorkerRegistration): () => void {
+		let lastCheck = Date.now();
+		const check = () => {
+			if (reg.installing || !navigator.onLine || Date.now() - lastCheck < MIN_CHECK_GAP_MS) return;
+			lastCheck = Date.now();
+			// a failed check (flaky network, server down) just waits for the next one
+			reg.update().catch(() => undefined);
+		};
+		const onVisible = () => {
+			if (document.visibilityState === 'visible') check();
+		};
+		const poll = setInterval(check, POLL_INTERVAL_MS);
+		document.addEventListener('visibilitychange', onVisible);
+		window.addEventListener('online', check);
+		return () => {
+			clearInterval(poll);
+			document.removeEventListener('visibilitychange', onVisible);
+			window.removeEventListener('online', check);
+		};
+	}
+
 	onDestroy(() => {
 		if (fallbackReload) clearTimeout(fallbackReload);
+		stopChecking?.();
 	});
 
 	async function onUpdate() {
