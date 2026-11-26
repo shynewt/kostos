@@ -70,13 +70,19 @@
 		padding: 8px 0 6px;
 	}
 
+	/* the empty third column mirrors the symbol's, so the number sits on the centre line;
+	   once it is too wide for that, it gives way and the symbol stays in view */
 	.amount-line {
-		display: flex;
+		display: grid;
+		grid-template-columns: 1fr minmax(0, auto) 1fr;
 		align-items: baseline;
-		justify-content: center;
-		gap: 6px;
-		max-width: 100%;
+		column-gap: 6px;
+		width: 100%;
 		--amount-size: 64px;
+	}
+
+	.amount-line > :first-child {
+		justify-self: end;
 	}
 
 	.amount-line[data-size='medium'] {
