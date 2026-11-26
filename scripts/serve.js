@@ -10,9 +10,10 @@
 
 import { createReadStream, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import { cacheControlFor } from './cache-control.js';
 import { createRelay } from './relay.js';
 import { MAX_MESSAGE_BYTES } from '../src/lib/sync/relay-protocol.js';
 import { parseSyncRequest } from '../src/lib/sync/room-access.js';
@@ -65,7 +66,7 @@ function serveFile(filePath, res, extraHeaders = {}) {
 	const type = MIME[ext] ?? 'application/octet-stream';
 	res.writeHead(200, {
 		'Content-Type': type,
-		'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
+		'Cache-Control': cacheControlFor(relative(BUILD_DIR, filePath).split(sep).join('/')),
 		...extraHeaders
 	});
 	createReadStream(filePath).pipe(res);
