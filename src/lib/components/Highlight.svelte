@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { matchRanges, searchTerms } from '$lib/expense-search';
+
 	type Props = {
 		text: string;
 		query: string;
@@ -6,20 +8,20 @@
 	let { text, query }: Props = $props();
 
 	const parts = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		if (!q || !text) return null;
-		const lower = text.toLowerCase();
-		const idx = lower.indexOf(q);
-		if (idx === -1) return null;
-		return {
-			before: text.slice(0, idx),
-			match: text.slice(idx, idx + q.length),
-			after: text.slice(idx + q.length)
-		};
+		const ranges = text ? matchRanges(text, searchTerms(query)) : [];
+		const out: { text: string; isMatch: boolean }[] = [];
+		let cursor = 0;
+		for (const [start, end] of ranges) {
+			if (start > cursor) out.push({ text: text.slice(cursor, start), isMatch: false });
+			out.push({ text: text.slice(start, end), isMatch: true });
+			cursor = end;
+		}
+		if (cursor < text.length) out.push({ text: text.slice(cursor), isMatch: false });
+		return out;
 	});
 </script>
 
-{#if parts}{parts.before}<mark class="hl">{parts.match}</mark>{parts.after}{:else}{text}{/if}
+{#each parts as part, i (i)}{#if part.isMatch}<mark class="hl">{part.text}</mark>{:else}{part.text}{/if}{/each}
 
 <style>
 	.hl {

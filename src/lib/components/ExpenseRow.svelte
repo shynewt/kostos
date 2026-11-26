@@ -6,6 +6,7 @@
 	import { formatAmount, formatSigned } from '$lib/money';
 	import type { Category, Expense, Member, Trip } from '$lib/types';
 	import Highlight from './Highlight.svelte';
+	import { matchRanges, searchTerms } from '$lib/expense-search';
 
 	type Props = {
 		expense: Expense;
@@ -109,13 +110,11 @@
 	}
 
 	const noteMatch = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		if (!q || !expense.notes) return null;
-		const lower = expense.notes.toLowerCase();
-		const idx = lower.indexOf(q);
-		if (idx === -1) return null;
-		const start = Math.max(0, idx - 24);
-		const end = Math.min(expense.notes.length, idx + q.length + 40);
+		if (!expense.notes) return null;
+		const [first] = matchRanges(expense.notes, searchTerms(query));
+		if (!first) return null;
+		const start = Math.max(0, first[0] - 24);
+		const end = Math.min(expense.notes.length, first[1] + 40);
 		const prefix = start > 0 ? '…' : '';
 		const suffix = end < expense.notes.length ? '…' : '';
 		return prefix + expense.notes.slice(start, end) + suffix;
