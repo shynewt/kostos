@@ -3,11 +3,12 @@
 	import {
 		ALL_TIME,
 		isSamePeriod,
+		last12MonthsOf,
 		monthOf,
+		periodBounds,
 		periodKey,
 		periodLabel,
 		previousMonthOf,
-		yearOf,
 		type Period
 	} from '$lib/stats';
 
@@ -24,15 +25,50 @@
 
 	const presets = $derived<{ title: string; period: Period }[]>([
 		{ title: 'All time', period: ALL_TIME },
+		{ title: 'Last 12 months', period: last12MonthsOf(now) },
 		{ title: 'This month', period: monthOf(now) },
-		{ title: 'Last month', period: previousMonthOf(now) },
-		{ title: 'This year', period: yearOf(now) }
+		{ title: 'Last month', period: previousMonthOf(now) }
 	]);
+
+	const years = $derived.by(() => {
+		const groups: { year: Period; months: Period[] }[] = [];
+		for (const month of months) {
+			if (month.kind !== 'month') continue;
+			const last = groups.at(-1);
+			if (last?.year.kind === 'year' && last.year.year === month.year) last.months.push(month);
+			else groups.push({ year: { kind: 'year', year: month.year }, months: [month] });
+		}
+		return groups;
+	});
+
+	const monthName = (period: Period) =>
+		period.kind === 'month'
+			? new Date(Date.UTC(period.year, period.month, 1)).toLocaleDateString(undefined, { month: 'long', timeZone: 'UTC' })
+			: periodLabel(period);
+
+	function presetSubtitle(period: Period): string | undefined {
+		if (period.kind === 'all') return undefined;
+		if (period.kind !== 'last12Months') return periodLabel(period);
+		const bounds = periodBounds(period);
+		if (!bounds) return undefined;
+		return new Intl.DateTimeFormat(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' }).formatRange(
+			bounds.start,
+			bounds.end - 1
+		);
+	}
 </script>
 
-{#snippet option(title: string, period: Period, sub?: string)}
+{#snippet option(title: string, period: Period, sub?: string, isNested = false)}
 	{@const isOn = isSamePeriod(period, selected)}
-	<button type="button" class="period-row" class:on={isOn} aria-pressed={isOn} onclick={() => onSelect(period)}>
+	<button
+		type="button"
+		class="period-row"
+		class:on={isOn}
+		class:nested={isNested}
+		aria-pressed={isOn}
+		aria-label={isNested ? periodLabel(period) : undefined}
+		onclick={() => onSelect(period)}
+	>
 		<span class="row-text">
 			<span class="row-title">{title}</span>
 			{#if sub}<span class="row-sub">{sub}</span>{/if}
@@ -47,15 +83,17 @@
 			{@render option(
 				preset.title,
 				preset.period,
-				preset.period.kind === 'all' ? undefined : periodLabel(preset.period)
+				presetSubtitle(preset.period)
 			)}
 		{/each}
-		{#if months.length > 0}
-			<div class="section-label">Months with spending</div>
-			{#each months as month (periodKey(month))}
-				{@render option(periodLabel(month), month)}
-			{/each}
-		{/if}
+		{#each years as group (periodKey(group.year))}
+			<div class="year-group">
+				{@render option(periodLabel(group.year), group.year, 'Whole year')}
+				{#each group.months as month (periodKey(month))}
+					{@render option(monthName(month), month, undefined, true)}
+				{/each}
+			</div>
+		{/each}
 	</div>
 </BottomSheet>
 
@@ -65,13 +103,18 @@
 		padding-bottom: 4px;
 	}
 
-	.section-label {
-		font-family: var(--font-mono);
-		font-size: 10px;
-		color: var(--ink-3);
-		text-transform: uppercase;
-		letter-spacing: 0.06em;
-		padding: 14px 6px 4px;
+	.year-group {
+		margin-top: 8px;
+		padding-top: 8px;
+		border-top: 1px solid var(--line);
+	}
+
+	.period-row.nested {
+		padding-left: 22px;
+	}
+
+	.period-row.nested .row-title {
+		font-weight: 500;
 	}
 
 	.period-row {

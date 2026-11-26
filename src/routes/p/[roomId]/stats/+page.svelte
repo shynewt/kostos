@@ -18,8 +18,10 @@
 	import {
 		ALL_TIME,
 		biggestExpenses,
+		defaultPeriod,
 		exchangeFees,
 		inPeriod,
+		isSamePeriod,
 		monthOf,
 		monthsWithExpenses,
 		parsePeriodKey,
@@ -57,7 +59,8 @@
 	const METHOD_COLORS = ['var(--accent)', '#88c0ff', '#ffc457', '#ff8a6b', '#b29cff', '#5eead4', '#f9a8d4'];
 
 	// period and view live in the URL so coming back from a drilled-down list restores them
-	const period = $derived(parsePeriodKey(page.url.searchParams.get('period')));
+	const periodParam = $derived(page.url.searchParams.get('period'));
+	const now = Date.now();
 	const isJustMe = $derived(currentMemberId !== null && page.url.searchParams.get('view') === 'me');
 	const viewpoint = $derived<Viewpoint>(
 		isJustMe && currentMemberId ? { kind: 'member', memberId: currentMemberId } : { kind: 'group' }
@@ -75,7 +78,7 @@
 	let periodSheetOpen = $state(false);
 	function selectPeriod(next: Period) {
 		periodSheetOpen = false;
-		updateParams({ period: next.kind === 'all' ? null : periodKey(next) });
+		updateParams({ period: isSamePeriod(next, preferredPeriod) ? null : periodKey(next) });
 	}
 
 	function setJustMe(justMe: boolean) {
@@ -107,6 +110,8 @@
 	);
 
 	const tripExpenses = $derived(scopeExpenses(expenses, selectedTripId).filter((e) => !e.isSettlement));
+	const preferredPeriod = $derived(defaultPeriod(tripExpenses, now));
+	const period = $derived(periodParam === null ? preferredPeriod : parsePeriodKey(periodParam, now));
 	const periodMonths = $derived(monthsWithExpenses(tripExpenses));
 	const periodExpenses = $derived(inPeriod(tripExpenses, period));
 	const lines = $derived(spendLines(periodExpenses, currency, viewpoint));
@@ -181,7 +186,8 @@
 
 	const emptyMessage = $derived.by(() => {
 		if (expenses.length === 0) return 'No expenses yet. Add one and its spending shows up here.';
-		const where = period.kind !== 'all' ? ` in ${periodLabel(period)}` : selectedTrip ? ` on ${selectedTrip.name}` : '';
+		const periodName = period.kind === 'last12Months' ? 'the last 12 months' : periodLabel(period);
+		const where = period.kind !== 'all' ? ` in ${periodName}` : selectedTrip ? ` on ${selectedTrip.name}` : '';
 		if (isJustMe && spendLines(periodExpenses, currency, { kind: 'group' }).length > 0) {
 			return `You had no share in anything spent${where}.`;
 		}
@@ -245,7 +251,7 @@
 			<PeriodSheet
 				selected={period}
 				months={periodMonths}
-				now={Date.now()}
+				{now}
 				onSelect={selectPeriod}
 				onClose={() => (periodSheetOpen = false)}
 			/>

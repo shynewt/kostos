@@ -14,7 +14,9 @@ const DAY_MS = 86_400_000;
 export type Period =
 	| { kind: 'all' }
 	| { kind: 'year'; year: number }
-	| { kind: 'month'; year: number; month: number };
+	| { kind: 'month'; year: number; month: number }
+	/** this month and the eleven before it; year and month name the last one */
+	| { kind: 'last12Months'; year: number; month: number };
 
 export const ALL_TIME: Period = { kind: 'all' };
 
@@ -32,11 +34,30 @@ export function yearOf(timestamp: number): Period {
 	return { kind: 'year', year: new Date(timestamp).getUTCFullYear() };
 }
 
+export function last12MonthsOf(timestamp: number): Period {
+	const date = new Date(timestamp);
+	return { kind: 'last12Months', year: date.getUTCFullYear(), month: date.getUTCMonth() };
+}
+
+/** A group with more than a year of history opens on its last 12 months, since an all-time
+ *  figure stops saying much; a younger group or a trip has nothing to cut, so it shows it all. */
+export function defaultPeriod(expenses: Expense[], now: number): Period {
+	const recent = last12MonthsOf(now);
+	const bounds = periodBounds(recent);
+	return bounds && expenses.some((e) => e.date < bounds.start) ? recent : ALL_TIME;
+}
+
 /** Start inclusive, end exclusive; null for all time. */
 export function periodBounds(period: Period): { start: number; end: number } | null {
 	if (period.kind === 'all') return null;
 	if (period.kind === 'year') {
 		return { start: Date.UTC(period.year, 0, 1), end: Date.UTC(period.year + 1, 0, 1) };
+	}
+	if (period.kind === 'last12Months') {
+		return {
+			start: Date.UTC(period.year, period.month - 11, 1),
+			end: Date.UTC(period.year, period.month + 1, 1)
+		};
 	}
 	return {
 		start: Date.UTC(period.year, period.month, 1),
@@ -44,14 +65,19 @@ export function periodBounds(period: Period): { start: number; end: number } | n
 	};
 }
 
-/** A stable text form for URLs and file names: "all", "2026" or "2026-10". */
+const LAST_12_MONTHS_KEY = 'last-12-months';
+
+/** A stable text form for URLs and file names: "all", "last-12-months", "2026" or "2026-10".
+ *  The last 12 months always count back from today, so their key carries no date. */
 export function periodKey(period: Period): string {
 	if (period.kind === 'all') return 'all';
+	if (period.kind === 'last12Months') return LAST_12_MONTHS_KEY;
 	if (period.kind === 'year') return String(period.year);
 	return `${period.year}-${String(period.month + 1).padStart(2, '0')}`;
 }
 
-export function parsePeriodKey(key: string | null): Period {
+export function parsePeriodKey(key: string | null, now: number): Period {
+	if (key === LAST_12_MONTHS_KEY) return last12MonthsOf(now);
 	const match = key?.match(/^(\d{4})(?:-(\d{2}))?$/);
 	if (!match) return ALL_TIME;
 	const year = Number(match[1]);
@@ -66,6 +92,7 @@ export function isSamePeriod(a: Period, b: Period): boolean {
 
 export function periodLabel(period: Period, locale?: string): string {
 	if (period.kind === 'all') return 'All time';
+	if (period.kind === 'last12Months') return 'Last 12 months';
 	if (period.kind === 'year') return String(period.year);
 	return new Date(Date.UTC(period.year, period.month, 1)).toLocaleDateString(locale, {
 		month: 'long',
